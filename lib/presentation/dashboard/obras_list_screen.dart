@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../../models/obra_model.dart';
+import '../../data/models/obra_model.dart';
 import '../obra_detalle/screens/presupuestos_screen.dart';
 
 class ObrasListScreen extends StatefulWidget {

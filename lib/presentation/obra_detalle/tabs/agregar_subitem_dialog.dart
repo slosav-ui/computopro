@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../../../models/subitem.dart';
+import '../../../../data/models/subitem.dart';
 
 class AgregarSubitemDialog extends StatefulWidget {
   final Subitem? subitemExistente;

@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import '../../../../models/obra_model.dart';
-import '../../../../models/componente_apu.dart';
-import '../../../../models/insumo_apu.dart';
-import '../../../../models/insumo.dart';
-import '../../../../models/rubro.dart';
-import '../../../../models/subitem.dart';
+import '../../../../data/models/obra_model.dart';
+import '../../../../data/models/componente_apu.dart';
+import '../../../../data/models/insumo_apu.dart';
+import '../../../../data/models/insumo.dart';
+import '../../../../data/models/rubro.dart';
+import '../../../../data/models/subitem.dart';
 
 class AnalisisPreciosTab extends StatefulWidget {
   final ObraModel obra;

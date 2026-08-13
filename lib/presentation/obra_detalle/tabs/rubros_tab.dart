@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import '../../../../models/rubro.dart';
-import '../../../../models/subitem.dart';
-import '../../../../models/obra_model.dart';
+import '../../../../data/models/rubro.dart';
+import '../../../../data/models/subitem.dart';
+import '../../../../data/models/obra_model.dart';
 import 'agregar_subitem_dialog.dart';
 
 class RubrosTab extends StatefulWidget {

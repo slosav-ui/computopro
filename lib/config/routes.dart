@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import '../screens/obras/obras_list_screen.dart';
-import '../screens/presupuestos/presupuestos_screen.dart';
+import '../presentation/dashboard/obras_list_screen.dart';
+import '../presentation/obra_detalle/screens/presupuestos_screen.dart';
 
 class AppRoutes {
   static const String obrasList = '/';
