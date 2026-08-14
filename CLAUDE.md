@@ -6,6 +6,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Responder siempre en español al trabajar en este repositorio, sin importar el idioma de este documento.
 
+## Reglas de edición
+
+1. Nunca modificar código que no esté directamente relacionado con lo que se pidió explícitamente.
+2. Si una tarea requiere tocar más archivos de los esperados, preguntar antes de proceder.
+3. Preferir agregar código nuevo (nuevas funciones, nuevos widgets) en vez de reescribir funciones existentes, salvo que se pida explícitamente una modificación.
+4. Antes de cualquier cambio, explicar en una línea qué se va a tocar y por qué.
+5. Nunca eliminar código existente sin que se solicite explícitamente.
+
 ## Project
 
 Flutter app (`mi_primera_app` in `pubspec.yaml`) for managing construction projects ("obras") and their budgets ("presupuestos") in the Argentine construction market. UI, domain terms, and comments are in Spanish (rioplatense/Argentine): APU = Análisis de Precios Unitarios (unit price analysis), CAC = índice de la Cámara Argentina de la Construcción (cost adjustment index), IRAM = Argentine technical standards body, UOCRA = construction workers' union (referenced for cargas sociales / payroll charges).
