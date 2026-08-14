@@ -1,22 +1,25 @@
 import 'package:flutter/material.dart';
+import '../obra_detalle/screens/presupuestos_screen.dart';
 
 class ObrasListScreen extends StatefulWidget {
-  const ObrasListScreen({Key? key}) : super(key: key);
+  const ObrasListScreen({super.key});
 
   @override
-  _ObrasListScreenState createState() => _ObrasListScreenState();
+  State<ObrasListScreen> createState() => _ObrasListScreenState();
 }
 
 class _ObrasListScreenState extends State<ObrasListScreen> {
+  // --- Estado de Suscripción ---
   bool _esPlanPro = false;
 
+  // --- Cotización Dólar BNA & Proyección ---
   final double _dolarBnaCompra = 1340.0;
   final double _dolarBnaVenta = 1390.0;
   final String _fechaActualizacionDolar = 'Agosto 2026 (BNA)';
-
   double get _dolarOficialPromedio => (_dolarBnaCompra + _dolarBnaVenta) / 2;
   late double _cotizacionUsdEfectiva;
 
+  // --- Indicadores CAC ---
   final double _variacionCacUltimoMes = 3.8;
   final String _ultimoMesPublicadoCac = 'Julio 2026';
 
@@ -26,6 +29,7 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
     _cotizacionUsdEfectiva = _dolarOficialPromedio;
   }
 
+  // --- Lista Unificada de Obras ---
   final List<Map<String, dynamic>> _obras = [
     {
       'id': 'obra_001',
@@ -42,8 +46,8 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
       'mesBaseCac': 'Julio 2026',
       'revision': 'Rev. 03',
       'ultimaModif': '08/Ago/2026',
-      'rolUsuario': 'Director de Obra',
-      'estadoServicioEspecial': 'Pendiente', // Pendiente, En Revision, Presupuestado
+      'tipoRol': 'Director de Obra',
+      'estadoServicioEspecial': 'Ninguno',
     },
     {
       'id': 'obra_002',
@@ -60,11 +64,12 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
       'mesBaseCac': 'N/A',
       'revision': 'Rev. 01',
       'ultimaModif': '02/Ago/2026',
-      'rolUsuario': 'Propietario / Cliente',
+      'tipoRol': 'Propietario / Cliente',
       'estadoServicioEspecial': 'Ninguno',
     },
   ];
 
+  // --- Formateador de Montos ---
   String _formatearMonto(double monto, String moneda) {
     final valorInt = monto.round();
     final str = valorInt.toString();
@@ -73,6 +78,17 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
     return moneda == 'USD' ? 'USD $formateado' : '\$ $formateado';
   }
 
+  // --- Navegación a la Solapa de Presupuesto ---
+  void _abrirPresupuesto(Map<String, dynamic> obra) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => PresupuestosScreen(obra: obra),
+      ),
+    );
+  }
+
+  // --- Diálogo: Mapa de Obras Registradas ---
   void _mostrarMapaObras() {
     showDialog(
       context: context,
@@ -105,7 +121,7 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF1B365D).withOpacity(0.9),
+                        color: const Color(0xFF1B365D).withValues(alpha: 0.9),
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: const Row(
@@ -153,277 +169,178 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
     );
   }
 
-  /// REINGENIERÍA SUPERADORA: Modal de Alta de Obra con Wizard en 2 Pasos (Cero Overflow + Matriz de Permisos)
+  // --- Diálogo: Alta de Nueva Obra ---
   void _mostrarModalNuevaObra() {
     final nombreCtrl = TextEditingController();
     final propietarioCtrl = TextEditingController();
     final ubicacionCtrl = TextEditingController();
     final superficieCtrl = TextEditingController();
-
     String tipoSeleccionado = 'Residencial';
     String monedaSeleccionada = 'ARS';
-    String rolSeleccionado = 'Director de Obra';
-    int pasoActual = 0; // 0 = Datos Técnicos, 1 = Permisos y Roles
 
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setModalState) {
-          return Dialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            child: Container(
-              constraints: const BoxConstraints(maxWidth: 500, maxHeight: 600),
-              padding: const EdgeInsets.all(20),
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            title: const Row(
+              children: [
+                Icon(Icons.add_business_outlined, color: Color(0xFF1B365D)),
+                SizedBox(width: 8),
+                Text('Alta de Nueva Obra', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              ],
+            ),
+            content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.add_business_outlined, color: Color(0xFF1B365D)),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          pasoActual == 0 ? 'Alta de Obra (Paso 1/2: Datos)' : 'Alta de Obra (Paso 2/2: Roles)',
-                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1B365D)),
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.close, size: 20),
-                        onPressed: () => Navigator.pop(ctx),
-                      ),
-                    ],
-                  ),
-                  const Divider(),
-                  Expanded(
-                    child: SingleChildScrollView(
-                      physics: const BouncingScrollPhysics(),
-                      child: pasoActual == 0
-                          ? _buildPaso1Datos(
-                              nombreCtrl,
-                              propietarioCtrl,
-                              ubicacionCtrl,
-                              superficieCtrl,
-                              tipoSeleccionado,
-                              monedaSeleccionada,
-                              (nuevoTipo) => setModalState(() => tipoSeleccionado = nuevoTipo),
-                              (nuevaMoneda) => setModalState(() => monedaSeleccionada = nuevaMoneda),
-                            )
-                          : _buildPaso2Roles(
-                              rolSeleccionado,
-                              (nuevoRol) => setModalState(() => rolSeleccionado = nuevoRol),
-                            ),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.amber[50],
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.amber[700]!),
                     ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.gavel_outlined, size: 18, color: Colors.amber[900]),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Los datos ingresados en este formulario (Nombre de Obra, Propietario, Ubicación, Superficie) se consolidarán de manera definitiva en las carátulas, encabezados y legajos exportables en PDF.',
+                            style: TextStyle(fontSize: 10, color: Colors.amber[900], height: 1.3, fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: nombreCtrl,
+                    style: const TextStyle(fontSize: 12),
+                    decoration: const InputDecoration(labelText: 'Nombre de la Obra / Proyecto', border: OutlineInputBorder(), isDense: true),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: propietarioCtrl,
+                    style: const TextStyle(fontSize: 12),
+                    decoration: const InputDecoration(labelText: 'Propietario / Comitente', border: OutlineInputBorder(), isDense: true),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: ubicacionCtrl,
+                    style: const TextStyle(fontSize: 12),
+                    decoration: const InputDecoration(labelText: 'Ubicación / Localidad', border: OutlineInputBorder(), isDense: true),
                   ),
                   const SizedBox(height: 10),
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      if (pasoActual == 1)
-                        OutlinedButton(
-                          onPressed: () => setModalState(() => pasoActual = 0),
-                          child: const Text('Anterior'),
-                        )
-                      else
-                        TextButton(
-                          onPressed: () => Navigator.pop(ctx),
-                          child: const Text('Cancelar'),
+                      Expanded(
+                        child: TextField(
+                          controller: superficieCtrl,
+                          keyboardType: TextInputType.number,
+                          style: const TextStyle(fontSize: 12),
+                          decoration: const InputDecoration(labelText: 'Superficie (m²)', border: OutlineInputBorder(), isDense: true),
                         ),
-                      ElevatedButton(
-                        style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1B365D)),
-                        onPressed: () {
-                          if (pasoActual == 0) {
-                            if (nombreCtrl.text.trim().isEmpty) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Por favor ingrese el nombre de la obra.')),
-                              );
-                              return;
-                            }
-                            setModalState(() => pasoActual = 1);
-                          } else {
-                            final double sup = double.tryParse(superficieCtrl.text) ?? 100.0;
-                            setState(() {
-                              _obras.add({
-                                'id': 'obra_${DateTime.now().millisecondsSinceEpoch}',
-                                'nombre': nombreCtrl.text.trim(),
-                                'propietario': propietarioCtrl.text.trim().isEmpty ? 'Sin Especificar' : propietarioCtrl.text.trim(),
-                                'ubicacion': ubicacionCtrl.text.trim().isEmpty ? 'Ubicación Faltante' : ubicacionCtrl.text.trim(),
-                                'superficieM2': sup,
-                                'tipoObra': tipoSeleccionado,
-                                'estado': 'Cotización',
-                                'moneda': monedaSeleccionada,
-                                'aplicaCac': monedaSeleccionada == 'ARS',
-                                'montoEstimadoArs': sup * 1000000.0,
-                                'montoEstimadoUsd': sup * 750.0,
-                                'mesBaseCac': 'Agosto 2026',
-                                'revision': 'Rev. 00',
-                                'ultimaModif': 'Hoy',
-                                'rolUsuario': rolSeleccionado,
-                                'estadoServicioEspecial': 'Ninguno',
-                              });
-                            });
-                            Navigator.pop(ctx);
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Nueva obra registrada exitosamente con asignación de rol.')),
-                            );
-                          }
-                        },
-                        child: Text(
-                          pasoActual == 0 ? 'Siguiente' : 'Crear Obra',
-                          style: const TextStyle(color: Colors.white),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: DropdownButtonFormField<String>(
+                          initialValue: tipoSeleccionado,
+                          decoration: const InputDecoration(labelText: 'Tipo', border: OutlineInputBorder(), isDense: true),
+                          style: const TextStyle(fontSize: 11, color: Colors.black87),
+                          items: ['Residencial', 'Comercial/Residencial', 'Industrial', 'Infraestructura']
+                              .map((t) => DropdownMenuItem(value: t, child: Text(t, style: const TextStyle(fontSize: 11))))
+                              .toList(),
+                          onChanged: (val) {
+                            if (val != null) setModalState(() => tipoSeleccionado = val);
+                          },
                         ),
                       ),
                     ],
-                  )
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      const Text('Moneda Base:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                      const SizedBox(width: 12),
+                      ChoiceChip(
+                        label: const Text('ARS (\$)', style: TextStyle(fontSize: 11)),
+                        selected: monedaSeleccionada == 'ARS',
+                        onSelected: (sel) {
+                          if (sel) setModalState(() => monedaSeleccionada = 'ARS');
+                        },
+                      ),
+                      const SizedBox(width: 6),
+                      ChoiceChip(
+                        label: const Text('USD', style: TextStyle(fontSize: 11)),
+                        selected: monedaSeleccionada == 'USD',
+                        onSelected: (sel) {
+                          if (sel) setModalState(() => monedaSeleccionada = 'USD');
+                        },
+                      ),
+                    ],
+                  ),
                 ],
               ),
             ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1B365D)),
+                onPressed: () {
+                  if (nombreCtrl.text.trim().isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Por favor ingrese el nombre de la obra.')),
+                    );
+                    return;
+                  }
+                  final double sup = double.tryParse(superficieCtrl.text) ?? 100.0;
+                  setState(() {
+                    _obras.add({
+                      'id': 'obra_${DateTime.now().millisecondsSinceEpoch}',
+                      'nombre': nombreCtrl.text.trim(),
+                      'propietario': propietarioCtrl.text.trim().isEmpty ? 'Sin Especificar' : propietarioCtrl.text.trim(),
+                      'ubicacion': ubicacionCtrl.text.trim().isEmpty ? 'Ubicación Faltante' : ubicacionCtrl.text.trim(),
+                      'superficieM2': sup,
+                      'tipoObra': tipoSeleccionado,
+                      'estado': 'Cotización',
+                      'moneda': monedaSeleccionada,
+                      'aplicaCac': monedaSeleccionada == 'ARS',
+                      'montoEstimadoArs': monedaSeleccionada == 'ARS' ? sup * 1000000.0 : (sup * 750.0) * _cotizacionUsdEfectiva,
+                      'montoEstimadoUsd': monedaSeleccionada == 'USD' ? sup * 750.0 : (sup * 1000000.0) / _cotizacionUsdEfectiva,
+                      'mesBaseCac': 'Agosto 2026',
+                      'revision': 'Rev. 00',
+                      'ultimaModif': 'Hoy',
+                      'tipoRol': 'Director de Obra',
+                      'estadoServicioEspecial': 'Ninguno',
+                    });
+                  });
+                  Navigator.pop(ctx);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Nueva obra registrada exitosamente.')),
+                  );
+                },
+                child: const Text('Crear Obra', style: TextStyle(color: Colors.white)),
+              ),
+            ],
           );
         },
       ),
     );
   }
 
-  Widget _buildPaso1Datos(
-    TextEditingController nombreCtrl,
-    TextEditingController propietarioCtrl,
-    TextEditingController ubicacionCtrl,
-    TextEditingController superficieCtrl,
-    String tipo,
-    String moneda,
-    Function(String) onTipoChanged,
-    Function(String) onMonedaChanged,
-  ) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: Colors.amber[50],
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.amber[700]!),
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(Icons.gavel_outlined, size: 18, color: Colors.amber[900]),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'Los datos técnicos consolidarán carátulas y legajos PDF oficiales.',
-                  style: TextStyle(fontSize: 11, color: Colors.amber[900], fontWeight: FontWeight.w600),
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 14),
-        TextField(
-          controller: nombreCtrl,
-          style: const TextStyle(fontSize: 12),
-          decoration: const InputDecoration(labelText: 'Nombre del Proyecto / Obra', border: OutlineInputBorder(), isDense: true),
-        ),
-        const SizedBox(height: 10),
-        TextField(
-          controller: propietarioCtrl,
-          style: const TextStyle(fontSize: 12),
-          decoration: const InputDecoration(labelText: 'Propietario / Comitente', border: OutlineInputBorder(), isDense: true),
-        ),
-        const SizedBox(height: 10),
-        TextField(
-          controller: ubicacionCtrl,
-          style: const TextStyle(fontSize: 12),
-          decoration: const InputDecoration(labelText: 'Ubicación / Localidad', border: OutlineInputBorder(), isDense: true),
-        ),
-        const SizedBox(height: 10),
-        Row(
-          children: [
-            Expanded(
-              child: TextField(
-                controller: superficieCtrl,
-                keyboardType: TextInputType.number,
-                style: const TextStyle(fontSize: 12),
-                decoration: const InputDecoration(labelText: 'Superficie (m²)', border: OutlineInputBorder(), isDense: true),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: DropdownButtonFormField<String>(
-                value: tipo,
-                decoration: const InputDecoration(labelText: 'Tipo Obra', border: OutlineInputBorder(), isDense: true),
-                style: const TextStyle(fontSize: 11, color: Colors.black87),
-                items: ['Residencial', 'Comercial/Residencial', 'Industrial', 'Infraestructura']
-                    .map((t) => DropdownMenuItem(value: t, child: Text(t, style: const TextStyle(fontSize: 11))))
-                    .toList(),
-                onChanged: (val) => onTipoChanged(val!),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            const Text('Moneda Base:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-            const SizedBox(width: 12),
-            ChoiceChip(
-              label: const Text('ARS (\$)', style: TextStyle(fontSize: 11)),
-              selected: moneda == 'ARS',
-              onSelected: (sel) => onMonedaChanged('ARS'),
-            ),
-            const SizedBox(width: 6),
-            ChoiceChip(
-              label: const Text('USD', style: TextStyle(fontSize: 11)),
-              selected: moneda == 'USD',
-              onSelected: (sel) => onMonedaChanged('USD'),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildPaso2Roles(String rolSeleccionado, Function(String) onRolChanged) {
-    final roles = [
-      {'titulo': 'Director de Obra', 'desc': 'Acceso total: edición de cómputos, precios y certificados.'},
-      {'titulo': 'Propietario / Cliente', 'desc': 'Acceso de lectura y auditoría de avance financiero.'},
-      {'titulo': 'Empresa / Contratista', 'desc': 'Carga de avance de obra y remisiones de costos.'},
-    ];
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text('Asignación de Gobernanza y Permisos:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF1B365D))),
-        const SizedBox(height: 6),
-        const Text('Seleccione el rol con el cual administrará esta obra:', style: TextStyle(fontSize: 11, color: Colors.black54)),
-        const SizedBox(height: 12),
-        ...roles.map((r) {
-          final isSelected = rolSeleccionado == r['titulo'];
-          return Container(
-            margin: const EdgeInsets.only(bottom: 8),
-            decoration: BoxDecoration(
-              color: isSelected ? const Color(0xFF1B365D).withOpacity(0.05) : Colors.white,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: isSelected ? const Color(0xFF1B365D) : Colors.grey[300]!, width: isSelected ? 1.5 : 1),
-            ),
-            child: RadioListTile<String>(
-              value: r['titulo']!,
-              groupValue: rolSeleccionado,
-              title: Text(r['titulo']!, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-              subtitle: Text(r['desc']!, style: const TextStyle(fontSize: 10, color: Colors.black87)),
-              onChanged: (val) => onRolChanged(val!),
-              activeColor: const Color(0xFF1B365D),
-              dense: true,
-            ),
-          );
-        }).toList(),
-      ],
-    );
-  }
-
+  // --- Diálogo: Ajuste Económico & Moneda ---
   void _configurarAjusteEconomico(Map<String, dynamic> obra) {
     String monedaSeleccionada = obra['moneda'];
-    bool aplicaCac = obra['aplicaCac'];
+    bool aplicaCac = obra['aplicaCac'] ?? false;
     final TextEditingController cotizacionCtrl = TextEditingController(
       text: _cotizacionUsdEfectiva.toStringAsFixed(0),
     );
@@ -562,38 +479,29 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                   const Divider(),
                   const Text('Moneda Base de Cotización:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
                   const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: RadioListTile<String>(
-                          title: const Text('Pesos (\$)', style: TextStyle(fontSize: 12)),
-                          value: 'ARS',
-                          groupValue: monedaSeleccionada,
-                          dense: true,
-                          contentPadding: EdgeInsets.zero,
-                          onChanged: (val) {
-                            setDialogState(() => monedaSeleccionada = val!);
-                          },
-                        ),
+                  SegmentedButton<String>(
+                    segments: const [
+                      ButtonSegment<String>(
+                        value: 'ARS',
+                        label: Text('Pesos (\$)'),
                       ),
-                      Expanded(
-                        child: RadioListTile<String>(
-                          title: const Text('Dólares (USD)', style: TextStyle(fontSize: 12)),
-                          value: 'USD',
-                          groupValue: monedaSeleccionada,
-                          dense: true,
-                          contentPadding: EdgeInsets.zero,
-                          onChanged: (val) {
-                            setDialogState(() {
-                              monedaSeleccionada = val!;
-                              aplicaCac = false;
-                            });
-                          },
-                        ),
+                      ButtonSegment<String>(
+                        value: 'USD',
+                        label: Text('Dólares (USD)'),
                       ),
                     ],
+                    selected: {monedaSeleccionada},
+                    onSelectionChanged: (Set<String> newSelection) {
+                      setDialogState(() {
+                        monedaSeleccionada = newSelection.first;
+                        if (monedaSeleccionada == 'USD') {
+                          aplicaCac = false;
+                        }
+                      });
+                    },
                   ),
                   if (monedaSeleccionada == 'ARS') ...[
+                    const SizedBox(height: 10),
                     SwitchListTile(
                       title: const Text('Ajuste por Índice CAC', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                       subtitle: Text(
@@ -601,7 +509,7 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                         style: const TextStyle(fontSize: 10, color: Colors.black54),
                       ),
                       value: aplicaCac,
-                      activeColor: const Color(0xFF1B365D),
+                      activeTrackColor: const Color(0xFF1B365D),
                       dense: true,
                       contentPadding: EdgeInsets.zero,
                       onChanged: (val) {
@@ -635,6 +543,7 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
     );
   }
 
+  // --- Modal: Suscripción Plan PRO ---
   void _mostrarModalPro() {
     showModalBottomSheet(
       context: context,
@@ -658,7 +567,7 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
               children: [
                 Container(
                   padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(color: const Color(0xFF1B365D).withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
+                  decoration: BoxDecoration(color: const Color(0xFF1B365D).withValues(alpha: 0.1), borderRadius: BorderRadius.circular(12)),
                   child: const Icon(Icons.workspace_premium, color: Color(0xFF1B365D), size: 28),
                 ),
                 const SizedBox(width: 12),
@@ -718,6 +627,7 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
     );
   }
 
+  // --- Diálogo: Servicios Técnicos Especiales ---
   void _abrirModalServiciosEspeciales(Map<String, dynamic> obra) {
     showDialog(
       context: context,
@@ -747,7 +657,11 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
               style: OutlinedButton.styleFrom(minimumSize: const Size(double.infinity, 40)),
               icon: const Icon(Icons.upload_file, size: 18),
               label: const Text('Adjuntar Planos / Anteproyecto (PDF/DWG)', style: TextStyle(fontSize: 12)),
-              onPressed: () {},
+              onPressed: () {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Selección de archivos habilitada.')),
+                );
+              },
             ),
           ],
         ),
@@ -761,7 +675,7 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
               });
               Navigator.pop(ctx);
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Solicitud enviada a revisión. Actualizaremos el estado del banner.')),
+                const SnackBar(content: Text('Solicitud enviada a revisión. Nos contactaremos a la brevedad.')),
               );
             },
             child: const Text('Solicitar Cotización', style: TextStyle(color: Colors.white)),
@@ -784,6 +698,7 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
     );
   }
 
+  // --- Diálogo: Confirmar Eliminación ---
   void _confirmarEliminar(Map<String, dynamic> obra) {
     showDialog(
       context: context,
@@ -797,16 +712,15 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
             onPressed: () {
               setState(() => _obras.removeWhere((i) => i['id'] == obra['id']));
               Navigator.pop(ctx);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Obra eliminada del registro.')),
+              );
             },
             child: const Text('Eliminar', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
     );
-  }
-
-  void _navegarAObra(Map<String, dynamic> obra) {
-    Navigator.pushNamed(context, '/presupuesto', arguments: obra);
   }
 
   @override
@@ -816,185 +730,313 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
       appBar: AppBar(
         backgroundColor: const Color(0xFF1B365D),
         elevation: 0,
-        title: const Text('MIS OBRAS', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, letterSpacing: 0.5, color: Colors.white)),
+        centerTitle: true,
+        title: const Text(
+          'MIS OBRAS',
+          style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.2, fontSize: 18, color: Colors.white),
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.map_outlined, color: Colors.white),
             tooltip: 'Ver Obras en Mapa',
             onPressed: _mostrarMapaObras,
           ),
-          IconButton(
-            icon: Icon(
-              _esPlanPro ? Icons.workspace_premium : Icons.workspace_premium_outlined,
-              color: _esPlanPro ? Colors.amber : Colors.white,
+          InkWell(
+            onTap: _mostrarModalPro,
+            child: Container(
+              margin: const EdgeInsets.only(right: 12, top: 12, bottom: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: _esPlanPro ? Colors.amber[700] : const Color(0xFF3A5A80),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.amber, width: 1),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.workspace_premium, color: _esPlanPro ? Colors.white : Colors.amber, size: 14),
+                  const SizedBox(width: 4),
+                  Text(_esPlanPro ? 'PRO' : 'FREE', style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+                ],
+              ),
             ),
-            tooltip: 'Suscripción PRO',
-            onPressed: _mostrarModalPro,
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          // Banner Informativo de Indicadores Económicos
+          Container(
+            width: double.infinity,
+            color: const Color(0xFF1B365D),
+            padding: const EdgeInsets.only(left: 16, right: 16, bottom: 12, top: 4),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.white24),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'USD Ref. BNA: \$${_cotizacionUsdEfectiva.toStringAsFixed(2)}',
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'CAC Último Mes: +$_variacionCacUltimoMes%',
+                        style: const TextStyle(color: Colors.white70, fontSize: 10),
+                      ),
+                    ],
+                  ),
+                  Row(
+                    children: [
+                      const Icon(Icons.refresh, color: Colors.white70, size: 14),
+                      const SizedBox(width: 4),
+                      Text(
+                        _fechaActualizacionDolar,
+                        style: const TextStyle(color: Colors.white70, fontSize: 10),
+                      ),
+                    ],
+                  )
+                ],
+              ),
+            ),
+          ),
+
+          // Lista de Tarjetas de Obra
+          Expanded(
+            child: _obras.isEmpty
+                ? const Center(child: Text('No hay obras registradas. Presione "+" para agregar una.'))
+                : ListView.builder(
+                    padding: const EdgeInsets.all(12),
+                    itemCount: _obras.length,
+                    itemBuilder: (context, index) {
+                      final obra = _obras[index];
+                      final bool esCotizacion = obra['estado'] == 'Cotización';
+                      final bool esArs = obra['moneda'] == 'ARS';
+                      final double monto = esArs ? obra['montoEstimadoArs'] : obra['montoEstimadoUsd'];
+                      final bool tieneCac = obra['aplicaCac'] ?? false;
+                      final String estadoServicio = obra['estadoServicioEspecial'] ?? 'Ninguno';
+
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        elevation: 2,
+                        child: InkWell(
+                          onTap: () => _abrirPresupuesto(obra),
+                          borderRadius: BorderRadius.circular(12),
+                          child: Padding(
+                            padding: const EdgeInsets.all(14),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                // Cabecera: Nombre + Estado
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        obra['nombre'],
+                                        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1B365D)),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: esCotizacion ? Colors.blue[50] : Colors.green[50],
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: Text(
+                                        obra['estado'],
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.bold,
+                                          color: esCotizacion ? Colors.blue[800] : Colors.green[800],
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 6),
+
+                                // Propietario / Ubicación
+                                Row(
+                                  children: [
+                                    const Icon(Icons.person_outline, size: 13, color: Colors.black45),
+                                    const SizedBox(width: 4),
+                                    Text(obra['propietario'], style: const TextStyle(fontSize: 11, color: Colors.black54)),
+                                    const SizedBox(width: 10),
+                                    const Icon(Icons.location_on_outlined, size: 13, color: Colors.black45),
+                                    const SizedBox(width: 4),
+                                    Expanded(
+                                      child: Text(
+                                        obra['ubicacion'],
+                                        style: const TextStyle(fontSize: 11, color: Colors.black54),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
+
+                                // Fila Central: Monto Base + Chips (m² / CAC)
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        const Text('Monto Estimado Base', style: TextStyle(fontSize: 9, color: Colors.black45, fontWeight: FontWeight.bold)),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          _formatearMonto(monto, obra['moneda']),
+                                          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Color(0xFF1B365D)),
+                                        ),
+                                      ],
+                                    ),
+                                    Row(
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                          decoration: BoxDecoration(
+                                            color: Colors.grey[100],
+                                            borderRadius: BorderRadius.circular(6),
+                                            border: Border.all(color: Colors.black12),
+                                          ),
+                                          child: Text(
+                                            '${obra['superficieM2']} m²',
+                                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.black87),
+                                          ),
+                                        ),
+                                        if (tieneCac) ...[
+                                          const SizedBox(width: 6),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFF1B365D),
+                                              borderRadius: BorderRadius.circular(6),
+                                            ),
+                                            child: const Text(
+                                              'CAC',
+                                              style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white),
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                  ],
+                                ),
+
+                                const SizedBox(height: 12),
+                                const Divider(height: 1),
+                                const SizedBox(height: 8),
+
+                                // Pie de Tarjeta: Info de Modificación + Botones de Acción
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(
+                                      'Última Modif: ${obra['ultimaModif']} • ${obra['revision']}',
+                                      style: const TextStyle(fontSize: 10, color: Colors.black38),
+                                    ),
+                                    Row(
+                                      children: [
+                                        IconButton(
+                                          constraints: const BoxConstraints(),
+                                          padding: const EdgeInsets.symmetric(horizontal: 6),
+                                          icon: const Icon(Icons.tune, size: 18, color: Color(0xFF1B365D)),
+                                          tooltip: 'Ajuste Económico / Moneda',
+                                          onPressed: () => _configurarAjusteEconomico(obra),
+                                        ),
+                                        IconButton(
+                                          constraints: const BoxConstraints(),
+                                          padding: const EdgeInsets.symmetric(horizontal: 6),
+                                          icon: const Icon(Icons.assignment_outlined, size: 18, color: Color(0xFF1B365D)),
+                                          tooltip: 'Ver Presupuesto y Cómputo',
+                                          onPressed: () => _abrirPresupuesto(obra),
+                                        ),
+                                        IconButton(
+                                          constraints: const BoxConstraints(),
+                                          padding: const EdgeInsets.symmetric(horizontal: 6),
+                                          icon: const Icon(Icons.delete_outline, size: 18, color: Colors.redAccent),
+                                          tooltip: 'Eliminar Obra',
+                                          onPressed: () => _confirmarEliminar(obra),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+
+                                const SizedBox(height: 8),
+
+                                // Banner Inferior Integrado: Solicitud de Cómputo / Legajo
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color: estadoServicio == 'En Revision' ? Colors.amber[50] : const Color(0xFFEFF3F8),
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: estadoServicio == 'En Revision' ? Border.all(color: Colors.amber[300]!) : null,
+                                  ),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Icon(
+                                            estadoServicio == 'En Revision' ? Icons.hourglass_top : Icons.engineering_outlined,
+                                            size: 14,
+                                            color: estadoServicio == 'En Revision' ? Colors.amber[900] : const Color(0xFF1B365D),
+                                          ),
+                                          const SizedBox(width: 6),
+                                          Text(
+                                            estadoServicio == 'En Revision'
+                                                ? 'Estudio Técnico en Revisión'
+                                                : '¿Necesitás Cómputo / IRAM / Legajo?',
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.w600,
+                                              color: estadoServicio == 'En Revision' ? Colors.amber[900] : const Color(0xFF1B365D),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      InkWell(
+                                        onTap: () => _abrirModalServiciosEspeciales(obra),
+                                        child: Text(
+                                          estadoServicio == 'En Revision' ? 'Ver Solicitud' : 'Solicitar',
+                                          style: const TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.bold,
+                                            color: Color(0xFF1B365D),
+                                            decoration: TextDecoration.underline,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
           ),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
+        onPressed: _mostrarModalNuevaObra,
         backgroundColor: const Color(0xFF1B365D),
         icon: const Icon(Icons.add, color: Colors.white),
-        label: const Text('NUEVA OBRA', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-        onPressed: _mostrarModalNuevaObra,
-      ),
-      body: ListView.builder(
-        padding: const EdgeInsets.all(12),
-        itemCount: _obras.length,
-        itemBuilder: (context, index) {
-          final obra = _obras[index];
-          return _buildObraCard(obra);
-        },
-      ),
-    );
-  }
-
-  /// REINGENIERÍA UX/UI: Tarjeta de Obra con Banner Dinámico Multiestado de Servicios Especiales
-  Widget _buildObraCard(Map<String, dynamic> obra) {
-    final String moneda = obra['moneda'];
-    final double monto = moneda == 'USD' ? obra['montoEstimadoUsd'] : obra['montoEstimadoArs'];
-    final String estadoServicio = obra['estadoServicioEspecial'] ?? 'Ninguno';
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      elevation: 2,
-      child: InkWell(
-        onTap: () => _navegarAObra(obra),
-        borderRadius: BorderRadius.circular(12),
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(12.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Expanded(
-                        child: Text(
-                          obra['nombre'],
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF1B365D)),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF1B365D).withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          obra['rolUsuario'] ?? 'Director',
-                          style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF1B365D)),
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.delete_outline, size: 18, color: Colors.redAccent),
-                        onPressed: () => _confirmarEliminar(obra),
-                      )
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      const Icon(Icons.person_outline, size: 14, color: Colors.grey),
-                      const SizedBox(width: 4),
-                      Text(obra['propietario'], style: const TextStyle(fontSize: 11, color: Colors.black87)),
-                      const SizedBox(width: 12),
-                      const Icon(Icons.place_outlined, size: 14, color: Colors.grey),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: Text(
-                          obra['ubicacion'],
-                          style: const TextStyle(fontSize: 11, color: Colors.black87),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const Divider(height: 16),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Superficie: ${obra['superficieM2']} m²', style: const TextStyle(fontSize: 11, color: Colors.black54)),
-                          Text('Tipo: ${obra['tipoObra']}', style: const TextStyle(fontSize: 11, color: Colors.black54)),
-                        ],
-                      ),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          Text(
-                            _formatearMonto(monto, moneda),
-                            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF2E7D32)),
-                          ),
-                          Row(
-                            children: [
-                              Text('Moneda: $moneda', style: const TextStyle(fontSize: 10, color: Colors.black54)),
-                              IconButton(
-                                icon: const Icon(Icons.settings_outlined, size: 14, color: Color(0xFF1B365D)),
-                                constraints: const BoxConstraints(),
-                                padding: const EdgeInsets.only(left: 4),
-                                onPressed: () => _configurarAjusteEconomico(obra),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            // Banner Contextual Multiestado para Servicios Especiales (CTA Directo)
-            Container(
-              width: double.infinity,
-              decoration: BoxDecoration(
-                color: estadoServicio == 'En Revision' ? Colors.amber[50] : const Color(0xFF1B365D).withOpacity(0.05),
-                borderRadius: const BorderRadius.vertical(bottom: Radius.circular(12)),
-                border: Border(top: BorderSide(color: Colors.grey[200]!)),
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Row(
-                    children: [
-                      Icon(
-                        estadoServicio == 'En Revision' ? Icons.hourglass_top : Icons.engineering_outlined,
-                        size: 16,
-                        color: estadoServicio == 'En Revision' ? Colors.amber[900] : const Color(0xFF1B365D),
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        estadoServicio == 'En Revision'
-                            ? 'Estudio Técnico en Revisión (PDF/DWG enviado)'
-                            : '¿Necesitás Cómputo / IRAM / Legajo?',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: estadoServicio == 'En Revision' ? Colors.amber[900] : const Color(0xFF1B365D),
-                        ),
-                      ),
-                    ],
-                  ),
-                  InkWell(
-                    onTap: () => _abrirModalServiciosEspeciales(obra),
-                    child: Text(
-                      estadoServicio == 'En Revision' ? 'Ver Solicitud' : 'Solicitar',
-                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF1B365D), decoration: TextDecoration.underline),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
+        label: const Text('NUEVA OBRA', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 0.8, color: Colors.white)),
       ),
     );
   }
