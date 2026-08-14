@@ -18,9 +18,9 @@ Responder siempre en español al trabajar en este repositorio, sin importar el i
 
 Flutter app (`mi_primera_app` in `pubspec.yaml`) for managing construction projects ("obras") and their budgets ("presupuestos") in the Argentine construction market. UI, domain terms, and comments are in Spanish (rioplatense/Argentine): APU = Análisis de Precios Unitarios (unit price analysis), CAC = índice de la Cámara Argentina de la Construcción (cost adjustment index), IRAM = Argentine technical standards body, UOCRA = construction workers' union (referenced for cargas sociales / payroll charges).
 
-## Especificación funcional y de negocio (resumen de `docs/especificacion_funcional.md` y `_2.md`)
+## Especificación funcional y de negocio (resumen de `docs/especificacion_funcional.md`, `_2.md` y `_3.md`)
 
-Ambos archivos son transcripciones de conversaciones de diseño con el usuario (no specs formales; el segundo repite gran parte del primero y cierra con una versión más concreta y superadora de las decisiones). Esto es la referencia funcional/de producto permanente del proyecto — el código actual todavía no implementa la mayoría de estos puntos, son el objetivo a futuro.
+Los tres archivos son transcripciones de conversaciones de diseño con el usuario (no specs formales; se repiten bastante entre sí — cada uno cierra con una versión más concreta y superadora de las decisiones anteriores). Esto es la referencia funcional/de producto permanente del proyecto — el código actual todavía no implementa la mayoría de estos puntos, son el objetivo a futuro.
 
 ### Posicionamiento y modelo de negocio
 
@@ -73,6 +73,89 @@ Advertencia explícita del propio análisis: no codificar la interfaz de subasta
 - **T&C / EULA de aceptación obligatoria** (checkbox opt-in en registro): exime a ComputoPRO de responsabilidad por firmas o planos no validados explícitamente por un profesional matriculado, y prohíbe expresamente contenido ilícito (documentación falsificada, planos adulterados, mensajes agraviantes).
 - **Moderación de contenido**: filtro automático de texto/metadatos en campos editables por el usuario, más un mecanismo de baneo rápido a nivel de base de datos (`isBlocked = true`).
 - **Audit Log inalterable**: registrar `user_id`, `timestamp`, IP y acción realizada en toda operación relevante, para poder demostrar qué usuario introdujo un contenido problemático y deslindar de responsabilidad civil/penal a la plataforma.
+
+### QR de vinculación multiplataforma (Móvil ↔ PC/Tablet): arquitectura técnica
+
+Complementa la "Decisión tomada" de más arriba (el QR no va en el Dashboard) con el diseño técnico de cómo debería funcionar una vez implementado. **Caso de uso principal aclarado por el usuario**: está pensado para el usuario al que le incomoda trabajar desde el teléfono — le permite hacer la carga/edición desde una PC o tablet, y que esos cambios se reflejen automáticamente en el celular (no al revés únicamente; es una sincronización real, no solo un espejo de solo lectura).
+- **Generación**: QR de sesión única cifrada (token temporal de autenticación).
+- **Canal**: al escanear, se valida la credencial y se abre un canal de comunicación en tiempo real (WebSocket o Firebase Realtime Database, según la transcripción original) entre el móvil y la PC/tablet — **a re-evaluar**: el backend ya decidido es Supabase (ver más abajo), que también ofrece canales realtime propios; no asumir Firebase sin confirmarlo con el usuario.
+- **Sincronización bidireccional permanente**: cualquier cambio hecho en un dispositivo (tildar un rubro, ajustar un cómputo, actualizar avance) se refleja instantáneamente en el resto de las sesiones vinculadas.
+- **Offline-first**: en el móvil, las mutaciones se guardan localmente (SQLite/Hive) y se sincronizan solas al recuperar conectividad — pensado para obras con mala señal en el terreno.
+
+**Riesgos técnicos identificados (evaluación honesta del propio análisis, sin resolver aún)**:
+- Resolver conflictos con **Last-Write-Wins (LWW) puro es riesgoso** para cómputos métricos concurrentes (ej.: capataz y calculista editando el mismo rubro casi al mismo tiempo pueden pisarse el dato sin aviso). Recomendado: reemplazar por un registro de conflictos por campo o un historial visual de cambios en vez de sobrescribir en silencio.
+- **Riesgo de rendimiento en Flutter** al desplegar +50 rubros con subítems: exige renderizado perezoso estricto (`ListView.builder`/`SliverList`) y gestión de estado granular (Provider/Riverpod/Bloc) — hoy el proyecto no usa ninguna librería de estado (ver "Data flow" más abajo), así que esto es un cambio de arquitectura pendiente, no solo de UI.
+- **Requisito explícito de hardware objetivo**: la app tiene que correr bien en celulares y sistemas operativos de **5+ años de antigüedad** (gama baja), no solo en equipos modernos — condiciona cualquier decisión de rendimiento (evitar rebuilds innecesarios, listas virtualizadas, no cargar los +50 rubros completos en memoria de una vez, cuidado con animaciones/efectos pesados).
+- El catálogo base de rubros debería distribuirse **pre-cargado con la app** (JSON/SQLite estático empaquetado), no vía llamadas de red, para no depender de conectividad para mostrar el catálogo.
+
+### Solapa 1 (Cómputo y Presupuesto): catálogo de +50 rubros y estrategia de UX
+
+- **6 Macrorrubros** de origen: 1) Trabajos Preliminares y Tierra, 2) Estructura y Albañilería Húmeda, 3) Construcción en Seco y Sistemas Mixtos (Steel Frame / Wood Frame / placas tipo Durlock / estructuras metálicas), 4) Instalaciones y Redes, 5) Terminaciones y Revestimientos, 6) Obras Exteriores y Complementarias.
+- **Bibliografía/fuentes de referencia obligatorias** para cargar rubros, subítems, APU y análisis de precios (regla del usuario, no opcional): el libro *"Cómputos y Presupuestos"* de **Chandías**, libros y planillas de cómputos y presupuestos recomendados por universidades argentinas de **ingeniería civil/en construcciones** y de **arquitectura**, la **Revista Vivienda** (Argentina) y material de la **Cámara Argentina de la Construcción (CAC)**. Cualquier carga o ampliación del catálogo de rubros/APU debe poder trazarse a estas fuentes, no inventarse ad hoc.
+- **Estrategia de UX acordada** para no saturar la pantalla con +50 rubros expandibles: combinar agrupación jerárquica por macrorrubro + chips de filtro rápido en la parte superior + buscador con carga progresiva (lazy loading vía `ListView.builder`). Complementario y opcional: un wizard de 3 preguntas al crear la obra (sistema constructivo principal / si incluye demolición / qué instalaciones aplican) que pre-filtra los rubros relevantes, dejando "mostrar catálogo completo" como opción manual.
+- **Free vs. Pro a nivel de rubro**: Free solo tilda/destilda rubros y subítems del catálogo fijo; Pro puede crear, editar y eliminar rubros/subítems personalizados.
+- **Campos por subítem**: checkbox de activación, descripción, unidad de medida, cantidad/cómputo métrico (input directo o calculadora Largo×Ancho×Alto), precio unitario (output, viene de la Solapa 2/3 vía APU) y subtotal + % de incidencia (outputs).
+- **Vínculos bidireccionales**: recibe el precio unitario desde la Solapa 3 (que a su vez deriva del APU de la Solapa 2 + coeficientes); envía las cantidades tildadas a la Solapa 4 (Gestión de Obra, para cronograma y certificación de avance) y a la Solapa 6 (Resumen Final).
+
+### Mapa objetivo de las 6 solapas (difiere del orden/alcance actual en código)
+
+La versión funcional acordada reordena y amplía el alcance de las solapas respecto a lo que hoy tiene `PresupuestosScreen` (hoy: `1. Cómputo y Pres.` / `2. APU` / `3. Materiales y MO` / `4. Proveedores` / `5. Certificación` / `6. Resumen Final`):
+
+1. **Cómputo y Presupuesto** — entrada de datos base (sin cambios de posición).
+2. **Análisis de Precios Unitarios (APU) & Insumos** — la "receta teórica": rendimientos de materiales, mano de obra y equipos.
+3. **Materiales y Mano de Obra** — precios reales de mercado mes a mes + coeficiente K + incrementos (gastos generales, beneficio, IVA). Es el "motor de actualización de precios", separado a propósito de la receta del APU para poder actualizar toda la obra cambiando una sola lista mensual sin tocar las recetas.
+4. **Gestión de Obra** — planificación, cronograma, curva de inversión, avance físico/financiero, acopios, redeterminaciones y adicionales, **incluyendo certificación** (más amplio que la actual solapa 5 "Certificación" del código). **El usuario confirmó explícitamente que esta es una de las solapas más importantes y que el renombre "Certificación" → "Gestión de Obra" es una decisión tomada**, a aplicar en el código a futuro (ver detalle de permisos y vínculos más abajo).
+5. **Proveedores** — cotizaciones, órdenes de compra, acopios en corralones, control de entregas (pasa de posición 4 a 5).
+6. **Resumen** — reportes, exportación PDF/Excel y portal cliente/QR (sin cambios de posición).
+
+Dato relevante para el código: ya existe `lib/presentation/obra_detalle/tabs/gestion_obra_tab.dart` (nombre alineado a este mapa objetivo) junto con `analisis_precios_tab.dart`, `mano_obra_tab.dart`, `proveedores_tab.dart` y `resumen_tab.dart`, pero **`PresupuestosScreen` no usa ninguno de esos archivos** — construye el contenido de las solapas 2 a 6 con métodos `_build*` privados inline y mantiene el orden/alcance viejo. Es la misma clase de brecha de integración ya señalada en "Data flow: two coexisting patterns".
+
+### Gestión de Obra: permisos y vinculaciones documentados hasta ahora (a confirmar con el usuario)
+
+El usuario pidió verificar si la lógica de vinculaciones y permisos que tenía pensada para esta solapa ya está capturada en los resúmenes anteriores. Esto es lo que hay documentado en este archivo hasta el momento — falta confirmación explícita de que sea completo:
+- **Contenido de la solapa**: planificación, cronograma, curva de inversión, avance físico/financiero, acopios, redeterminaciones, gestión de adicionales y certificación de obra.
+- **Vinculación de datos**: recibe de la Solapa 1 el catálogo de subítems tildados con sus cantidades (para armar cronograma y base de certificación de avance); alimenta al Audit Log cada aprobación de certificado/adicional; sus certificados aprobados alimentan el resumen ejecutivo que ve el Cliente y, eventualmente, la Solapa 6 (Resumen Final).
+- **Permisos por rol** (de la matriz consolidada más abajo, aplicados a esta solapa específicamente):
+  - Admin Maestro / Profesional: edición total — cronograma, carga de avance, aprobación de certificados y adicionales sin restricción.
+  - Constructor/Capataz: carga diaria de avance físico y consumo de materiales; sin acceso a montos; puede *solicitar* la aprobación de un certificado pero no aprobarlo él mismo.
+  - Cliente/Propietario Principal: lectura de avance y certificados; tiene la aprobación final de certificados y adicionales.
+  - Invitado Veedor: solo lectura pasiva del % de avance y galería de fotos/bitácora.
+  - Invitado Apoderado: puede aprobar certificados y adicionales *dentro del alcance y tope de monto* que le delegó el Cliente (permanente o temporal), con registro obligatorio en el Audit Log.
+
+**Pendiente**: si esto no coincide con la lógica completa que el usuario tenía en mente (por ejemplo, reglas más finas de quién puede modificar un cronograma ya aprobado, cómo se gestionan específicamente los adicionales de obra, o el flujo de acopios/redeterminaciones paso a paso), hay que subir ese texto aparte para ampliar esta sección — no inventar esos detalles sin esa confirmación.
+
+### Solapa Proveedores: base de datos obligatoria en Supabase y monetización por membresías
+
+- A diferencia del resto de las solapas, donde Supabase es la decisión de backend general "a futuro" (ver más abajo), el usuario definió que **Proveedores requiere sí o sí su propia base de datos en Supabase**, no queda como pendiente genérico junto con las demás.
+- **Nueva línea de monetización**: se prevén **membresías pagas para proveedores** (corralones, distribuidoras, hormigoneras, etc.) que quieran figurar/cotizar dentro de esta solapa, administradas mediante un bot (alta, cobro y gestión — mecánica exacta todavía sin definir). Esto concreta el ítem ya anotado en "Posicionamiento y modelo de negocio" sobre integrar proveedores como canal B2B: acá el mecanismo elegido es membresía + bot, no publicidad ni comisión por transacción.
+- Nota de código: `proveedores_tab.dart` ya existe en `lib/presentation/obra_detalle/tabs/` pero no está conectado a `PresupuestosScreen` (ver "Mapa objetivo de las 6 solapas" y "Data flow: two coexisting patterns").
+
+### Backend planificado: Supabase
+
+El usuario ya tiene creada una cuenta de **Supabase**, destinada a alojar las bases de datos que se necesiten para las distintas solapas (catálogo de rubros/APU/insumos, usuarios y roles por obra, documentación de servicios especiales, etc.) cuando se implemente la persistencia real. **Todavía no está integrado en el código**: `pubspec.yaml` no tiene el paquete `supabase_flutter` (ni ningún cliente de Supabase) y `services/apu_database_service.dart` sigue siendo un stub en memoria. Al planificar la capa de persistencia, Supabase es la opción de backend ya decidida — no proponer otro proveedor (Firebase, backend propio, etc.) sin que el usuario lo pida explícitamente.
+
+### Rol Invitado/Observador (Veedor) y sub-rol Apoderado: mecánica completa
+
+Amplía la fila "Invitado" de la sección de roles de más arriba:
+- **Invitado Veedor (por defecto)**: lectura pasiva de avance físico por macrorrubro, galería de fotos/bitácora, certificados aprobados (resumen ejecutivo) y estado/ubicación de la obra. Sin edición, sin aprobación, sin ver APU/costos/coeficiente K, no puede invitar a terceros. Se invita desde el Dashboard: "Agregar Integrante / Generar QR" → elegir categoría (Cliente / Profesional / Constructor / Invitado) → QR de lectura directa o enlace único (WhatsApp/Email).
+- **Invitado Apoderado (delegación explícita del Cliente/Propietario Principal)**: el Cliente Principal configura, desde su panel en el Dashboard, una delegación de firma hacia un invitado puntual — **permanente o temporal** (rango de fechas), con alcance configurable: aprobar certificados de avance, aprobar adicionales hasta un **monto límite**, y opcionalmente modificar cómputos métricos. Pensado como contingencia para cuando el titular no tiene señal o está de viaje: la interfaz del invitado pasa dinámicamente de solo-lectura a mostrar los botones de aprobación. Toda aprobación delegada queda en el Audit Log con formato tipo: *"Certificado N° 3 aprobado el 22/10/2026 por María Gómez (Apoderada autorizada por el Propietario Juan Pérez el 14/10/2026)"*.
+
+**Matriz de permisos consolidada** (columnas: Cómputo y APU / Avance físico y fotos / Modificación de precios / Aprobación de certificados / Nivel de visibilidad):
+- Admin Maestro y Profesional → edición total en todo → Caja Blanca (100%).
+- Constructor/Capataz → lectura de cómputo, carga diaria de avance, sin acceso a precios, solo puede *solicitar* aprobación → Vista Operativa (sin montos).
+- Cliente/Propietario Principal → lectura de cómputo, lectura de avance, sin acceso a APU, aprobación final de certificados → Caja Negra Comercial.
+- Invitado/Observador → sin acceso a cómputo/APU, solo lectura pasiva de avance, sin precios ni aprobaciones → Caja Negra Básica (Lectura), salvo que tenga una delegación de Apoderado activa.
+
+### Selector de roles al crear/configurar la obra (Dashboard)
+
+Complementa el Paso B (Matriz de Permisos y Roles) del wizard de alta de obra descripto arriba: quien crea la obra —puede ser el Cliente, el Profesional o el Constructor indistintamente, la app no fuerza un único punto de entrada— define mediante checkboxes/switches qué roles están activos y quién asume cada uno ("Mi perfil" o "Invitar por Email/QR" para Propietario, Profesional y Constructor). El motor de permisos ajusta automáticamente la visibilidad según la combinación resultante. Casos de uso previstos:
+- **Rol único** (autoconstructor o profesional que hace todo): tilda los 3 roles en su propio usuario → acceso 100% sin restricciones.
+- **Profesional invita a un Cliente**: el profesional, como Admin, puede tildar "ocultar APU" y/o "ocultar Coeficiente K / beneficios" antes de generar el QR/enlace de invitación — el cliente entra en modo Caja Negra.
+- **Cliente inicia solo y luego contrata a un Profesional**: el cliente crea la obra en modo Free/Pro haciendo un cómputo de tanteo con solo el rol Propietario tildado; al contratar, tilda "Asignar Profesional", genera el QR/enlace y le transfiere la Dirección Técnica — el profesional recibe lo ya cargado por el cliente y desbloquea la edición fina de APU/coeficientes sobre esa base.
+
+### Metodología de trabajo para las 6 solapas
+
+Antes de escribir código de cualquier solapa nueva, el usuario prefiere cerrar primero toda la arquitectura de información: propósito, inputs/outputs, vínculos entre solapas y vista por rol (Profesional/Constructor/Cliente) de las 6 solapas + Dashboard, consolidarlo en un documento único, y recién después pasar a la implementación (consistente con la sección "Reglas de edición" de arriba). Orden de trabajo acordado: Dashboard + Solapa 1 → Solapa 2 (APU) → Solapa 3 (Materiales y MO) → Solapa 4 (Gestión de Obra) → Solapa 5 (Proveedores) → Solapa 6 (Resumen).
 
 ## Commands
 
