@@ -221,6 +221,7 @@ La spec histórica describe una Clean Architecture "ya implementada" con capa `d
 Complementa el roadmap del marketplace de terceros de más arriba:
 - **Geolocalización personalizada** por obra y por usuario (insumo directo del motor de proveedores/corralones descripto arriba).
 - **Registro de obra con segmentación de perfil**: guardar el perfil de quien crea la obra (Profesional/Constructor/Cliente) no solo para permisos, sino para que el propio usuario reciba métricas/alertas de uso de la plataforma — pensado originalmente vía bot de Telegram o notificación interna.
+- **Motor de precio de referencia por m² por zona**: al elegir/tocar una zona geográfica (radio ~50km), mostrar en el Dashboard un valor de referencia de $/m² en ARS y USD, separado en 3 categorías de obra (A, B, C según tipo de materiales/construcción). El valor debe ser el promedio REAL de las obras ya cargadas por usuarios en esa zona y categoría (derivado de `monto_total` ÷ superficie de cada obra), no un valor fijo estimado — el propósito es mostrar algo como "Valor promedio obra hoy en zona Bariloche: $X/m²". Requiere: (1) agregar `categoria` (A/B/C) a la tabla `obras` en Supabase, (2) una función SQL de promedio por cercanía geográfica + categoría, similar en patrón a `calcular_precio_promedio_insumo()` ya documentada para corralones (ver "Solapa Proveedores" más arriba). Potencial de negocio alto: dato consultado tanto por profesionales como por propietarios. Evaluar prioridad más adelante, no implementar ahora.
 
 ## Commands
 

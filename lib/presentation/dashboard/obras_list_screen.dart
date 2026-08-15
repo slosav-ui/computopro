@@ -251,10 +251,14 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                       Expanded(
                         child: DropdownButtonFormField<String>(
                           initialValue: tipoSeleccionado,
+                          isExpanded: true,
                           decoration: const InputDecoration(labelText: 'Tipo', border: OutlineInputBorder(), isDense: true),
                           style: const TextStyle(fontSize: 11, color: Colors.black87),
                           items: ['Residencial', 'Comercial/Residencial', 'Industrial', 'Infraestructura']
-                              .map((t) => DropdownMenuItem(value: t, child: Text(t, style: const TextStyle(fontSize: 11))))
+                              .map((t) => DropdownMenuItem(
+                                    value: t,
+                                    child: Text(t, style: const TextStyle(fontSize: 11), overflow: TextOverflow.ellipsis),
+                                  ))
                               .toList(),
                           onChanged: (val) {
                             if (val != null) setModalState(() => tipoSeleccionado = val);
@@ -282,6 +286,23 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                         onSelected: (sel) {
                           if (sel) setModalState(() => monedaSeleccionada = 'USD');
                         },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      const Icon(Icons.person_pin_circle_outlined, size: 14, color: Colors.black45),
+                      const SizedBox(width: 6),
+                      const Text('Creador: Vos', style: TextStyle(fontSize: 11, color: Colors.black54)),
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(color: Colors.grey[200], borderRadius: BorderRadius.circular(4)),
+                        child: const Text(
+                          'Administrador por defecto',
+                          style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.black54),
+                        ),
                       ),
                     ],
                   ),
@@ -629,71 +650,133 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
 
   // --- Diálogo: Servicios Técnicos Especiales ---
   void _abrirModalServiciosEspeciales(Map<String, dynamic> obra) {
+    final List<String> opciones = [
+      'Cómputo Métrico y Listado de Materiales',
+      'Presupuesto Operativo y Cálculo Polinómico / CAC',
+      'Acondicionamiento Térmico (Normas IRAM)',
+      'Legajo de Detalles Constructivos',
+    ];
+    final List<bool> seleccionados = List<bool>.filled(opciones.length, false);
+    bool archivoAdjuntado = false;
+    String? nombreArchivo;
+    final notasCtrl = TextEditingController();
+
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        title: const Row(
-          children: [
-            Icon(Icons.assignment_outlined, color: Color(0xFF1B365D)),
-            SizedBox(width: 8),
-            Text('Servicios Especiales', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Obra: ${obra['nombre']}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-            const SizedBox(height: 12),
-            const Text('Solicitar presupuesto para elaboración técnica de:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.black87)),
-            const SizedBox(height: 8),
-            _buildCheckOption('Cómputo Métrico y Listado de Materiales'),
-            _buildCheckOption('Presupuesto Operativo y Cálculo Polinómico / CAC'),
-            _buildCheckOption('Acondicionamiento Térmico (Normas IRAM)'),
-            _buildCheckOption('Legajo de Detalles Constructivos'),
-            const SizedBox(height: 12),
-            OutlinedButton.icon(
-              style: OutlinedButton.styleFrom(minimumSize: const Size(double.infinity, 40)),
-              icon: const Icon(Icons.upload_file, size: 18),
-              label: const Text('Adjuntar Planos / Anteproyecto (PDF/DWG)', style: TextStyle(fontSize: 12)),
-              onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Selección de archivos habilitada.')),
-                );
-              },
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setModalState) {
+          final bool haySeleccion = seleccionados.contains(true);
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            title: const Row(
+              children: [
+                Icon(Icons.assignment_outlined, color: Color(0xFF1B365D)),
+                SizedBox(width: 8),
+                Text('Servicios Especiales', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              ],
             ),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1B365D)),
-            onPressed: () {
-              setState(() {
-                obra['estadoServicioEspecial'] = 'En Revision';
-              });
-              Navigator.pop(ctx);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Solicitud enviada a revisión. Nos contactaremos a la brevedad.')),
-              );
-            },
-            child: const Text('Solicitar Cotización', style: TextStyle(color: Colors.white)),
-          ),
-        ],
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Obra: ${obra['nombre']}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                  const SizedBox(height: 12),
+                  const Text('Solicitar presupuesto para elaboración técnica de:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.black87)),
+                  const SizedBox(height: 4),
+                  for (int i = 0; i < opciones.length; i++)
+                    _buildCheckOption(
+                      opciones[i],
+                      seleccionados[i],
+                      (val) => setModalState(() => seleccionados[i] = val ?? false),
+                    ),
+                  if (!haySeleccion)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2, bottom: 4),
+                      child: Text(
+                        'Tildá al menos un servicio para solicitar la cotización.',
+                        style: TextStyle(fontSize: 10, color: Colors.red[700], fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(minimumSize: const Size(double.infinity, 40)),
+                    icon: Icon(
+                      archivoAdjuntado ? Icons.check_circle : Icons.upload_file,
+                      size: 18,
+                      color: archivoAdjuntado ? Colors.green[700] : null,
+                    ),
+                    label: Text(
+                      archivoAdjuntado ? (nombreArchivo ?? 'Archivo adjuntado') : 'Adjuntar Planos / Anteproyecto (PDF/DWG)',
+                      style: const TextStyle(fontSize: 12),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    onPressed: () {
+                      setModalState(() {
+                        archivoAdjuntado = true;
+                        nombreArchivo = 'planta_general.pdf';
+                      });
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Archivo adjuntado correctamente.')),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: notasCtrl,
+                    maxLines: 3,
+                    style: const TextStyle(fontSize: 12),
+                    decoration: const InputDecoration(
+                      labelText: 'Notas / Comentario adicional (opcional)',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1B365D)),
+                onPressed: !haySeleccion
+                    ? null
+                    : () {
+                        setState(() {
+                          obra['estadoServicioEspecial'] = 'En Revision';
+                        });
+                        Navigator.pop(ctx);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Solicitud enviada a revisión. Nos contactaremos a la brevedad.')),
+                        );
+                      },
+                child: const Text('Solicitar Cotización', style: TextStyle(color: Colors.white)),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
 
-  Widget _buildCheckOption(String label) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
-      child: Row(
-        children: [
-          const Icon(Icons.check_box_outline_blank, size: 16, color: Colors.grey),
-          const SizedBox(width: 8),
-          Expanded(child: Text(label, style: const TextStyle(fontSize: 11))),
-        ],
+  Widget _buildCheckOption(String label, bool value, ValueChanged<bool?> onChanged) {
+    return InkWell(
+      onTap: () => onChanged(!value),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: Row(
+          children: [
+            Checkbox(
+              value: value,
+              onChanged: onChanged,
+              activeColor: const Color(0xFF1B365D),
+              visualDensity: VisualDensity.compact,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            const SizedBox(width: 4),
+            Expanded(child: Text(label, style: const TextStyle(fontSize: 11))),
+          ],
+        ),
       ),
     );
   }
@@ -719,6 +802,126 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
             child: const Text('Eliminar', style: TextStyle(color: Colors.white)),
           ),
         ],
+      ),
+    );
+  }
+
+  // --- Menú: Imprimir / Exportar ---
+  void _abrirMenuExportar(Map<String, dynamic> obra) {
+    final bool tieneCertificado = obra['estado'] != 'Cotización';
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 16, 16, 4),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Imprimir / Exportar', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF1B365D))),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.request_quote_outlined, color: Color(0xFF1B365D)),
+              title: const Text('Presupuesto', style: TextStyle(fontSize: 13)),
+              onTap: () {
+                Navigator.pop(ctx);
+                _confirmarExportacion(obra, 'Presupuesto');
+              },
+            ),
+            if (tieneCertificado)
+              ListTile(
+                leading: const Icon(Icons.verified_outlined, color: Color(0xFF1B365D)),
+                title: const Text('Certificado', style: TextStyle(fontSize: 13)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _confirmarExportacion(obra, 'Certificado');
+                },
+              ),
+            ListTile(
+              leading: const Icon(Icons.summarize_outlined, color: Color(0xFF1B365D)),
+              title: const Text('Resumen general', style: TextStyle(fontSize: 13)),
+              onTap: () {
+                Navigator.pop(ctx);
+                _confirmarExportacion(obra, 'Resumen general');
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // --- Diálogo: Confirmar Exportación (marca de agua Free/Pro) ---
+  void _confirmarExportacion(Map<String, dynamic> obra, String tipoDocumento) {
+    bool marcaAguaActiva = true;
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            title: Row(
+              children: [
+                const Icon(Icons.picture_as_pdf_outlined, color: Color(0xFF1B365D)),
+                const SizedBox(width: 8),
+                Expanded(child: Text('Exportar $tipoDocumento', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold))),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Obra: ${obra['nombre']}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                const SizedBox(height: 12),
+                if (_esPlanPro)
+                  SwitchListTile(
+                    title: const Text('Incluir marca de agua', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                    subtitle: const Text('Versión PRO: marca discreta y chica, opcional.', style: TextStyle(fontSize: 10, color: Colors.black54)),
+                    value: marcaAguaActiva,
+                    activeTrackColor: const Color(0xFF1B365D),
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    onChanged: (val) => setDialogState(() => marcaAguaActiva = val),
+                  )
+                else
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(color: Colors.amber[50], borderRadius: BorderRadius.circular(6)),
+                    child: const Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.lock_outline, size: 16, color: Colors.amber),
+                        SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'Versión FREE: la exportación incluye marca de agua visible "ComputoPRO". La versión PRO permite una marca discreta o desactivarla.',
+                            style: TextStyle(fontSize: 10, color: Colors.black87),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1B365D)),
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Generando $tipoDocumento...')),
+                  );
+                },
+                child: const Text('Exportar', style: TextStyle(color: Colors.white)),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -958,9 +1161,9 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                                         IconButton(
                                           constraints: const BoxConstraints(),
                                           padding: const EdgeInsets.symmetric(horizontal: 6),
-                                          icon: const Icon(Icons.assignment_outlined, size: 18, color: Color(0xFF1B365D)),
-                                          tooltip: 'Ver Presupuesto y Cómputo',
-                                          onPressed: () => _abrirPresupuesto(obra),
+                                          icon: const Icon(Icons.ios_share, size: 18, color: Color(0xFF1B365D)),
+                                          tooltip: 'Imprimir / Exportar',
+                                          onPressed: () => _abrirMenuExportar(obra),
                                         ),
                                         IconButton(
                                           constraints: const BoxConstraints(),
