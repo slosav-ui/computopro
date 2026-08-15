@@ -161,6 +161,8 @@ El usuario ya tiene creada una cuenta de **Supabase**, destinada a alojar las ba
 
 Detalle ya definido en la spec histórica: **PostgreSQL, plan gratuito, región `sa-east-1` (São Paulo)** — elegido explícitamente sobre Firebase por permitir consultas relacionales más ordenadas para este dominio (rubros↔APU↔insumos↔obras↔usuarios son datos altamente relacionales, no documentales).
 
+**Pendiente a resolver**: el proyecto de Supabase ya tiene un esquema previo de 6 tablas (`corralones`, `proveedores`, `documentos_proveedor`, `insumos`, `insumos_proveedor`, `precios`, creadas con Gemini para el backend de proveedores/materiales, `id uuid` con `gen_random_uuid()`), al que se sumó una tabla `obras` diseñada con ese mismo estilo (`id uuid`). Esto **no coincide** con `ObraModel.id`, que en el código Dart actual es `int` (a diferencia de `Rubro`, `Subitem` e `Insumo`, que ya usan `String id`). Antes de conectar `ObraModel` a la tabla `obras` real, hay que resolver este mismatch — lo más consistente es migrar `ObraModel.id` de `int` a `String` (uuid), no forzar la tabla de Supabase a un id numérico.
+
 ### Rol Invitado/Observador (Veedor) y sub-rol Apoderado: mecánica completa
 
 Amplía la fila "Invitado" de la sección de roles de más arriba:
@@ -224,11 +226,13 @@ Complementa el roadmap del marketplace de terceros de más arriba:
 
 ```
 flutter pub get              # install dependencies
-flutter run                  # run on connected device/emulator (Windows desktop, Android, etc.)
+flutter run --dart-define-from-file=env.json   # run with Supabase credentials (see below)
 flutter analyze              # static analysis (uses analysis_options.yaml -> flutter_lints)
 flutter test                 # run all tests
 flutter test test/widget_test.dart   # run a single test file
 ```
+
+**Supabase credentials**: `lib/main.dart` calls `Supabase.initialize()` reading `SUPABASE_URL`/`SUPABASE_ANON_KEY` via `String.fromEnvironment` — a plain `flutter run` (no `--dart-define-from-file`) will initialize with empty values and fail. Copy `env.example.json` to `env.json` (gitignored, never commit it) at the repo root, fill in the real values from the Supabase dashboard (Project Settings → API), and always run/build with `--dart-define-from-file=env.json`.
 
 There is currently only one test (`test/widget_test.dart`), a smoke test that pumps `MiAppApu` and checks a `MaterialApp` is found. No test infrastructure (mocks, golden tests) exists yet.
 

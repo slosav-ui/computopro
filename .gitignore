@@ -44,3 +44,6 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 .aider*
+
+# Credenciales de Supabase (URL/anon key) — usar env.example.json como plantilla
+env.json
