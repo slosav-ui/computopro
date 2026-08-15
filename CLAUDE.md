@@ -18,13 +18,28 @@ Responder siempre en español al trabajar en este repositorio, sin importar el i
 
 Flutter app (`mi_primera_app` in `pubspec.yaml`) for managing construction projects ("obras") and their budgets ("presupuestos") in the Argentine construction market. UI, domain terms, and comments are in Spanish (rioplatense/Argentine): APU = Análisis de Precios Unitarios (unit price analysis), CAC = índice de la Cámara Argentina de la Construcción (cost adjustment index), IRAM = Argentine technical standards body, UOCRA = construction workers' union (referenced for cargas sociales / payroll charges).
 
-## Especificación funcional y de negocio (resumen de `docs/especificacion_funcional.md`, `_2.md` y `_3.md`)
+## Especificación funcional y de negocio (resumen de `docs/especificacion_funcional*.md`)
 
-Los tres archivos son transcripciones de conversaciones de diseño con el usuario (no specs formales; se repiten bastante entre sí — cada uno cierra con una versión más concreta y superadora de las decisiones anteriores). Esto es la referencia funcional/de producto permanente del proyecto — el código actual todavía no implementa la mayoría de estos puntos, son el objetivo a futuro.
+Fuentes: `especificacion_funcional.md`, `_2.md` y `_3.md` (transcripciones de conversaciones de diseño con el usuario, se repiten bastante entre sí) más `especificacion_funcional_completa.md` y `_parte2_fundacional.md` (spec histórica extraída de meses de trabajo previo con Gemini, anterior a la migración a Claude Code — no specs formales tampoco). Esto es la referencia funcional/de producto permanente del proyecto — el código actual todavía no implementa la mayoría de estos puntos, son el objetivo a futuro.
+
+### Origen del proyecto: por qué existen las "Reglas de edición"
+
+El proyecto se migró desde meses de trabajo con Gemini. El propio Gemini diagnosticó la causa raíz del problema que motivó la migración: *"El desvío ocurrió cuando comenzamos a tocar y modificar en bloque los códigos de la interfaz sin seguir el método quirúrgico archivo por archivo... el código monolítico empezó a sobreescribirse, rompiendo la modularidad."* — funcionalidades enteras se perdían en reescrituras masivas. La sección "Reglas de edición" de este archivo (trabajo quirúrgico, archivo por archivo, sin tocar lo que no se pidió) es la respuesta directa a esa experiencia, no una preferencia arbitraria.
+
+Nota positiva verificada: la lista histórica de funcionalidades de `obras_list_screen.dart` que se habían perdido en una reescritura y debían recuperarse (banda de cotización USD BNA compra/venta, proyección personalizada PRO con reseteo, mapa de obras interactivo, alta de obra con selectores de tipo/moneda, modal de Servicios Especiales con checklist y adjuntar planos, modal Plan PRO con desglose de beneficios, Ajuste Económico & Moneda con toggle CAC) **ya está recuperada y presente en el código actual** — no es una brecha pendiente.
 
 ### Posicionamiento y modelo de negocio
 
 ComputoPRO es una herramienta **B2B / de nicho profesional**, no una app masiva de consumo. Target: arquitectos, maestros mayores de obra, constructores independientes y estudios chicos que manejan entre 2 y 10 obras simultáneas en Argentina. Monetización: suscripción SaaS mensual/anual (no publicidad, no venta única). Regla de proceso acordada explícitamente con el usuario: **evitar scope creep** — priorizar el MVP (cómputo, APU, materiales, resumen de obra) y dejar ideas futuras en un backlog, sin desviarse del nicho ni intentar ser una app para "cualquier usuario". Antes de escribir código para una funcionalidad nueva de negocio, el usuario prefiere primero una ronda de feedback/alineación.
+
+### Monetización y lanzamiento: datos concretos ya definidos
+
+- **Google Play Store**: USD 25 pago único (cuenta de desarrollador) + período de prueba cerrada obligatorio (~14 días con usuarios mínimos) antes de publicación abierta.
+- **Apple App Store**: USD 99/año (Apple Developer Program) + testeo previo vía TestFlight.
+- **AdMob** (si se usa en la versión Free): la ganancia de anuncios es para el desarrollador, Google paga un porcentaje por vista/clic.
+- **Precio de referencia de la suscripción PRO** (mockup, no implementado): evolucionó de USD 3–5/mes a **$15.000 ARS/mes o USD 12/mes**; botón de pago pensado para Mercado Pago/Stripe, sin integrar todavía.
+- **Botón de sugerencias/feedback**: uno general (menú principal/perfil) para ideas de sistema, y opcionalmente uno específico por solapa técnica (ícono 💬) para feedback puntual — no implementado.
+- Práctica de backup recomendada además de Git/GitHub: copia periódica en `.zip` de la carpeta `lib/` en disco externo o Drive personal, como red de seguridad adicional.
 
 ### Módulo Core: Dashboard como "Centro de Control y Permisos"
 
@@ -42,6 +57,13 @@ ComputoPRO es una herramienta **B2B / de nicho profesional**, no una app masiva 
 **Esquema de datos funcional** (no reflejado aún en `data/models/`): tabla de relación `ProyectoUsuarios` (`obraId`, `usuarioId`, `rolProyecto`, `permisosEspeciales` con `puedeAprobarCertificados`, `puedeVerApu`, `delegacionTemporalInicio/Fin`, `topeMontoAprobacion`).
 
 **Decisión tomada**: el QR de vinculación multidispositivo (espejar sesión celular↔PC/tablet, o compartir rol con un colaborador) **no** va en el Dashboard principal — rompería la limpieza visual. Va en Configuración Global de la cuenta o en Ajustes de cada obra.
+
+**Comportamientos adicionales documentados (ninguno implementado hoy)**:
+- **Inicio abierto**: cualquier actor (Cliente, Profesional o Constructor) puede iniciar un proyecto — no hay un único punto de entrada obligado.
+- Al crear una obra, el creador queda **por defecto como Administrador**, con opción de cambiarlo después.
+- Tras el alta, la app debería **redirigir automáticamente** a la ventana de gestión de permisos de esa obra (hoy el alta solo cierra el modal y agrega la obra a la lista).
+- **Notificación al Admin**: cuando un colaborador con permiso de edición hace una acción sensible (modificar cómputo, avance), debe generarse una alerta automática al Administrador.
+- **Control de acceso obligatorio**: bloquear la navegación a cualquier solapa si no hay una obra seleccionada/creada.
 
 ### Alta de Nueva Obra: rediseño a wizard de 2 pasos
 
@@ -128,11 +150,16 @@ El usuario pidió verificar si la lógica de vinculaciones y permisos que tenía
 
 - A diferencia del resto de las solapas, donde Supabase es la decisión de backend general "a futuro" (ver más abajo), el usuario definió que **Proveedores requiere sí o sí su propia base de datos en Supabase**, no queda como pendiente genérico junto con las demás.
 - **Nueva línea de monetización**: se prevén **membresías pagas para proveedores** (corralones, distribuidoras, hormigoneras, etc.) que quieran figurar/cotizar dentro de esta solapa, administradas mediante un bot (alta, cobro y gestión — mecánica exacta todavía sin definir). Esto concreta el ítem ya anotado en "Posicionamiento y modelo de negocio" sobre integrar proveedores como canal B2B: acá el mecanismo elegido es membresía + bot, no publicidad ni comisión por transacción.
-- Nota de código: `proveedores_tab.dart` ya existe en `lib/presentation/obra_detalle/tabs/` pero no está conectado a `PresupuestosScreen` (ver "Mapa objetivo de las 6 solapas" y "Data flow: two coexisting patterns").
+- **Modelo de doble motor de precios** (spec histórica, detalla el mecanismo de esa monetización): (1) corralón adherido con canon/suscripción activa → un bot/API sincroniza su stock y precios en tiempo real o cada 24 hs; (2) si no hay corralón adherido en la zona de la obra → algoritmo de fallback que calcula un promedio sobre 3 proveedores predefinidos de la región, para garantizar que la solapa **nunca muestre una lista vacía**.
+- **Ranking de proveedores** tipo Mercado Libre: por relevancia, menor precio o cercanía geográfica.
+- Segunda vía de monetización dentro de la misma solapa: **"Corralón Destacado"**, publicidad orgánica paga sin saturar la UX (además de los cánones de membresía).
+- Nota de código: `proveedores_tab.dart` ya existe en `lib/presentation/obra_detalle/tabs/` pero no está conectado a `PresupuestosScreen`, y hoy es solo una **lista estática hardcodeada de 3 proveedores de ejemplo**, sin persistencia, sin ranking, sin ningún motor de precios (ver "Mapa objetivo de las 6 solapas", "Data flow: two coexisting patterns" y "Verificación de implementación" más abajo).
 
 ### Backend planificado: Supabase
 
 El usuario ya tiene creada una cuenta de **Supabase**, destinada a alojar las bases de datos que se necesiten para las distintas solapas (catálogo de rubros/APU/insumos, usuarios y roles por obra, documentación de servicios especiales, etc.) cuando se implemente la persistencia real. **Todavía no está integrado en el código**: `pubspec.yaml` no tiene el paquete `supabase_flutter` (ni ningún cliente de Supabase) y `services/apu_database_service.dart` sigue siendo un stub en memoria. Al planificar la capa de persistencia, Supabase es la opción de backend ya decidida — no proponer otro proveedor (Firebase, backend propio, etc.) sin que el usuario lo pida explícitamente.
+
+Detalle ya definido en la spec histórica: **PostgreSQL, plan gratuito, región `sa-east-1` (São Paulo)** — elegido explícitamente sobre Firebase por permitir consultas relacionales más ordenadas para este dominio (rubros↔APU↔insumos↔obras↔usuarios son datos altamente relacionales, no documentales).
 
 ### Rol Invitado/Observador (Veedor) y sub-rol Apoderado: mecánica completa
 
@@ -157,6 +184,42 @@ Complementa el Paso B (Matriz de Permisos y Roles) del wizard de alta de obra de
 
 Antes de escribir código de cualquier solapa nueva, el usuario prefiere cerrar primero toda la arquitectura de información: propósito, inputs/outputs, vínculos entre solapas y vista por rol (Profesional/Constructor/Cliente) de las 6 solapas + Dashboard, consolidarlo en un documento único, y recién después pasar a la implementación (consistente con la sección "Reglas de edición" de arriba). Orden de trabajo acordado: Dashboard + Solapa 1 → Solapa 2 (APU) → Solapa 3 (Materiales y MO) → Solapa 4 (Gestión de Obra) → Solapa 5 (Proveedores) → Solapa 6 (Resumen).
 
+### Colores institucionales: #1B365D implementado ad hoc, pero no centralizado en el theme
+
+- **#1B365D** (azul institucional) está efectivamente en uso, hardcodeado inline en 9 archivos de `presentation/` (`obras_list_screen.dart`, `presupuestos_screen.dart` y la mayoría de los `tabs/*.dart`). El acento dorado/ámbar (`Colors.amber`) también está en uso; el acento alternativo citado en la spec (**#E07A5F**) no aparece en el código.
+- **Discrepancia real**: `lib/config/app_theme.dart` (`AppTheme.lightTheme`, el único `ThemeData` que usa `MaterialApp` en `main.dart`) define un `ColorScheme.fromSeed` con semilla **#1E88E5** (azul) y secundario **#26A69A** (verde azulado) — colores completamente distintos al #1B365D "oficial". El fondo de tarjetas/pantallas también difiere levemente del valor de la spec (`scaffoldBackgroundColor: #F4F6F8` en el theme vs. `#F5F7FA`/`#F8F9FA` documentados, y varias pantallas usan además su propio `#F4F6F9` inline).
+- **Conclusión práctica**: el "look" institucional real de la app hoy depende de que cada pantalla hardcodee `Color(0xFF1B365D)` por su cuenta, no del theme centralizado — que de hecho define una paleta distinta y sin uso visible. Si en algún momento se centraliza el theming, `AppTheme.lightTheme` debería adoptar #1B365D como `primary`/seed, no los colores actuales.
+
+### Verificación de implementación: funcionalidades clave pedidas por el usuario
+
+Chequeado contra el código real de `lib/` (no contra lo que dicen los documentos). Ninguna de estas funcionalidades tiene entidad de datos, servicio ni UI hoy salvo donde se indique lo contrario:
+
+- **Ciclo de vida del Certificado de Obra (5 estados)** — definición completa: 1) *Borrador* (carga de avances por Profesional/Empresa), 2) *Emitido/Esperando Pago* (notifica al Propietario con fecha límite según plazo pactado), 3) *Leído por Propietario* (se notifica a la obra automáticamente al abrirse), 4) *Pagado por Propietario* (marca medio de pago + adjunta comprobante), 5) *Impactado y Cerrado* (la Empresa/Constructor verifica el cobro y adjunta factura final). Reglas especiales: el plazo de pago se configura **una sola vez antes del Certificado N°1** y aplica a todos los siguientes; si se opta por firma física, el sistema debe **bloquear la emisión del siguiente certificado** hasta subir el PDF/imagen firmado.
+  **Estado real**: `lib/presentation/obra_detalle/tabs/gestion_obra_tab.dart` implementa solo **3 de los 5 estados** (`Borrador` → `Emitido (Esperando Pago)` → `Pagado`, ver `_cambiarEstado`/`_getColorEstado`). Faltan por completo *Leído por Propietario* y *Impactado y Cerrado*. Hay un botón "Subir PDF Firmado" pero **no bloquea** la emisión del siguiente certificado. No hay Fondo de Reparo. No se genera ningún PDF real (los paquetes `pdf`/`printing` siguen sin usarse en todo `lib/`). El plazo de pago (`_diasPlazoPago`) es un campo fijo sin UI para configurarlo. Y el tab **no está conectado** a `PresupuestosScreen` (usa un `obraId` requerido que nadie le pasa hoy).
+- **Matriz de permisos por tipo de relación cliente-obra** — 3 relaciones con visibilidad distinta: *Cliente Autoconstructor* (ve todo, costos directos y precios reales de corralón), *Cliente con Profesional + Contratista* (ve precio final y avance; oculto: salarios, gastos generales, beneficio, imprevistos y precios negociados en bruto — solo Profesional/Contratista cargan, Cliente aprueba en modo lectura), *Cliente con Contratista Directo sin Profesional* (visibilidad más restringida aún: ve avance y precio del rubro certificado, oculto el costo interno y margen del contratista).
+  **Estado real**: **no implementada**. `gestion_obra_tab.dart` solo tiene un `DropdownButton` binario (`'Profesional / Empresa'` vs `'Propietario / Cliente'`) sin relación con estos 3 casos, y el resto del código no modela ningún concepto de "tipo de relación cliente-obra".
+- **Motor "Mandar a Presupuestar"** (botón inteligente en Resumen Final) — dispara una solicitud zonal simultánea a 3 corralones geolocalizados en la zona de la obra; los precios devueltos se muestran etiquetados como no firmes hasta una validación manual obligatoria ("Validar y Confirmar Precios"); exportación alternativa a PDF/Excel/texto WhatsApp; si no hay comercios con membresía activa en la zona, calcula un promedio automático sobre 1 a 4 proveedores de referencia.
+  **Estado real**: **no implementado**, ningún archivo del proyecto lo referencia. `resumen_tab.dart` solo calcula y muestra el desglose de costos/coeficientes, sin ningún botón ni lógica de cotización a proveedores.
+- **Modo "Carga Externa"** (transversal a varias solapas) — permite ingresar presupuestos cerrados o montos "llave en mano" sin pasar por el desglose de APU, pensado para quien solo necesita gestión y no cálculo técnico; al activarlo debería ocultar los enlaces a APU y habilitar directamente la Solapa de Gestión de Obra para arrancar el control de avance.
+  **Estado real**: **no implementado**, sin ninguna referencia en el código.
+
+### Otras brechas relevantes detectadas al verificar contra la spec histórica
+
+- **Solapa 2 (APU): confidencialidad y Coeficiente K aislado** — la spec exige que el Constructor no tenga acceso a esta solapa (o solo vea cómputo sin precios teóricos) y que el Coeficiente K quede aislado y privado en la Solapa 3, incluso para el Profesional en otras vistas. **Estado real**: no implementado — el concepto de Coeficiente K no existe en ningún archivo de `lib/` (búsqueda sin resultados), y no hay ninguna restricción de acceso por rol entre solapas.
+- **Matriz heredable de coeficientes indirectos (Solapa 2)** — Gastos Generales, Imprevistos y Beneficio se definirían **una sola vez a nivel obra** y se heredarían automáticamente a todas las planillas de APU (con posibilidad de que un usuario Pro los sobreescriba puntualmente en un ítem de mayor riesgo), más un ítem de EPP (1%) e impuestos siempre editables por provincia (IVA 21%, IIBB 3-5%, Ganancias aparte). **Estado real**: `resumen_tab.dart` tiene sliders de Gastos Generales/Imprevistos/Beneficio, pero son **globales de esa solapa únicamente** (no heredables por ítem de APU — de hecho no hay APU por ítem en el código), sin EPP, sin distinción Free/Pro y sin desglose de impuestos por provincia.
+- **Solapa 3 (Materiales y Mano de Obra): escala UOCRA y zonificación** — se espera una escala salarial UOCRA completa (Oficial Especializado, Oficial, Medio Oficial, Peón) actualizada mensualmente según paritarias oficiales, un catálogo de +200 insumos frecuentes, y checkboxes de zonificación geográfica con explicación de a qué zona corresponde cada selección. **Estado real**: `mano_obra_tab.dart` tiene una lista de ejemplo de un puñado de operarios con categoría/valor-hora/horas trabajadas — sin las 4 categorías UOCRA completas, sin actualización mensual, sin zonificación, y sin catálogo de insumos (ese catálogo vive aparte, sin relación, en `data/models/base_insumos_seed.dart` con solo 6 ítems de ejemplo).
+- **Lógica Free vs. Pro transversal** — se espera que Free opere con catálogo estándar y coeficientes bloqueados de solo lectura + exportación con marca de agua, y que Pro habilite edición libre con un cartel de advertencia de responsabilidad técnica (silenciable por solapa, recordado por usuario) + exportación limpia con marca propia. **Estado real**: solo existe un booleano `_esPlanPro` local a `ObrasListScreen`, sin persistencia, que únicamente desbloquea el campo de cotización USD personalizada y cambia el badge PRO/FREE — no afecta a ninguna otra solapa, no bloquea nada, y no hay ninguna lógica de exportación PDF con o sin marca de agua (los paquetes `pdf`/`printing` siguen sin uso).
+
+### Divergencia con la Clean Architecture documentada
+
+La spec histórica describe una Clean Architecture "ya implementada" con capa `domain/` (entities, contratos de repositorios, usecases) separada de `data/`. **El repo actual no tiene esa carpeta** — la estructura real es la que se documenta en "Directory layout" más abajo (`config/`, `core/`, `data/`, `presentation/`, `services/`, sin `domain/`). No asumir que existe una capa domain/usecases al planificar trabajo nuevo; introducirla sería trabajo nuevo, no algo que "recuperar".
+
+### Roadmap adicional pospuesto (no construir todavía)
+
+Complementa el roadmap del marketplace de terceros de más arriba:
+- **Geolocalización personalizada** por obra y por usuario (insumo directo del motor de proveedores/corralones descripto arriba).
+- **Registro de obra con segmentación de perfil**: guardar el perfil de quien crea la obra (Profesional/Constructor/Cliente) no solo para permisos, sino para que el propio usuario reciba métricas/alertas de uso de la plataforma — pensado originalmente vía bot de Telegram o notificación interna.
+
 ## Commands
 
 ```
@@ -170,6 +233,8 @@ flutter test test/widget_test.dart   # run a single test file
 There is currently only one test (`test/widget_test.dart`), a smoke test that pumps `MiAppApu` and checks a `MaterialApp` is found. No test infrastructure (mocks, golden tests) exists yet.
 
 `flutter analyze` currently reports ~20 pre-existing lint infos (deprecated `withOpacity`, missing `super.key`, an undeclared `intl` dependency used transitively). These are known and not regressions to fix incidentally — only fix lints in files you're already substantially editing.
+
+Historical note from the pre-migration (Gemini-era) docs: recurring Gradle build failures (`assembleDebug failed`) tied to the Android Gradle Plugin (AGP) version and the `file_picker` package, with a recommendation to update AGP to ≥8.11.1 or replace `file_picker` with `file_selector`. **`file_picker` is not currently a dependency in `pubspec.yaml`**, so this specific issue may not apply to the current state — worth remembering only if file-picking functionality gets added later.
 
 ## Architecture
 
@@ -193,6 +258,8 @@ lib/
       tabs/       # one file per tab shown inside PresupuestosScreen
   services/       # ApuDatabaseService — in-memory stub, NOT a real database despite the name
 ```
+
+No `domain/` layer exists (no entities/usecases/repository-contracts folder) — see "Divergencia con la Clean Architecture documentada" in the functional spec section above; a historical doc claims one was already built, but it isn't in this repo.
 
 ### Data flow: two coexisting patterns
 
