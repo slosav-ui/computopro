@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../obra_detalle/screens/presupuestos_screen.dart';
+import '../../services/obras_repository.dart';
 
 class ObrasListScreen extends StatefulWidget {
   const ObrasListScreen({super.key});
@@ -23,51 +24,58 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
   final double _variacionCacUltimoMes = 3.8;
   final String _ultimoMesPublicadoCac = 'Julio 2026';
 
+  // --- Acceso a datos ---
+  final ObrasRepository _obrasRepository = ObrasRepository();
+  List<Map<String, dynamic>> _obras = [];
+  bool _cargando = true;
+  String? _error;
+
   @override
   void initState() {
     super.initState();
     _cotizacionUsdEfectiva = _dolarOficialPromedio;
+    _cargarObras();
   }
 
-  // --- Lista Unificada de Obras ---
-  final List<Map<String, dynamic>> _obras = [
-    {
-      'id': 'obra_001',
-      'nombre': 'Casa Unifamiliar Las Lomas',
-      'propietario': 'Arq. Roberto Gómez',
-      'ubicacion': 'San Carlos de Bariloche, B° Belgrano',
-      'superficieM2': 185.0,
-      'tipoObra': 'Residencial',
-      'estado': 'Cotización',
-      'moneda': 'ARS',
-      'aplicaCac': true,
-      'montoEstimadoArs': 185000000.0,
-      'montoEstimadoUsd': 135500.0,
-      'mesBaseCac': 'Julio 2026',
-      'revision': 'Rev. 03',
-      'ultimaModif': '08/Ago/2026',
-      'tipoRol': 'Director de Obra',
-      'estadoServicioEspecial': 'Ninguno',
-    },
-    {
-      'id': 'obra_002',
-      'nombre': 'Refacción y Ampliación Cabaña',
-      'propietario': 'Inversiones del Sur S.A.',
-      'ubicacion': 'Bariloche, Av. Bustillo Km 8',
-      'superficieM2': 75.0,
-      'tipoObra': 'Comercial/Residencial',
-      'estado': 'En Ejecución',
-      'moneda': 'USD',
-      'aplicaCac': false,
-      'montoEstimadoArs': 88725000.0,
-      'montoEstimadoUsd': 65000.0,
-      'mesBaseCac': 'N/A',
-      'revision': 'Rev. 01',
-      'ultimaModif': '02/Ago/2026',
-      'tipoRol': 'Propietario / Cliente',
-      'estadoServicioEspecial': 'Ninguno',
-    },
-  ];
+  // --- Carga de Obras desde Supabase ---
+  Future<void> _cargarObras() async {
+    setState(() {
+      _cargando = true;
+      _error = null;
+    });
+    try {
+      final obras = await _obrasRepository.getObras();
+      if (!mounted) return;
+      setState(() {
+        _obras = obras.map(_conMontosCalculados).toList();
+        _cargando = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = 'No se pudieron cargar las obras. Verificá tu conexión.';
+        _cargando = false;
+      });
+    }
+  }
+
+  // --- Conversión de Moneda (a partir del monto base persistido) ---
+  double _convertirMonto(double monto, String monedaOrigen, String monedaDestino) {
+    if (monedaOrigen == monedaDestino) return monto;
+    return monedaOrigen == 'ARS'
+        ? monto / _cotizacionUsdEfectiva
+        : monto * _cotizacionUsdEfectiva;
+  }
+
+  Map<String, dynamic> _conMontosCalculados(Map<String, dynamic> obra) {
+    final double montoTotal = (obra['montoTotal'] as num?)?.toDouble() ?? 0.0;
+    final String moneda = obra['moneda'] as String? ?? 'ARS';
+    return {
+      ...obra,
+      'montoEstimadoArs': moneda == 'ARS' ? montoTotal : _convertirMonto(montoTotal, 'USD', 'ARS'),
+      'montoEstimadoUsd': moneda == 'USD' ? montoTotal : _convertirMonto(montoTotal, 'ARS', 'USD'),
+    };
+  }
 
   // --- Formateador de Montos ---
   String _formatearMonto(double monto, String moneda) {
@@ -177,6 +185,7 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
     final superficieCtrl = TextEditingController();
     String tipoSeleccionado = 'Residencial';
     String monedaSeleccionada = 'ARS';
+    bool guardando = false;
 
     showDialog(
       context: context,
@@ -316,40 +325,58 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
               ),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1B365D)),
-                onPressed: () {
-                  if (nombreCtrl.text.trim().isEmpty) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Por favor ingrese el nombre de la obra.')),
-                    );
-                    return;
-                  }
-                  final double sup = double.tryParse(superficieCtrl.text) ?? 100.0;
-                  setState(() {
-                    _obras.add({
-                      'id': 'obra_${DateTime.now().millisecondsSinceEpoch}',
-                      'nombre': nombreCtrl.text.trim(),
-                      'propietario': propietarioCtrl.text.trim().isEmpty ? 'Sin Especificar' : propietarioCtrl.text.trim(),
-                      'ubicacion': ubicacionCtrl.text.trim().isEmpty ? 'Ubicación Faltante' : ubicacionCtrl.text.trim(),
-                      'superficieM2': sup,
-                      'tipoObra': tipoSeleccionado,
-                      'estado': 'Cotización',
-                      'moneda': monedaSeleccionada,
-                      'aplicaCac': monedaSeleccionada == 'ARS',
-                      'montoEstimadoArs': monedaSeleccionada == 'ARS' ? sup * 1000000.0 : (sup * 750.0) * _cotizacionUsdEfectiva,
-                      'montoEstimadoUsd': monedaSeleccionada == 'USD' ? sup * 750.0 : (sup * 1000000.0) / _cotizacionUsdEfectiva,
-                      'mesBaseCac': 'Agosto 2026',
-                      'revision': 'Rev. 00',
-                      'ultimaModif': 'Hoy',
-                      'tipoRol': 'Director de Obra',
-                      'estadoServicioEspecial': 'Ninguno',
-                    });
-                  });
-                  Navigator.pop(ctx);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Nueva obra registrada exitosamente.')),
-                  );
-                },
-                child: const Text('Crear Obra', style: TextStyle(color: Colors.white)),
+                onPressed: guardando
+                    ? null
+                    : () async {
+                        if (nombreCtrl.text.trim().isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Por favor ingrese el nombre de la obra.')),
+                          );
+                          return;
+                        }
+                        final double sup = double.tryParse(superficieCtrl.text) ?? 100.0;
+                        final double montoArs = monedaSeleccionada == 'ARS' ? sup * 1000000.0 : (sup * 750.0) * _cotizacionUsdEfectiva;
+                        final double montoUsd = monedaSeleccionada == 'USD' ? sup * 750.0 : (sup * 1000000.0) / _cotizacionUsdEfectiva;
+                        final double montoTotal = monedaSeleccionada == 'ARS' ? montoArs : montoUsd;
+
+                        setModalState(() => guardando = true);
+                        try {
+                          final creada = await _obrasRepository.crearObra({
+                            'nombre': nombreCtrl.text.trim(),
+                            'propietario': propietarioCtrl.text.trim().isEmpty ? 'Sin Especificar' : propietarioCtrl.text.trim(),
+                            'ubicacion': ubicacionCtrl.text.trim().isEmpty ? 'Ubicación Faltante' : ubicacionCtrl.text.trim(),
+                            'superficieM2': sup,
+                            'tipoObra': tipoSeleccionado,
+                            'estado': 'Cotización',
+                            'moneda': monedaSeleccionada,
+                            'aplicaCac': monedaSeleccionada == 'ARS',
+                            'montoTotal': montoTotal,
+                            'mesBaseCac': 'Agosto 2026',
+                            'revision': 'Rev. 00',
+                            'tipoRol': 'Director de Obra',
+                            'estadoServicioEspecial': 'Ninguno',
+                          });
+                          if (!context.mounted) return;
+                          setState(() => _obras.add(_conMontosCalculados(creada)));
+                          Navigator.pop(ctx);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Nueva obra registrada exitosamente.')),
+                          );
+                        } catch (e) {
+                          if (!context.mounted) return;
+                          setModalState(() => guardando = false);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('No se pudo guardar la obra. Intente nuevamente.')),
+                          );
+                        }
+                      },
+                child: guardando
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Text('Crear Obra', style: TextStyle(color: Colors.white)),
               ),
             ],
           );
@@ -545,15 +572,38 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
               TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1B365D)),
-                onPressed: () {
-                  setState(() {
-                    obra['moneda'] = monedaSeleccionada;
-                    obra['aplicaCac'] = (monedaSeleccionada == 'ARS') ? aplicaCac : false;
-                  });
-                  Navigator.pop(ctx);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Configuración económica guardada.')),
-                  );
+                onPressed: () async {
+                  final String monedaAnterior = obra['moneda'] as String;
+                  final double montoTotalAnterior = (obra['montoTotal'] as num?)?.toDouble() ?? 0.0;
+                  final double nuevoMontoTotal = monedaSeleccionada == monedaAnterior
+                      ? montoTotalAnterior
+                      : _convertirMonto(montoTotalAnterior, monedaAnterior, monedaSeleccionada);
+                  final bool nuevoAplicaCac = (monedaSeleccionada == 'ARS') ? aplicaCac : false;
+
+                  try {
+                    await _obrasRepository.actualizarObra(obra['id'] as String, {
+                      'moneda': monedaSeleccionada,
+                      'aplicaCac': nuevoAplicaCac,
+                      'montoTotal': nuevoMontoTotal,
+                    });
+                    if (!context.mounted) return;
+                    setState(() {
+                      obra['moneda'] = monedaSeleccionada;
+                      obra['aplicaCac'] = nuevoAplicaCac;
+                      obra['montoTotal'] = nuevoMontoTotal;
+                      obra['montoEstimadoArs'] = monedaSeleccionada == 'ARS' ? nuevoMontoTotal : _convertirMonto(nuevoMontoTotal, monedaSeleccionada, 'ARS');
+                      obra['montoEstimadoUsd'] = monedaSeleccionada == 'USD' ? nuevoMontoTotal : _convertirMonto(nuevoMontoTotal, monedaSeleccionada, 'USD');
+                    });
+                    Navigator.pop(ctx);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Configuración económica guardada.')),
+                    );
+                  } catch (e) {
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('No se pudo guardar la configuración. Intente nuevamente.')),
+                    );
+                  }
                 },
                 child: const Text('Guardar', style: TextStyle(color: Colors.white)),
               ),
@@ -792,12 +842,22 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red[700]),
-            onPressed: () {
-              setState(() => _obras.removeWhere((i) => i['id'] == obra['id']));
-              Navigator.pop(ctx);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Obra eliminada del registro.')),
-              );
+            onPressed: () async {
+              try {
+                await _obrasRepository.eliminarObra(obra['id'] as String);
+                if (!mounted || !ctx.mounted) return;
+                setState(() => _obras.removeWhere((i) => i['id'] == obra['id']));
+                Navigator.pop(ctx);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Obra eliminada del registro.')),
+                );
+              } catch (e) {
+                if (!mounted || !ctx.mounted) return;
+                Navigator.pop(ctx);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('No se pudo eliminar la obra. Intente nuevamente.')),
+                );
+              }
             },
             child: const Text('Eliminar', style: TextStyle(color: Colors.white)),
           ),
@@ -1013,7 +1073,20 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
 
           // Lista de Tarjetas de Obra
           Expanded(
-            child: _obras.isEmpty
+            child: _cargando
+                ? const Center(child: CircularProgressIndicator())
+                : _error != null
+                    ? Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(_error!, style: const TextStyle(color: Colors.black54)),
+                            const SizedBox(height: 8),
+                            TextButton(onPressed: _cargarObras, child: const Text('Reintentar')),
+                          ],
+                        ),
+                      )
+                    : _obras.isEmpty
                 ? const Center(child: Text('No hay obras registradas. Presione "+" para agregar una.'))
                 : ListView.builder(
                     padding: const EdgeInsets.all(12),
