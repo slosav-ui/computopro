@@ -51,7 +51,7 @@ class PermisosModulo {
 }
 
 class ObraModel {
-  final int id;
+  final String id;
   final String nombre;
   final String empresa;
   final String propietario;
@@ -104,7 +104,7 @@ class ObraModel {
 
   /// Crear una copia del objeto modificando solo ciertos atributos
   ObraModel copyWith({
-    int? id,
+    String? id,
     String? nombre,
     String? empresa,
     String? propietario,
@@ -166,7 +166,7 @@ class ObraModel {
   /// Crear una instancia de ObraModel desde un Map/JSON
   factory ObraModel.fromMap(Map<String, dynamic> map) {
     return ObraModel(
-      id: map['id'] is int ? map['id'] : int.tryParse(map['id']?.toString() ?? '0') ?? 0,
+      id: map['id']?.toString() ?? '',
       nombre: map['nombre']?.toString() ?? '',
       empresa: map['empresa']?.toString() ?? '',
       propietario: map['propietario']?.toString() ?? map['comitente']?.toString() ?? '',

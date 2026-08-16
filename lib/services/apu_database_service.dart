@@ -3,7 +3,7 @@ import '../data/models/obra_model.dart';
 class ApuDatabaseService {
   final List<ObraModel> _obras = [
     ObraModel(
-      id: 1,
+      id: '1',
       nombre: 'Obra Demo Residencial',
       propietario: 'Juan Pérez',
       ubicacion: 'Av. Corrientes 1234',
