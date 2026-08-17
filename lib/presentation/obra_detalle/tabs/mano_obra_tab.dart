@@ -19,7 +19,7 @@ class Operario {
 }
 
 class ManoObraTab extends StatefulWidget {
-  final int obraId;
+  final String obraId;
 
   const ManoObraTab({super.key, required this.obraId});
 

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 class ResumenTab extends StatefulWidget {
-  final int obraId;
+  final String obraId;
 
   const ResumenTab({super.key, required this.obraId});
 

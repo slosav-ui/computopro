@@ -19,7 +19,7 @@ class Proveedor {
 }
 
 class ProveedoresTab extends StatefulWidget {
-  final int obraId;
+  final String obraId;
 
   const ProveedoresTab({super.key, required this.obraId});
 
