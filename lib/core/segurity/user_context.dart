@@ -1,40 +1,72 @@
-// lib/core/security/user_context.dart
+// lib/core/segurity/user_context.dart
 
-enum UserRole {
-  adminMaestro,      // 100% Acceso (Caja Blanca)
-  profesional,       // 100% Acceso (Caja Blanca)
-  constructor,       // Vista Operativa (Sin montos, solo cargas de avance)
-  clientePrincipal,  // Caja Negra Comercial (Totales por rubro, sin APU ni fórmulas)
-  veedor,            // Lectura pasiva (Avances y fotos)
-  apoderado          // Hereda vista del cliente con permisos de firma limitados
-}
+import '../../data/models/obra_member.dart';
 
+/// Contexto de permisos de un usuario dentro de UNA obra puntual — ya no un
+/// rol global (Etapa 3, paso 4). Se construye a partir de las filas de
+/// obra_members del usuario en esa obra; roles combinables = varias filas.
+/// Ver docs/etapa3_roles_permisos_diseno_datos.md para el diseño completo.
 class UserContext {
   final String userId;
-  final UserRole role;
+  final String obraId;
+  final List<ObraMember> membresias; // ya filtradas a este usuario+obra+activas
 
   UserContext({
     required this.userId,
-    required this.role,
+    required this.obraId,
+    required this.membresias,
   });
 
-  // Regla de visibilidad 1: ¿Puede ver valores financieros y APU? (Caja Blanca)
-  bool get puedeVerMontosYAPU {
-    return [UserRole.adminMaestro, UserRole.profesional].contains(role);
+  /// Construye el contexto filtrando, de todas las membresías conocidas, solo
+  /// las de este usuario en esta obra que estén activas.
+  factory UserContext.desdeObraMembers({
+    required String userId,
+    required String obraId,
+    required List<ObraMember> todasLasMembresias,
+  }) {
+    final membresias = todasLasMembresias
+        .where((m) => m.usuarioId == userId && m.obraId == obraId && m.activo)
+        .toList();
+    return UserContext(userId: userId, obraId: obraId, membresias: membresias);
   }
+
+  List<RolProyecto> get roles => membresias.map((m) => m.rol).toList();
+
+  bool _tieneAlgunRol(List<RolProyecto> buscados) =>
+      membresias.any((m) => buscados.contains(m.rol));
+
+  // Regla de visibilidad 1: ¿Puede ver valores financieros y APU? (Caja Blanca)
+  bool get puedeVerMontosYAPU =>
+      _tieneAlgunRol([RolProyecto.adminMaestro, RolProyecto.profesional]);
 
   // Regla de visibilidad 2: ¿Es vista estrictamente operativa sin dinero? (Constructor)
-  bool get esVistaOperativa {
-    return role == UserRole.constructor;
-  }
+  // "Constructor puro": si la misma persona combina Constructor con un rol que
+  // otorga visibilidad económica (ej. Cliente+Constructor), deja de aplicar —
+  // es su propia obra, tiene que ver los montos.
+  bool get esVistaOperativa =>
+      _tieneAlgunRol([RolProyecto.constructor]) &&
+      !_tieneAlgunRol([RolProyecto.adminMaestro, RolProyecto.profesional, RolProyecto.clientePrincipal]);
 
   // Regla de visibilidad 3: ¿Puede aprobar certificados de obra?
-  bool get puedeAprobarCertificados {
-    return [UserRole.adminMaestro, UserRole.apoderado].contains(role);
+  // Admin Maestro y Cliente/Propietario Principal aprueban siempre (ver
+  // "Matriz de permisos consolidada" en CLAUDE.md); el Apoderado solo dentro
+  // de una delegación vigente.
+  bool get puedeAprobarCertificados =>
+      _tieneAlgunRol([RolProyecto.adminMaestro, RolProyecto.clientePrincipal]) ||
+      membresias.any((m) =>
+          m.rol == RolProyecto.invitadoApoderado &&
+          m.permisosEspeciales.puedeAprobarCertificados &&
+          _delegacionVigente(m));
+
+  bool _delegacionVigente(ObraMember m) {
+    final inicio = m.permisosEspeciales.delegacionTemporalInicio;
+    final fin = m.permisosEspeciales.delegacionTemporalFin;
+    if (inicio == null || fin == null) return false;
+    final ahora = DateTime.now();
+    return !ahora.isBefore(inicio) && !ahora.isAfter(fin);
   }
 
   // Sello de auditoría para trazabilidad de cambios en las obras
-  String get auditLogSello {
-    return "Usuario: $userId | Rol: ${role.name} | Fecha: ${DateTime.now()}";
-  }
+  String get auditLogSello =>
+      'Usuario: $userId | Roles: ${roles.map((r) => r.name).join("+")} | Fecha: ${DateTime.now()}';
 }
