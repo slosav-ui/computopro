@@ -45,16 +45,22 @@ ComputoPRO es una herramienta **B2B / de nicho profesional**, no una app masiva 
 
 `ObrasListScreen` está funcionalmente definida como la raíz del sistema (Root/Home), no solo un listado: debe resolver autenticación, enrutamiento de proyectos, asignación dinámica de roles y generación de accesos por QR. Hoy solo implementa el listado visual — el resto es la brecha respecto a la sección "Permission model" de este documento.
 
-**Roles de proyecto** (más granulares que el `UserRole` actual en `core/segurity/user_context.dart`): `admin_maestro`, `profesional`, `constructor`, `cliente_principal`, `invitado_veedor`, `invitado_apoderado`.
+**Roles de proyecto**: `admin_maestro`, `profesional`, `constructor`, `cliente_principal`, `invitado_veedor`, `invitado_apoderado` — viven como `RolProyecto` en `lib/data/models/obra_member.dart` (Etapa 3). El `UserRole` propio que tenía `core/segurity/user_context.dart` ya no existe: se consolidó en `RolProyecto` para no mantener dos enums paralelos.
 
-**Reglas de visibilidad por rol** (mapeo funcional para cuando se conecte `UserContext`/`PermisosModulo` a las pantallas):
+**Reglas de visibilidad por rol** (mapeo funcional, ya reflejado en los getters de `UserContext` — falta conectarlos a las pantallas):
 - **Caja Blanca (100%)** — `admin_maestro`, `profesional`: edición total de cómputos, APU, precios, coeficientes y aprobaciones.
 - **Vista Operativa (sin montos)** — `constructor`/capataz: cómputos y avance diario, sin valores monetarios ni márgenes.
 - **Caja Negra Comercial** — `cliente_principal`: totales por rubro, avances, certificados y reportes ejecutivos, sin APU ni coeficientes internos.
 - **Caja Negra Básica (lectura pasiva)** — `invitado_veedor`: solo lectura de avances físicos y fotos.
 - **Invitado Apoderado** — hereda la vista del cliente, pero desbloquea firma/aprobación de certificados dentro de rangos de fecha y monto autorizados por el titular (Panel de Delegación de Firma, con registro en el Audit Log).
 
-**Esquema de datos funcional** (no reflejado aún en `data/models/`): tabla de relación `ProyectoUsuarios` (`obraId`, `usuarioId`, `rolProyecto`, `permisosEspeciales` con `puedeAprobarCertificados`, `puedeVerApu`, `delegacionTemporalInicio/Fin`, `topeMontoAprobacion`).
+**Esquema de datos: ya implementado como `obra_members`** (Etapa 3, paso 1 — el `ProyectoUsuarios` que este documento anticipaba). Tabla creada en Supabase vía `supabase/migrations/0001_obra_members.sql` y modelo Dart en `lib/data/models/obra_member.dart` (`RolProyecto`, `ObraMember`, `PermisosEspeciales`): una fila por `(obra_id, usuario_id, rol)` — roles combinables insertando varias filas para el mismo usuario+obra —, con `puedeAprobarCertificados`, `puedeAprobarAdicionales`, `topeMontoAprobacion`, `delegacionTemporalInicio/Fin`, `puedeInvitarTerceros` y `puedeVerApuAjena` (default `false`) como campos de `PermisosEspeciales`. Diseño completo y las 7 decisiones cerradas (ownership de APU por persona, `admin_maestro` como flag administrativo, etc.) en `docs/etapa3_roles_permisos_diseno_datos.md`. Sin RLS todavía.
+
+**Paso 2 (Adicionales/Demasías/Quitas + Audit Log) también ya en producción.** Tablas `modificaciones_obra` y `audit_log` creadas vía `supabase/migrations/0002_modificaciones_obra_audit_log.sql`, modelos Dart en `lib/data/models/modificacion_obra.dart` (`TipoModificacion`, `EstadoModificacion` con 4 estados incluyendo `devuelto`, `ModificacionObra`) y `lib/data/models/audit_log_entry.dart` (`AuditLogEntry`). Nota técnica: `modificaciones_obra.subitem_id` y `.apu_privado_id` quedaron como `uuid` sueltos, **sin foreign key** — la tabla `subitems` real (Solapa 2) todavía no existe en Supabase, así que la FK original tirada en el diseño falló en producción (`relation "subitems" does not exist`, 42P01); agregar esas FKs con un `alter table` aparte cuando `subitems`/APU existan.
+
+**Paso 3 (`libro_entradas`) también ya en producción.** Tabla única para los 3 libros de Gestión de Obra vía `supabase/migrations/0003_libro_entradas.sql`, modelo Dart en `lib/data/models/libro_entrada.dart` (`TipoLibro`, `LibroEntrada`), con `entrada_padre_id` autorreferenciado para modelar acuses de recibo/respuestas sin una tabla aparte.
+
+**Paso 4 — Etapa 3 completa.** `core/segurity/user_context.dart` migrado: `UserContext` ya no encapsula un `UserRole` global fijo, se construye a partir de las filas de `ObraMember` de un usuario en una obra puntual (`UserContext.desdeObraMembers`), con roles combinables. Los 3 getters (`puedeVerMontosYAPU`, `esVistaOperativa`, `puedeAprobarCertificados`) recalculados sobre esa lista: `esVistaOperativa` exige Constructor puro (sin ningún otro rol con visibilidad económica combinado); `puedeAprobarCertificados` incluye ahora `cliente_principal` además de `admin_maestro` y `invitado_apoderado` con delegación vigente (gap real que tenía la versión anterior, no solo un ajuste por roles combinables). Verificado con búsqueda en todo `lib/`: `UserContext` sigue sin consumidores — migración de bajo riesgo, sin conectar a ninguna pantalla todavía. Con este paso se cierra la implementación de Etapa 3 tal como quedó diseñada en `docs/etapa3_roles_permisos_diseno_datos.md`; falta únicamente conectar `UserContext`/`obra_members` a las pantallas reales (`ObrasListScreen`, `PresupuestosScreen` y sus tabs), que queda como trabajo futuro, no parte de Etapa 3.
 
 **Decisión tomada**: el QR de vinculación multidispositivo (espejar sesión celular↔PC/tablet, o compartir rol con un colaborador) **no** va en el Dashboard principal — rompería la limpieza visual. Va en Configuración Global de la cuenta o en Ajustes de cada obra.
 
@@ -262,7 +268,7 @@ Historical note from the pre-migration (Gemini-era) docs: recurring Gradle build
 lib/
   config/        # theme (AppTheme) and unused AppRoutes
   core/
-    segurity/    # UserContext / UserRole permission model (note: "segurity" typo, not "security")
+    segurity/    # UserContext permission model, built from ObraMember (note: "segurity" typo, not "security")
     utils/       # CurrencyFormatter and other stateless helpers
   data/models/    # plain Dart model classes (no codegen — manual toMap/fromMap/copyWith)
   presentation/
@@ -286,9 +292,11 @@ The codebase is mid-migration between two ways of representing an "obra":
 
 No state management library is used (no Provider/Riverpod/Bloc/get_it) — state lives in `State` objects via `setState`, and data is passed down through widget constructors / `Navigator` arguments. `services/apu_database_service.dart` returns a hardcoded in-memory list and is not currently consumed by `ObrasListScreen` (which keeps its own separate hardcoded `_obras` list) — treat it as an incomplete integration point, not a source of truth.
 
-### Permission model (not yet wired to UI)
+### Permission model (Etapa 3 implemented at the data layer, not yet wired to UI)
 
-`core/segurity/user_context.dart` defines `UserRole` (adminMaestro, profesional, constructor, clientePrincipal, veedor, apoderado) and `UserContext` with visibility getters (`puedeVerMontosYAPU`, `esVistaOperativa`, `puedeAprobarCertificados`). `data/models/obra_model.dart` separately defines `CapaVisibilidad` and `PermisosModulo` (per-obra granular permissions: `verComputo`, `verPreciosFinales`, `verApuYCoeficienteK`, `cargarAvanceFisico`, `editarComputo`, `aprobarCertificados`, `invitarTerceros`). These two permission systems are not yet connected to any screen's rendering logic — screens currently show all data unconditionally. When implementing role-based visibility, this is the intended seam.
+Four Supabase tables now back this, per `docs/etapa3_roles_permisos_diseno_datos.md` (migrations `supabase/migrations/000{1,2,3}_*.sql`, all applied in production): `obra_members` (roles combinables per obra+usuario, one row per role — `data/models/obra_member.dart`: `RolProyecto`, `ObraMember`, `PermisosEspeciales`), `modificaciones_obra` + `audit_log` (Adicionales/Demasías/Quitas with a generic append-only audit trail — `data/models/modificacion_obra.dart`, `data/models/audit_log_entry.dart`), and `libro_entradas` (the 3 Gestión de Obra "libros" as one table with a `libro` discriminator — `data/models/libro_entrada.dart`).
+
+`core/segurity/user_context.dart`'s `UserContext` no longer wraps a single global `UserRole` — it's built via `UserContext.desdeObraMembers(...)` from a user's `ObraMember` rows for one obra, and its visibility getters (`puedeVerMontosYAPU`, `esVistaOperativa`, `puedeAprobarCertificados`) are recomputed across however many roles that user combines in that obra (see `RolProyecto` in `obra_member.dart` — it replaced the old standalone `UserRole` enum). `data/models/obra_model.dart` separately still defines `CapaVisibilidad` and `PermisosModulo` (per-obra granular permissions: `verComputo`, `verPreciosFinales`, `verApuYCoeficienteK`, `cargarAvanceFisico`, `editarComputo`, `aprobarCertificados`, `invitarTerceros`) — per the Etapa 3 design doc §1, these are now considered obsolete as a source of truth for real access control (a single flag per obra can't express APU privacy that depends on *who generated* a given record) and should not be extended further; `UserContext`/`obra_members` is the intended mechanism going forward. None of this — tables, models, or `UserContext` — is connected to any screen's rendering logic yet; screens still show all data unconditionally. When implementing role-based visibility, this is the intended seam.
 
 ### Currency and formatting
 
