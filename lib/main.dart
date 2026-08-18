@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'config/app_theme.dart';
-import 'presentation/dashboard/obras_list_screen.dart';
+import 'presentation/auth/auth_gate.dart';
 import 'presentation/obra_detalle/screens/presupuestos_screen.dart';
 
 // Se pasan en build/run time via --dart-define-from-file=env.json
@@ -45,7 +45,7 @@ class MiAppApu extends StatelessWidget {
       onGenerateRoute: (settings) {
         if (settings.name == '/') {
           return MaterialPageRoute(
-            builder: (context) => const ObrasListScreen(),
+            builder: (context) => const AuthGate(),
           );
         }
 
