@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../obra_detalle/screens/presupuestos_screen.dart';
 import '../../services/obras_repository.dart';
+import '../../services/auth_service.dart';
 
 class ObrasListScreen extends StatefulWidget {
   const ObrasListScreen({super.key});
@@ -26,6 +27,7 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
 
   // --- Acceso a datos ---
   final ObrasRepository _obrasRepository = ObrasRepository();
+  final AuthService _authService = AuthService();
   List<Map<String, dynamic>> _obras = [];
   bool _cargando = true;
   String? _error;
@@ -355,6 +357,7 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                             'revision': 'Rev. 00',
                             'tipoRol': 'Director de Obra',
                             'estadoServicioEspecial': 'Ninguno',
+                            'idAdminCreador': _authService.usuarioActual?.id,
                           });
                           if (!context.mounted) return;
                           setState(() => _obras.add(_conMontosCalculados(creada)));
@@ -1022,6 +1025,11 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                 ],
               ),
             ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.logout, color: Colors.white),
+            tooltip: 'Cerrar sesión',
+            onPressed: () => _authService.cerrarSesion(),
           ),
         ],
       ),

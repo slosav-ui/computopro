@@ -53,6 +53,7 @@ class ObrasRepository {
       'revision': row['revision']?.toString() ?? 'Rev. 00',
       'ultimaModif': row['updated_at'] ?? row['created_at'],
       'estadoServicioEspecial': row['estado_servicio_especial']?.toString() ?? 'Ninguno',
+      'idAdminCreador': row['id_admin_creador']?.toString(),
     };
   }
 
@@ -73,6 +74,7 @@ class ObrasRepository {
     if (obra.containsKey('estadoServicioEspecial')) {
       row['estado_servicio_especial'] = obra['estadoServicioEspecial'];
     }
+    if (obra.containsKey('idAdminCreador')) row['id_admin_creador'] = obra['idAdminCreador'];
     return row;
   }
 }
