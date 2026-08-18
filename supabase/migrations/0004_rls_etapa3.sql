@@ -9,6 +9,11 @@
 --
 -- Aplicar a mano en el SQL Editor de Supabase (Project → SQL Editor). No ejecutado
 -- automáticamente por Claude Code: sin acceso a la base de datos desde este entorno.
+--
+-- Nota de estado (2026-08-18): aplicado en producción por el usuario, confirmado
+-- en el dashboard de Supabase (Database → Policies) sobre las 4 tablas. Etapa 3
+-- queda completa de punta a punta a nivel de datos + control de acceso en base;
+-- falta solo conectar UserContext/obra_members a las pantallas (ver CLAUDE.md).
 
 -- =====================================================================
 -- Funciones helper
