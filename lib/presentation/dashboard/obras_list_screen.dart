@@ -703,22 +703,23 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
 
   // --- Diálogo: Servicios Técnicos Especiales ---
   void _abrirModalServiciosEspeciales(Map<String, dynamic> obra) {
-    final List<String> opciones = [
-      'Cómputo Métrico y Listado de Materiales',
-      'Presupuesto Operativo y Cálculo Polinómico / CAC',
-      'Acondicionamiento Térmico (Normas IRAM)',
+    String? tipoComputo;
+    final List<String> opcionesExtra = [
+      'Acondicionamiento Térmico (Normas IRAM — Cálculo K, G, Q)',
       'Legajo de Detalles Constructivos',
+      'Otro (especificar) — sujeto a evaluación',
     ];
-    final List<bool> seleccionados = List<bool>.filled(opciones.length, false);
+    final List<bool> seleccionadosExtra = List<bool>.filled(opcionesExtra.length, false);
     bool archivoAdjuntado = false;
     String? nombreArchivo;
     final notasCtrl = TextEditingController();
+    final otroCtrl = TextEditingController();
 
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setModalState) {
-          final bool haySeleccion = seleccionados.contains(true);
+          final bool haySeleccion = tipoComputo != null || seleccionadosExtra.contains(true);
           return AlertDialog(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
             title: const Row(
@@ -737,12 +738,43 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                   const SizedBox(height: 12),
                   const Text('Solicitar presupuesto para elaboración técnica de:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.black87)),
                   const SizedBox(height: 4),
-                  for (int i = 0; i < opciones.length; i++)
+                  _buildRadioOption(
+                    'Cómputo Métrico',
+                    'Listado de cantidades y materiales — precios a cargo del usuario.',
+                    'metrico',
+                    tipoComputo,
+                    (val) => setModalState(() => tipoComputo = val),
+                  ),
+                  _buildRadioOption(
+                    'Cómputo y Presupuesto',
+                    'Cómputo + presupuesto completo con precios incluidos.',
+                    'completo',
+                    tipoComputo,
+                    (val) => setModalState(() => tipoComputo = val),
+                  ),
+                  const SizedBox(height: 6),
+                  for (int i = 0; i < opcionesExtra.length; i++) ...[
                     _buildCheckOption(
-                      opciones[i],
-                      seleccionados[i],
-                      (val) => setModalState(() => seleccionados[i] = val ?? false),
+                      opcionesExtra[i],
+                      seleccionadosExtra[i],
+                      (val) => setModalState(() => seleccionadosExtra[i] = val ?? false),
                     ),
+                    if (i == 2 && seleccionadosExtra[2])
+                      Padding(
+                        padding: const EdgeInsets.only(left: 32, right: 4, bottom: 6),
+                        child: TextField(
+                          controller: otroCtrl,
+                          maxLines: 2,
+                          style: const TextStyle(fontSize: 12),
+                          decoration: const InputDecoration(
+                            hintText: 'Contame qué necesitás (render, documentación contractual, información legal, etc.)',
+                            hintStyle: TextStyle(fontSize: 11),
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                        ),
+                      ),
+                  ],
                   if (!haySeleccion)
                     Padding(
                       padding: const EdgeInsets.only(top: 2, bottom: 4),
@@ -808,6 +840,47 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
             ],
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildRadioOption(
+    String label,
+    String descripcion,
+    String value,
+    String? groupValue,
+    ValueChanged<String?> onChanged,
+  ) {
+    return InkWell(
+      onTap: () => onChanged(value),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Radio<String>(
+              value: value,
+              groupValue: groupValue,
+              onChanged: onChanged,
+              activeColor: const Color(0xFF1B365D),
+              visualDensity: VisualDensity.compact,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            const SizedBox(width: 4),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(label, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+                    Text(descripcion, style: TextStyle(fontSize: 10, color: Colors.grey[700])),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1224,11 +1297,14 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
 
                                 // Pie de Tarjeta: Info de Modificación + Botones de Acción
                                 Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                   children: [
-                                    Text(
-                                      'Última Modif: ${obra['ultimaModif']} • ${obra['revision']}',
-                                      style: const TextStyle(fontSize: 10, color: Colors.black38),
+                                    Expanded(
+                                      child: Text(
+                                        'Última Modif: ${obra['ultimaModif']} • ${obra['revision']}',
+                                        style: const TextStyle(fontSize: 10, color: Colors.black38),
+                                        overflow: TextOverflow.ellipsis,
+                                        maxLines: 1,
+                                      ),
                                     ),
                                     Row(
                                       children: [
