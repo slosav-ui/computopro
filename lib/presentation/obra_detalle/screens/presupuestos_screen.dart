@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../../data/models/obra_model.dart';
+import '../../../core/segurity/user_context.dart';
+import '../../../services/auth_service.dart';
+import '../../../services/obra_members_repository.dart';
 import '../tabs/rubros_tab.dart';
 
 class PresupuestosScreen extends StatefulWidget {
@@ -14,11 +17,19 @@ class PresupuestosScreen extends StatefulWidget {
 class _PresupuestosScreenState extends State<PresupuestosScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
   late Map<String, dynamic> _obraDatos;
+  String? _obraId;
 
   // Coeficientes dinámicos para Resumen Final
   double _gastosGeneralesPorcentaje = 15.0;
   double _beneficioPorcentaje = 10.0;
   double _ivaPorcentaje = 21.0;
+
+  // Etapa 3: permisos reales de la obra (obra_members -> UserContext).
+  // null mientras carga o si no se pudo determinar -> fail-closed (sin acceso a APU).
+  final AuthService _authService = AuthService();
+  final ObraMembersRepository _obraMembersRepository = ObraMembersRepository();
+  UserContext? _userContext;
+  bool _cargandoPermisos = true;
 
   @override
   void initState() {
@@ -39,23 +50,25 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> with SingleTick
         ubicacion = map['ubicacion']?.toString() ?? ubicacion;
         sup = (map['superficieM2'] as num?)?.toDouble() ?? (map['superficie'] as num?)?.toDouble() ?? sup;
         monto = (map['montoEstimadoArs'] as num?)?.toDouble() ?? (map['montoTotal'] as num?)?.toDouble() ?? monto;
+        _obraId = map['id']?.toString();
       } else {
         // Acceso seguro por casting dinámico para evitar errores de getters/métodos faltantes en ObraModel
         final dynamic o = widget.obra;
         try { if (o.nombre != null) nombreObra = o.nombre.toString(); } catch (_) {}
-        try { 
+        try {
           final prop = o.propietario ?? o.comitente;
-          if (prop != null) propietario = prop.toString(); 
+          if (prop != null) propietario = prop.toString();
         } catch (_) {}
         try { if (o.ubicacion != null) ubicacion = o.ubicacion.toString(); } catch (_) {}
-        try { 
+        try {
           final valSup = o.superficieM2 ?? o.superficie;
-          if (valSup != null && valSup is num) sup = valSup.toDouble(); 
+          if (valSup != null && valSup is num) sup = valSup.toDouble();
         } catch (_) {}
-        try { 
+        try {
           final valMonto = o.montoEstimadoArs ?? o.montoTotal;
-          if (valMonto != null && valMonto is num) monto = valMonto.toDouble(); 
+          if (valMonto != null && valMonto is num) monto = valMonto.toDouble();
         } catch (_) {}
+        try { if (o.id != null) _obraId = o.id.toString(); } catch (_) {}
       }
     }
 
@@ -68,6 +81,26 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> with SingleTick
       'montoEstimadoArs': monto,
       'revision': 'Rev. 01',
     };
+
+    _cargarUserContext();
+  }
+
+  Future<void> _cargarUserContext() async {
+    final userId = _authService.usuarioActual?.id;
+    if (userId == null || _obraId == null) {
+      if (mounted) setState(() => _cargandoPermisos = false);
+      return;
+    }
+    final miembros = await _obraMembersRepository.getMiembrosDeObra(_obraId!);
+    if (!mounted) return;
+    setState(() {
+      _userContext = UserContext.desdeObraMembers(
+        userId: userId,
+        obraId: _obraId!,
+        todasLasMembresias: miembros,
+      );
+      _cargandoPermisos = false;
+    });
   }
 
   @override
@@ -140,6 +173,21 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> with SingleTick
 
   // 2. APU
   Widget _buildTabApu() {
+    if (_cargandoPermisos) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_userContext?.puedeVerMontosYAPU != true) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Text(
+            'No tenés permiso para ver el Análisis de Precios Unitarios de esta obra.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.black54),
+          ),
+        ),
+      );
+    }
     return Padding(
       padding: const EdgeInsets.all(12),
       child: Column(
