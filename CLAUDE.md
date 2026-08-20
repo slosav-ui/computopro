@@ -62,7 +62,9 @@ ComputoPRO es una herramienta **B2B / de nicho profesional**, no una app masiva 
 
 **Paso 4.** `core/segurity/user_context.dart` migrado: `UserContext` ya no encapsula un `UserRole` global fijo, se construye a partir de las filas de `ObraMember` de un usuario en una obra puntual (`UserContext.desdeObraMembers`), con roles combinables. Los 3 getters (`puedeVerMontosYAPU`, `esVistaOperativa`, `puedeAprobarCertificados`) recalculados sobre esa lista: `esVistaOperativa` exige Constructor puro (sin ningún otro rol con visibilidad económica combinado); `puedeAprobarCertificados` incluye ahora `cliente_principal` además de `admin_maestro` y `invitado_apoderado` con delegación vigente (gap real que tenía la versión anterior, no solo un ajuste por roles combinables). Verificado con búsqueda en todo `lib/`: `UserContext` sigue sin consumidores — migración de bajo riesgo, sin conectar a ninguna pantalla todavía.
 
-**Paso 5 (RLS) — Etapa 3 completa de punta a punta.** `supabase/migrations/0004_rls_etapa3.sql` agrega Row Level Security a las 4 tablas de Etapa 3 (`obra_members`, `modificaciones_obra`, `audit_log`, `libro_entradas`), aplicado en producción y confirmado en el dashboard de Supabase (Database → Policies). Se apoya en 3 funciones helper `SECURITY DEFINER` (`is_obra_member`, `tiene_rol_en_obra`, `puede_aprobar_monto`) en vez del patrón de dueño único que usa `obras` (`id_admin_creador = auth.uid()`), porque estas tablas tienen múltiples roles combinables por obra, no un dueño único. Decisiones de diseño relevantes: `obra_members` y `libro_entradas` tienen SELECT abierto a `is_obra_member()` completo; `modificaciones_obra` colapsa `solicitado_por`/`subido_por` al mismo usuario en el INSERT (limitación conocida y documentada inline en la migración — el schema no tiene todavía un estado intermedio para separar "quien detecta" de "quien eleva formalmente"); `audit_log` no tiene política de UPDATE ni DELETE para nadie (inalterable, ver "Blindaje legal" más abajo). **Importante**: RLS resuelve visibilidad *por fila* (a qué obra pertenecés), no *por columna* — no oculta `monto_total`/`tope_monto_aprobacion` de roles en "vista operativa sin montos" como Constructor; esa redacción sigue pendiente en capa de app, vía los getters de `UserContext`. Con este paso se cierra la implementación de Etapa 3 tal como quedó diseñada en `docs/etapa3_roles_permisos_diseno_datos.md` (datos + control de acceso a nivel de base). Sigue sin conectar: `UserContext`/`obra_members` a las pantallas reales (`ObrasListScreen`, `PresupuestosScreen` y sus tabs) para visibilidad condicional en la UI — es trabajo futuro, no parte de Etapa 3.
+**Paso 5 (RLS) — Etapa 3 completa de punta a punta.** `supabase/migrations/0004_rls_etapa3.sql` agrega Row Level Security a las 4 tablas de Etapa 3 (`obra_members`, `modificaciones_obra`, `audit_log`, `libro_entradas`), aplicado en producción y confirmado en el dashboard de Supabase (Database → Policies). Se apoya en 3 funciones helper `SECURITY DEFINER` (`is_obra_member`, `tiene_rol_en_obra`, `puede_aprobar_monto`) en vez del patrón de dueño único que usa `obras` (`id_admin_creador = auth.uid()`), porque estas tablas tienen múltiples roles combinables por obra, no un dueño único. Decisiones de diseño relevantes: `obra_members` y `libro_entradas` tienen SELECT abierto a `is_obra_member()` completo; `modificaciones_obra` colapsa `solicitado_por`/`subido_por` al mismo usuario en el INSERT (limitación conocida y documentada inline en la migración — el schema no tiene todavía un estado intermedio para separar "quien detecta" de "quien eleva formalmente"); `audit_log` no tiene política de UPDATE ni DELETE para nadie (inalterable, ver "Blindaje legal" más abajo). **Importante**: RLS resuelve visibilidad *por fila* (a qué obra pertenecés), no *por columna* — no oculta `monto_total`/`tope_monto_aprobacion` de roles en "vista operativa sin montos" como Constructor; esa redacción sigue pendiente en capa de app, vía los getters de `UserContext`. Con este paso se cierra la implementación de Etapa 3 tal como quedó diseñada en `docs/etapa3_roles_permisos_diseno_datos.md` (datos + control de acceso a nivel de base).
+
+**Primera conexión a UI (verificada end-to-end en producción, 2026-08-19).** `PresupuestosScreen` (`lib/presentation/obra_detalle/screens/presupuestos_screen.dart`) es la primera pantalla que consume `UserContext`/`obra_members` de verdad. En `initState` extrae el `obraId` de la obra abierta (de `widget.obra`, sea `Map` u `ObraModel`) y llama a `_cargarUserContext()`, que usa `AuthService.usuarioActual` + el nuevo `lib/services/obra_members_repository.dart` (`ObraMembersRepository.getMiembrosDeObra`, sigue el mismo patrón que `ObrasRepository` pero mapea las columnas planas snake_case de `obra_members` a `ObraMember`/`PermisosEspeciales` a mano, sin pasar por `ObraMember.fromMap`) para construir el `UserContext` real vía `desdeObraMembers`. El único efecto visible por ahora: `_buildTabApu()` (solapa "2. APU") muestra un placeholder de "sin acceso" mientras carga o si `puedeVerMontosYAPU != true`, y solo si es `true` renderiza el contenido real (todavía mock, ver más abajo). Fail-closed por diseño: sin usuario logueado, sin `obraId`, o mientras la consulta está en vuelo, no se ve el contenido. Confirmado con datos reales en producción en los dos sentidos: sin fila en `obra_members` para el usuario en esa obra → placeholder; con una fila `admin_maestro` insertada → contenido completo del APU. El resto de las pantallas (`ObrasListScreen`, las otras 5 solapas de `PresupuestosScreen`, `gestion_obra_tab.dart`, los tabs con `obraId` sin conectar) sigue sin condicionar por rol — es la extensión pendiente de este mismo mecanismo, no un problema del mecanismo en sí.
 
 **Decisión tomada**: el QR de vinculación multidispositivo (espejar sesión celular↔PC/tablet, o compartir rol con un colaborador) **no** va en el Dashboard principal — rompería la limpieza visual. Va en Configuración Global de la cuenta o en Ajustes de cada obra.
 
@@ -205,7 +207,8 @@ Antes de escribir código de cualquier solapa nueva, el usuario prefiere cerrar 
 Chequeado contra el código real de `lib/` (no contra lo que dicen los documentos). Ninguna de estas funcionalidades tiene entidad de datos, servicio ni UI hoy salvo donde se indique lo contrario:
 
 - **Ciclo de vida del Certificado de Obra (5 estados)** — definición completa: 1) *Borrador* (carga de avances por Profesional/Empresa), 2) *Emitido/Esperando Pago* (notifica al Propietario con fecha límite según plazo pactado), 3) *Leído por Propietario* (se notifica a la obra automáticamente al abrirse), 4) *Pagado por Propietario* (marca medio de pago + adjunta comprobante), 5) *Impactado y Cerrado* (la Empresa/Constructor verifica el cobro y adjunta factura final). Reglas especiales: el plazo de pago se configura **una sola vez antes del Certificado N°1** y aplica a todos los siguientes; si se opta por firma física, el sistema debe **bloquear la emisión del siguiente certificado** hasta subir el PDF/imagen firmado.
-  **Estado real**: `lib/presentation/obra_detalle/tabs/gestion_obra_tab.dart` implementa solo **3 de los 5 estados** (`Borrador` → `Emitido (Esperando Pago)` → `Pagado`, ver `_cambiarEstado`/`_getColorEstado`). Faltan por completo *Leído por Propietario* y *Impactado y Cerrado*. Hay un botón "Subir PDF Firmado" pero **no bloquea** la emisión del siguiente certificado. No hay Fondo de Reparo. No se genera ningún PDF real (los paquetes `pdf`/`printing` siguen sin usarse en todo `lib/`). El plazo de pago (`_diasPlazoPago`) es un campo fijo sin UI para configurarlo. Y el tab **no está conectado** a `PresupuestosScreen` (usa un `obraId` requerido que nadie le pasa hoy).
+  **Estado real en `lib/` (sin cambios — la brecha de UI/Dart sigue intacta)**: `lib/presentation/obra_detalle/tabs/gestion_obra_tab.dart` implementa solo **3 de los 5 estados** (`Borrador` → `Emitido (Esperando Pago)` → `Pagado`, ver `_cambiarEstado`/`_getColorEstado`). Faltan por completo *Leído por Propietario* y *Impactado y Cerrado*. Hay un botón "Subir PDF Firmado" pero **no bloquea** la emisión del siguiente certificado. No se genera ningún PDF real (los paquetes `pdf`/`printing` siguen sin usarse en todo `lib/`). El plazo de pago (`_diasPlazoPago`) es un campo fijo sin UI para configurarlo. Y el tab **no está conectado** a `PresupuestosScreen` (usa un `obraId` requerido que nadie le pasa hoy).
+  **Pero la capa de datos en Supabase ya está completa y en producción** (2026-08-20) — ver sección "Ciclo de vida del Certificado de Obra: capa de datos completa" más abajo. `gestion_obra_tab.dart` simplemente no consume nada de eso todavía; conectarlo (reemplazar el mock por la tabla `certificados` real) es la brecha de UI que queda pendiente, no un problema de diseño de datos.
 - **Matriz de permisos por tipo de relación cliente-obra** — 3 relaciones con visibilidad distinta: *Cliente Autoconstructor* (ve todo, costos directos y precios reales de corralón), *Cliente con Profesional + Contratista* (ve precio final y avance; oculto: salarios, gastos generales, beneficio, imprevistos y precios negociados en bruto — solo Profesional/Contratista cargan, Cliente aprueba en modo lectura), *Cliente con Contratista Directo sin Profesional* (visibilidad más restringida aún: ve avance y precio del rubro certificado, oculto el costo interno y margen del contratista).
   **Estado real**: **no implementada**. `gestion_obra_tab.dart` solo tiene un `DropdownButton` binario (`'Profesional / Empresa'` vs `'Propietario / Cliente'`) sin relación con estos 3 casos, y el resto del código no modela ningún concepto de "tipo de relación cliente-obra".
 - **Motor "Mandar a Presupuestar"** (botón inteligente en Resumen Final) — dispara una solicitud zonal simultánea a 3 corralones geolocalizados en la zona de la obra; los precios devueltos se muestran etiquetados como no firmes hasta una validación manual obligatoria ("Validar y Confirmar Precios"); exportación alternativa a PDF/Excel/texto WhatsApp; si no hay comercios con membresía activa en la zona, calcula un promedio automático sobre 1 a 4 proveedores de referencia.
@@ -234,7 +237,7 @@ Complementa el roadmap del marketplace de terceros de más arriba:
 - **Registro de obra con segmentación de perfil**: guardar el perfil de quien crea la obra (Profesional/Constructor/Cliente) no solo para permisos, sino para que el propio usuario reciba métricas/alertas de uso de la plataforma — pensado originalmente vía bot de Telegram o notificación interna.
 - **Motor de precio de referencia por m² por zona**: al elegir/tocar una zona geográfica (radio ~50km), mostrar en el Dashboard un valor de referencia de $/m² en ARS y USD, separado en 3 categorías de obra (A, B, C según tipo de materiales/construcción). El valor debe ser el promedio REAL de las obras ya cargadas por usuarios en esa zona y categoría (derivado de `monto_total` ÷ superficie de cada obra), no un valor fijo estimado — el propósito es mostrar algo como "Valor promedio obra hoy en zona Bariloche: $X/m²". Requiere: (1) agregar `categoria` (A/B/C) a la tabla `obras` en Supabase, (2) una función SQL de promedio por cercanía geográfica + categoría, similar en patrón a `calcular_precio_promedio_insumo()` ya documentada para corralones (ver "Solapa Proveedores" más arriba). Potencial de negocio alto: dato consultado tanto por profesionales como por propietarios. Evaluar prioridad más adelante, no implementar ahora.
 - **"Obra Demo de Onboarding"**: al entrar un usuario nuevo, se genera automáticamente una obra de ejemplo (marcada con flag `es_demo`) que sirve como recorrido guiado por las funcionalidades de la app. El usuario puede ocultarla desde algún sector de Configuración, y volver a mostrarla cuando quiera desde ahí mismo. Debería generarse localmente en el dispositivo, no guardarse en la tabla `obras` de Supabase, para no mezclarse con datos reales de uso.
-- **"Sistema de Registro/Login de Usuarios"**: pendiente central para destrabar roles y permisos reales (`UserContext` existe en el código — ver "Permission model" más arriba — pero no está conectado a ninguna pantalla). Usar Supabase Auth. A definir antes de implementar: método de registro (email/contraseña, Google, o ambos), y si se piden datos profesionales (matrícula, nombre de estudio) en el registro o se completan después en el perfil. Es la base de la que dependen: asignación de roles al crear obra, matriz de permisos por tipo de relación cliente-obra, delegación de firma, y el campo `idAdminCreador` ya reservado en `ObraModel`/la tabla `obras`.
+- **"Sistema de Registro/Login de Usuarios"**: pendiente central para destrabar roles y permisos reales (`UserContext` existe en el código y ya está conectado a `PresupuestosScreen` — ver "Permission model" más arriba —, pero el resto de las pantallas todavía no). Usar Supabase Auth. A definir antes de implementar: método de registro (email/contraseña, Google, o ambos), y si se piden datos profesionales (matrícula, nombre de estudio) en el registro o se completan después en el perfil. Es la base de la que dependen: asignación de roles al crear obra, matriz de permisos por tipo de relación cliente-obra, delegación de firma, y el campo `idAdminCreador` ya reservado en `ObraModel`/la tabla `obras`.
 - **Actualización automática del dólar BNA al abrir la app**: la cotización de referencia (hoy hardcodeada, ver banner del Dashboard) debe traerse de una fuente real cada vez que el usuario abre la app con conexión a internet — no en un cronograma fijo (no un cron diario/semanal). Si el valor nuevo difiere más de un 5% del último guardado, mostrar un aviso visual breve al usuario antes de aplicarlo.
 - **CAC aplicado solo sobre el monto pendiente de ejecutar**: la redeterminación por índice CAC debe recalcularse únicamente sobre la porción de la obra que todavía no tiene certificación emitida. El monto ya certificado queda congelado al valor vigente en el momento de esa certificación — no se redetermina retroactivamente. Requiere que el cálculo de CAC esté conectado al estado de los certificados de la Solapa 4 (Gestión de Obra, ver ciclo de vida del Certificado más arriba), vínculo que hoy no existe.
 - **Renegociación por salto brusco del dólar (+15%)**: si la cotización de referencia sube un 15% o más respecto al valor vigente al momento de presentar el presupuesto, el sistema debería ofrecer la opción de renegociar el precio de lo que resta ejecutar de la obra — mismo espíritu que la redeterminación por CAC (ver punto anterior), pero disparado por variación del dólar en vez del índice CAC mensual, y aplicado también solo sobre el saldo no certificado. El objetivo es que ninguna de las partes (profesional/constructor o cliente) se vea perjudicada por variaciones externas fuertes. Idealmente debería quedar reflejado en el contrato entre las partes, aunque se reconoce que no siempre hay contrato formal.
@@ -294,13 +297,138 @@ The codebase is mid-migration between two ways of representing an "obra":
 
 No state management library is used (no Provider/Riverpod/Bloc/get_it) — state lives in `State` objects via `setState`, and data is passed down through widget constructors / `Navigator` arguments. `services/apu_database_service.dart` returns a hardcoded in-memory list and is not currently consumed by `ObrasListScreen` (which keeps its own separate hardcoded `_obras` list) — treat it as an incomplete integration point, not a source of truth.
 
-### Permission model (Etapa 3 complete end-to-end at the data/DB layer — RLS included — not yet wired to UI)
+### Permission model (Etapa 3 complete end-to-end at the data/DB layer — RLS included — first UI wiring live in `PresupuestosScreen`)
 
 Four Supabase tables now back this, per `docs/etapa3_roles_permisos_diseno_datos.md` (migrations `supabase/migrations/000{1,2,3}_*.sql`, all applied in production): `obra_members` (roles combinables per obra+usuario, one row per role — `data/models/obra_member.dart`: `RolProyecto`, `ObraMember`, `PermisosEspeciales`), `modificaciones_obra` + `audit_log` (Adicionales/Demasías/Quitas with a generic append-only audit trail — `data/models/modificacion_obra.dart`, `data/models/audit_log_entry.dart`), and `libro_entradas` (the 3 Gestión de Obra "libros" as one table with a `libro` discriminator — `data/models/libro_entrada.dart`).
 
 `core/segurity/user_context.dart`'s `UserContext` no longer wraps a single global `UserRole` — it's built via `UserContext.desdeObraMembers(...)` from a user's `ObraMember` rows for one obra, and its visibility getters (`puedeVerMontosYAPU`, `esVistaOperativa`, `puedeAprobarCertificados`) are recomputed across however many roles that user combines in that obra (see `RolProyecto` in `obra_member.dart` — it replaced the old standalone `UserRole` enum). `data/models/obra_model.dart` separately still defines `CapaVisibilidad` and `PermisosModulo` (per-obra granular permissions: `verComputo`, `verPreciosFinales`, `verApuYCoeficienteK`, `cargarAvanceFisico`, `editarComputo`, `aprobarCertificados`, `invitarTerceros`) — per the Etapa 3 design doc §1, these are now considered obsolete as a source of truth for real access control (a single flag per obra can't express APU privacy that depends on *who generated* a given record) and should not be extended further; `UserContext`/`obra_members` is the intended mechanism going forward.
 
-**RLS applied in production** (`supabase/migrations/0004_rls_etapa3.sql`, confirmed active in the Supabase dashboard under Database → Policies): all 4 tables now enforce row-level access control at the database layer, built on 3 `SECURITY DEFINER` helper functions (`is_obra_member`, `tiene_rol_en_obra`, `puede_aprobar_monto`) rather than the single-owner pattern `obras` uses (`id_admin_creador = auth.uid()`), since these tables have multiple combinable roles per obra. This means unauthorized reads/writes are now blocked by Postgres itself, independent of the Flutter UI. What RLS does *not* do: column-level redaction — a role like Constructor ("vista operativa, sin montos") can still receive `monto_total`/`tope_monto_aprobacion` in any row it's allowed to read at all, since RLS filters rows, not columns. That's left to the app layer via `UserContext`'s getters. Separately — and this is the part still not done — none of `UserContext`/`obra_members`/RLS is wired into any screen's rendering logic yet; screens still show all data unconditionally regardless of what the database would actually allow that user to write. When implementing role-based UI visibility, this is the intended seam.
+**RLS applied in production** (`supabase/migrations/0004_rls_etapa3.sql`, confirmed active in the Supabase dashboard under Database → Policies): all 4 tables now enforce row-level access control at the database layer, built on 3 `SECURITY DEFINER` helper functions (`is_obra_member`, `tiene_rol_en_obra`, `puede_aprobar_monto`) rather than the single-owner pattern `obras` uses (`id_admin_creador = auth.uid()`), since these tables have multiple combinable roles per obra. This means unauthorized reads/writes are now blocked by Postgres itself, independent of the Flutter UI. What RLS does *not* do: column-level redaction — a role like Constructor ("vista operativa, sin montos") can still receive `monto_total`/`tope_monto_aprobacion` in any row it's allowed to read at all, since RLS filters rows, not columns. That's left to the app layer via `UserContext`'s getters.
+
+**First screen wired, verified end-to-end in production (2026-08-19).** `PresupuestosScreen` now builds a real `UserContext` on open: `lib/services/obra_members_repository.dart` (`ObraMembersRepository.getMiembrosDeObra`, new — mirrors `ObrasRepository`'s pattern but hand-maps `obra_members`'s flat snake_case columns to `ObraMember`/`PermisosEspeciales`, since `ObraMember.fromMap` expects the app's own serialized shape, not the raw DB row) plus `AuthService.usuarioActual` feed `UserContext.desdeObraMembers` in `_cargarUserContext()`, called from `initState` once `obraId` is extracted from `widget.obra`. The only visible effect so far: `_buildTabApu()` (tab "2. APU") shows a "sin acceso" placeholder while loading or when `puedeVerMontosYAPU != true`, and only renders the (still mock) APU content when `true` — fail-closed by default (no user, no obraId, or in-flight query all resolve to the placeholder). Confirmed manually against production data both ways: no `obra_members` row for the user on that obra → placeholder; one `admin_maestro` row inserted → full APU content. Every other screen (`ObrasListScreen`, the other 5 tabs of `PresupuestosScreen`, `gestion_obra_tab.dart`, the tabs with the still-unconnected int `obraId`) still shows everything unconditionally — wiring them the same way is the pending work, not a gap in the mechanism itself.
+
+### Modelos de Certificación A/B (Avance Medido / Hitos de Precio Cerrado) — completo a nivel de datos
+
+Pieza nueva sobre Etapa 3, no una extensión de ella. Diseño completo en
+`docs/modelos_certificacion_diseno_datos.md`. Aplicada de punta a punta en producción (confirmado
+por el usuario en Table Editor / Database → Policies / Database → Functions), 4 migraciones:
+
+- **`0005_modelo_certificacion.sql`**: agrega `obras.modelo_certificacion`
+  (`'avance_medido'` | `'hitos_precio_cerrado'`, default `'avance_medido'`) y la función
+  `cambiar_modelo_certificacion(obra_id, modelo_nuevo, motivo)` — `update` + `insert` en
+  `audit_log` atómico, motivo obligatorio validado en la función misma. No se creó una tabla de
+  historial dedicada: reusa `audit_log` (`entidad='obra'`, `entidad_id` null porque `obra_id` ya
+  identifica la obra), tal como ese comentario en `audit_log_entry.dart` ya anticipaba. Limitación
+  conocida: quién puede ejecutar el cambio depende de la política `UPDATE` que `obras` ya tenía
+  antes de Etapa 3 (`id_admin_creador = auth.uid()`, dueño único), no de una verificación
+  explícita del rol `admin_maestro` de `obra_members` — pueden divergir si el Administrador de una
+  obra fue reasignado después de creada.
+- **`0006_hitos_certificacion.sql`** + **`0007_hitos_certificacion_solo_admin.sql`**: tabla nueva
+  `hitos_certificacion` para Modelo B — hitos definidos libremente por tiempo o alcance, estado
+  `activo`/`finalizado`/`rescindido` (check constraint exige `motivo_rescision` si se rescinde),
+  `hito_anterior_id` autorreferenciado igual que `libro_entradas.entrada_padre_id` para modelar que
+  un hito rescindido se retoma con otro (posiblemente otro contratista/monto). Doble función de la
+  misma tabla: `contratista_nombre` null modela el contrato principal de la obra (el contratista ya
+  es el Constructor, con fila en `obra_members`); con valor modela Subcontratos con terceros sin
+  cuenta en el sistema. Agrega también `obras.monto_total_contratado`, deliberadamente separada de
+  `ObraModel.montoTotal` (bajo Modelo A el total es/debería ser un cálculo derivado del cómputo
+  métrico; bajo Modelo B es un input directo del Administrador), y la función
+  `calcular_avance_hitos(obra_id)` — el `%` de avance nunca es un campo editable a mano, se calcula
+  sumando el `monto` de los hitos `finalizado`, filtrando `contratista_nombre is null` para no
+  mezclar el avance certificado al Cliente con pagos a Subcontratistas. RLS incluida desde la
+  creación de la tabla (a diferencia de Etapa 3, que la agregó recién como paso final consolidado
+  en `0004`): `SELECT` abierto a `is_obra_member`, `INSERT`/`UPDATE` (solo mientras
+  `estado='activo'`, lo que congela `finalizado`/`rescindido` de hecho) restringido a
+  `admin_maestro` únicamente — `0007` corrigió una primera versión de `0006` que también incluía a
+  `profesional`. Sin política `DELETE` (append-only, mismo criterio que el resto de Etapa 3).
+- **`0008_ajuste_contrato.sql`**: `modificaciones_obra` (tabla de Etapa 3) gana un cuarto valor de
+  `tipo`, `'ajuste_contrato'` (check constraint fuerza `subitem_id`/`apu_privado_id` nulos y
+  `cantidad = monto_total`, ya que es un ajuste puramente monetario sin cómputo métrico de por
+  medio), y la función `aprobar_ajuste_contrato(modificacion_id, comentario)` — aprueba + aplica el
+  delta a `obras.monto_total_contratado` + registra `audit_log`, atómico, reusando
+  `puede_aprobar_monto` (de `0004_rls_etapa3.sql`) como cadena de autoridad. Motivación: un aumento
+  de `monto_total_contratado` después de su carga inicial es plata que termina pagando el Cliente,
+  mismo peso que un Adicional — no puede ser edición libre del Administrador, tiene que pasar por
+  el mismo circuito de aprobación que ya usa `modificaciones_obra`. La carga *inicial* de
+  `monto_total_contratado` (primera vez, de `null` a un número) sigue siendo edición directa
+  simple, sin pasar por acá.
+
+**Deuda técnica aceptada explícitamente por el usuario** (no un descuido — documentada inline en
+`0008_ajuste_contrato.sql`, y el usuario decidió no cerrarla ahora): (a) la política
+`modificaciones_obra_update` genérica todavía permite aprobar un `ajuste_contrato` con un `UPDATE`
+directo sin pasar por `aprobar_ajuste_contrato()`, dejando la modificación aprobada sin aplicar el
+delta ni generar su `audit_log` específico si alguien evita la función; (b) nada a nivel de base
+impide editar `obras.monto_total_contratado` directamente aunque ya tenga un valor cargado — la
+regla "editable libre solo en la carga inicial" es convención de la capa de app, no forzada en la
+base. Ambas se dejaron sin trigger a propósito, por consistencia con cómo ya funciona la graduación
+de un `adicional` a Subitem real (tampoco forzada a nivel de base, es efecto de app) — el usuario
+aceptó el riesgo porque hoy es el único que toca la base directamente y el código Dart va a llamar
+siempre a la función. Revisar si en algún momento se suma otro desarrollador con acceso directo a
+la base.
+
+**No implementado en esta pieza puntual** (fuera de su alcance desde el diseño, no un olvido):
+ninguna conexión a Dart/UI de lo de acá — `data/models/hito_certificacion.dart` quedó propuesto en
+el diseño pero no se creó, `gestion_obra_tab.dart` no toca nada de esto. **Actualización posterior**:
+el ciclo completo de 5 estados del certificado de Modelo A, que en su momento quedaba fuera de
+alcance ("ver 'Ciclo de vida del Certificado de Obra' más abajo"), ya se implementó como pieza
+aparte — ver la sección siguiente. Las columnas `anticipo_pct`/`fondo_reparo_pct` (diseñadas acá,
+§6, sin dependencia dura en su momento) terminaron migrándose como parte de esa pieza siguiente, no
+de esta.
+
+### Ciclo de vida del Certificado de Obra (5 estados, Modelo A) — capa de datos completa
+
+Pieza nueva sobre Modelos de Certificación A/B (la sección de arriba) y sobre Etapa 3. Diseño
+completo en `docs/certificados_ciclo_vida_diseno_datos.md`. Aplicada de punta a punta en producción
+(confirmado por el usuario en Table Editor / Database → Policies / Database → Functions), 4
+migraciones:
+
+- **`0009_certificados.sql`**: agrega `obras.dias_plazo_pago_certificados`/`anticipo_pct`/`fondo_reparo_pct`
+  (estas dos últimas ya estaban diseñadas en la pieza de Modelos A/B, §6, pero se habían dejado sin
+  migrar hasta que fueron dependencia dura de un certificado real), la tabla `certificados` con los 5
+  estados (`borrador`/`emitido`/`leido`/`pagado`/`impactado_cerrado`, con `check` de coherencia de
+  fechas por estado), el helper `obra_modelo_es(obra_id, modelo)` (adelantado desde el paso 2 porque
+  la política `INSERT` ya lo necesitaba), y RLS completa desde el mismo archivo — `SELECT` abierto a
+  `is_obra_member`, `INSERT` para `admin_maestro`/`profesional`/`constructor` con guard de "solo
+  Modelo A" (`certificados` no aplica bajo Modelo B, que usa `hitos_certificacion`).
+- **`0010_certificados_update_solo_borrador.sql`**: corrección sobre `0009` — la política `UPDATE`
+  original dejaba que cualquier usuario logueado con uno de 5 roles hiciera un `UPDATE` directo sobre
+  un certificado ya emitido, sin pasar por ninguna función (riesgo real desde el uso normal de la
+  app, a diferencia del límite ya aceptado para `ajuste_contrato`, donde el usuario es el único con
+  acceso directo a la base). Corregida: `UPDATE` directo solo permitido mientras
+  `estado = 'borrador'`, con `admin_maestro`/`profesional`/`constructor`; cualquier cambio de estado
+  por fuera de eso queda bloqueado a nivel de política.
+- **`0011_certificados_funciones_transicion.sql`**: por la restricción de `0010`, las funciones de
+  transición no pueden ser `SECURITY INVOKER` como `cambiar_modelo_certificacion`/`aprobar_ajuste_contrato`
+  — son `SECURITY DEFINER`, con el chequeo de autoridad hecho a mano en el cuerpo de cada una.
+  Agrega el helper `puede_gestionar_certificado(obra_id, monto)` (variante de `puede_aprobar_monto`
+  sin el acceso incondicional de `admin_maestro`/`profesional`, porque quien lee/paga un certificado
+  es específicamente el Cliente o su Apoderado, no la Empresa) y 5 funciones: `emitir_certificado`
+  (Borrador→Emitido, `admin_maestro`/`profesional`, calcula y snapshotea anticipo/fondo de reparo,
+  bloquea si el certificado anterior requería firma física y no se subió el PDF firmado),
+  `marcar_certificado_leido` (Emitido→Leído, `cliente_principal`/`invitado_apoderado`, idempotente —
+  pensada para que la app la llame automáticamente al abrir el detalle, no por botón),
+  `marcar_certificado_pagado` (Emitido o Leído→Pagado — "Leído" es salteable, completa `fecha_lectura`
+  como efecto colateral si hacía falta —, `puede_gestionar_certificado`), `marcar_certificado_impactado`
+  (Pagado→Impactado y Cerrado, `admin_maestro`/`constructor`, no `profesional` — son responsabilidades
+  distintas: quien emite vs. quien cobra y cierra administrativamente), y una 5ª función no contada
+  en el diseño original, `subir_pdf_firmado_certificado` (independiente del estado del ciclo,
+  `admin_maestro`/`profesional`) — sin ella el bloqueo de firma física de `emitir_certificado` sería
+  imposible de destrabar nunca, dado que `0010` ya no deja ningún `UPDATE` directo sobre un
+  certificado emitido.
+- **`0012_hitos_certificacion_guard_modelo.sql`**: cierra un gap retroactivo encontrado al diseñar
+  esta pieza — `hitos_certificacion` (Modelo B, ya en producción desde antes) nunca chequeó
+  `obras.modelo_certificacion`, así que se podía crear/editar un hito de contrato principal aunque la
+  obra estuviera en Modelo A. Corregido con el mismo `obra_modelo_es()` de `0009`, condicionado a
+  `contratista_nombre is null` (el guard no aplica a los Subcontratos que esa misma tabla también
+  aloja, que no dependen del modelo de certificación de la obra) — en `INSERT` y también en `UPDATE`.
+
+**No implementado todavía**: ninguna conexión a Dart/UI (`gestion_obra_tab.dart` sigue siendo el
+mock de siempre, ver más arriba en "Verificación de implementación"); la matriz de permisos por tipo
+de relación cliente-obra (Cliente Autoconstructor / con Profesional+Contratista / con Contratista
+Directo) sigue sin ningún soporte de datos, es una capa de visibilidad aparte que no cambia el
+schema de `certificados`; y la generación real de PDF (paquetes `pdf`/`printing` siguen sin usarse en
+todo `lib/`) — el "PDF firmado" de acá es solo un adjunto (`text[]` de URLs) que alguien sube desde
+afuera, no algo que la app genere.
 
 ### Currency and formatting
 
