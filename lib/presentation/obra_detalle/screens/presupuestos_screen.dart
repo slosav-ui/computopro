@@ -4,6 +4,7 @@ import '../../../core/segurity/user_context.dart';
 import '../../../services/auth_service.dart';
 import '../../../services/obra_members_repository.dart';
 import '../tabs/rubros_tab.dart';
+import '../tabs/gestion_obra_tab.dart';
 
 class PresupuestosScreen extends StatefulWidget {
   final dynamic obra;
@@ -152,7 +153,7 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> with SingleTick
             Tab(icon: Icon(Icons.analytics_outlined, size: 18), text: '2. APU'),
             Tab(icon: Icon(Icons.inventory_2_outlined, size: 18), text: '3. Materiales y MO'),
             Tab(icon: Icon(Icons.storefront_outlined, size: 18), text: '4. Proveedores'),
-            Tab(icon: Icon(Icons.show_chart_outlined, size: 18), text: '5. Certificación'),
+            Tab(icon: Icon(Icons.show_chart_outlined, size: 18), text: '5. Gestión de Obra'),
             Tab(icon: Icon(Icons.receipt_long_outlined, size: 18), text: '6. Resumen Final'),
           ],
         ),
@@ -164,7 +165,9 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> with SingleTick
           _buildTabApu(),
           _buildTabMaterialesYMo(),
           _buildTabProveedores(),
-          _buildTabCertificaciones(),
+          _obraId != null
+              ? GestionObraTab(obraId: _obraId!)
+              : const Center(child: Text('No se pudo determinar la obra.')),
           _buildTabResumenFinal(),
         ],
       ),
@@ -341,44 +344,6 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> with SingleTick
         subtitle: Text('$rubro\n$condicion', style: const TextStyle(fontSize: 11)),
         isThreeLine: true,
         trailing: Text(total, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF2E7D32))),
-      ),
-    );
-  }
-
-  // 5. CERTIFICACIONES
-  Widget _buildTabCertificaciones() {
-    return Padding(
-      padding: const EdgeInsets.all(12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('Avance y Curva de Certificación de Obra', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF1B365D))),
-          const SizedBox(height: 8),
-          Expanded(
-            child: ListView(
-              children: [
-                _buildCertRow('Certificado N° 1 - Anticipo / T. Preliminares', '100%', _fmt(850000.0), Colors.green),
-                _buildCertRow('Certificado N° 2 - Fundaciones y Estructura', '65%', _fmt(5400000.0), Colors.orange),
-                _buildCertRow('Certificado N° 3 - Muros y Cubierta', '0%', _fmt(0.0), Colors.grey),
-                _buildCertRow('Certificado N° 4 - Instalaciones y Terminaciones', '0%', _fmt(0.0), Colors.grey),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCertRow(String titulo, String porcentaje, String monto, Color color) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: color.withOpacity(0.2),
-          child: Text(porcentaje, style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: color)),
-        ),
-        title: Text(titulo, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-        trailing: Text(monto, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
       ),
     );
   }
