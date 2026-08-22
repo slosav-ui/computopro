@@ -207,8 +207,8 @@ Antes de escribir código de cualquier solapa nueva, el usuario prefiere cerrar 
 Chequeado contra el código real de `lib/` (no contra lo que dicen los documentos). Ninguna de estas funcionalidades tiene entidad de datos, servicio ni UI hoy salvo donde se indique lo contrario:
 
 - **Ciclo de vida del Certificado de Obra (5 estados)** — definición completa: 1) *Borrador* (carga de avances por Profesional/Empresa), 2) *Emitido/Esperando Pago* (notifica al Propietario con fecha límite según plazo pactado), 3) *Leído por Propietario* (se notifica a la obra automáticamente al abrirse), 4) *Pagado por Propietario* (marca medio de pago + adjunta comprobante), 5) *Impactado y Cerrado* (la Empresa/Constructor verifica el cobro y adjunta factura final). Reglas especiales: el plazo de pago se configura **una sola vez antes del Certificado N°1** y aplica a todos los siguientes; si se opta por firma física, el sistema debe **bloquear la emisión del siguiente certificado** hasta subir el PDF/imagen firmado.
-  **Estado real en `lib/` (sin cambios — la brecha de UI/Dart sigue intacta)**: `lib/presentation/obra_detalle/tabs/gestion_obra_tab.dart` implementa solo **3 de los 5 estados** (`Borrador` → `Emitido (Esperando Pago)` → `Pagado`, ver `_cambiarEstado`/`_getColorEstado`). Faltan por completo *Leído por Propietario* y *Impactado y Cerrado*. Hay un botón "Subir PDF Firmado" pero **no bloquea** la emisión del siguiente certificado. No se genera ningún PDF real (los paquetes `pdf`/`printing` siguen sin usarse en todo `lib/`). El plazo de pago (`_diasPlazoPago`) es un campo fijo sin UI para configurarlo. Y el tab **no está conectado** a `PresupuestosScreen` (usa un `obraId` requerido que nadie le pasa hoy).
-  **Pero la capa de datos en Supabase ya está completa y en producción** (2026-08-20) — ver sección "Ciclo de vida del Certificado de Obra: capa de datos completa" más abajo. `gestion_obra_tab.dart` simplemente no consume nada de eso todavía; conectarlo (reemplazar el mock por la tabla `certificados` real) es la brecha de UI que queda pendiente, no un problema de diseño de datos.
+  **Estado real en `lib/` (paso 1 de conexión a UI verificado en producción por el usuario, 2026-08-21)**: `lib/presentation/obra_detalle/tabs/gestion_obra_tab.dart` ya no es mock — lee la lista real de certificados de la obra desde la tabla `certificados` vía `CertificadosRepository` (`lib/services/certificados_repository.dart`) y el modelo `Certificado`/`EstadoCertificado` (`lib/data/models/certificado.dart`, mapeado 1:1 a la tabla), con estados de carga/error/vacío explícitos (vacío ≠ error). Conectado a `PresupuestosScreen`, pestaña 5 (rotulada "Gestión de Obra" — se renombró desde "Certificación" porque a futuro esa solapa va a alojar más que certificados: adicionales/demasías/quitas, los 3 libros, anticipo/fondo de reparo). Probado por el usuario contra la obra "1": caso vacío (sin certificados) y caso con un certificado en borrador insertado a mano, ambos con render correcto.
+  **Sigue siendo solo lectura, deliberadamente**: se sacaron todos los botones de acción que tenía el mock (solo mutaban estado local, no persistían nada) — ninguna de las 5 funciones de transición (`emitir_certificado`, `marcar_certificado_leido`, `marcar_certificado_pagado`, `marcar_certificado_impactado`, `subir_pdf_firmado_certificado`, ver sección "Ciclo de vida del Certificado de Obra: capa de datos completa" más abajo) está conectada todavía, ni el plazo de pago (`obras.dias_plazo_pago_certificados`) tiene UI de configuración. No se genera ningún PDF real (los paquetes `pdf`/`printing` siguen sin usarse en todo `lib/`).
 - **Matriz de permisos por tipo de relación cliente-obra** — 3 relaciones con visibilidad distinta: *Cliente Autoconstructor* (ve todo, costos directos y precios reales de corralón), *Cliente con Profesional + Contratista* (ve precio final y avance; oculto: salarios, gastos generales, beneficio, imprevistos y precios negociados en bruto — solo Profesional/Contratista cargan, Cliente aprueba en modo lectura), *Cliente con Contratista Directo sin Profesional* (visibilidad más restringida aún: ve avance y precio del rubro certificado, oculto el costo interno y margen del contratista).
   **Estado real**: **no implementada**. `gestion_obra_tab.dart` solo tiene un `DropdownButton` binario (`'Profesional / Empresa'` vs `'Propietario / Cliente'`) sin relación con estos 3 casos, y el resto del código no modela ningún concepto de "tipo de relación cliente-obra".
 - **Motor "Mandar a Presupuestar"** (botón inteligente en Resumen Final) — dispara una solicitud zonal simultánea a 3 corralones geolocalizados en la zona de la obra; los precios devueltos se muestran etiquetados como no firmes hasta una validación manual obligatoria ("Validar y Confirmar Precios"); exportación alternativa a PDF/Excel/texto WhatsApp; si no hay comercios con membresía activa en la zona, calcula un promedio automático sobre 1 a 4 proveedores de referencia.
@@ -217,7 +217,7 @@ Chequeado contra el código real de `lib/` (no contra lo que dicen los documento
   - **Nivel 1 — Presupuesto con Plantilla**: el usuario descarga una plantilla Excel estandarizada (columnas fijas: Rubro, Descripción, Unidad, Cantidad, Precio Unitario opcional), la completa con sus propios datos y la sube. La app lee esa plantilla y puebla automáticamente `ObraModel`/`Rubro`/`Subitem`, habilitando: listado de materiales automático (cruzando contra la tabla `insumos`), cotización a proveedores/corralones cercanos (reutilizando el motor de precio promedio ya documentado en "Solapa Proveedores"), cálculo de mano de obra vía escala UOCRA, y certificaciones con datos reales en Gestión de Obra.
   - **Nivel 2 — Carga Libre**: el usuario sube su propio PDF/Excel con cualquier formato, sin adaptarse a la plantilla. La app NO puede leer ese contenido; el archivo queda solo como documento de referencia/respaldo. Al elegir este nivel hay que mostrar un aviso explícito antes de confirmar, aclarando que el usuario deberá armar manualmente: listado de materiales, solicitud de precios a proveedores y certificados de avance — la app no automatiza nada a partir de este archivo. Lo que sí queda disponible en este nivel: comunicación entre roles (Constructor/Profesional/Propietario) y carga manual básica de avance/certificados en Gestión de Obra.
   - Al activar cualquiera de los dos niveles debería ocultar los enlaces a APU y habilitar directamente la Solapa de Gestión de Obra para arrancar el control de avance.
-  **Estado real**: **no implementado**, sin ninguna referencia en el código.
+  **Estado real**: **no implementado**, sin ninguna referencia en el código. **Superado por el diseño más nuevo del "Importador de Excel/PDF"** (ver sección más abajo) — ahí la IA sí lee el archivo (Excel/PDF/foto) y prellena un formulario, en vez del Nivel 2 "la app no puede leer esto". Este párrafo queda como registro histórico de la idea original, no como el diseño vigente.
 
 ### Otras brechas relevantes detectadas al verificar contra la spec histórica
 
@@ -422,13 +422,166 @@ migraciones:
   `contratista_nombre is null` (el guard no aplica a los Subcontratos que esa misma tabla también
   aloja, que no dependen del modelo de certificación de la obra) — en `INSERT` y también en `UPDATE`.
 
-**No implementado todavía**: ninguna conexión a Dart/UI (`gestion_obra_tab.dart` sigue siendo el
-mock de siempre, ver más arriba en "Verificación de implementación"); la matriz de permisos por tipo
+**Paso 1 de conexión a UI: verificado en producción (2026-08-21)**, ver detalle arriba en
+"Verificación de implementación" — `gestion_obra_tab.dart` lee la tabla `certificados` real, solo
+lectura, conectado a `PresupuestosScreen` pestaña 5 ("Gestión de Obra").
+
+**No implementado todavía**: ninguna de las 5 funciones de transición conectada desde Dart (la UI no
+tiene ningún botón de escritura por ahora — deliberado, ver arriba); la matriz de permisos por tipo
 de relación cliente-obra (Cliente Autoconstructor / con Profesional+Contratista / con Contratista
 Directo) sigue sin ningún soporte de datos, es una capa de visibilidad aparte que no cambia el
 schema de `certificados`; y la generación real de PDF (paquetes `pdf`/`printing` siguen sin usarse en
 todo `lib/`) — el "PDF firmado" de acá es solo un adjunto (`text[]` de URLs) que alguien sube desde
 afuera, no algo que la app genere.
+
+### RLS del bloque proveedores/insumos/precios — pieza cerrada
+
+Pendiente de seguridad detectado en auditoría: 6 tablas del dominio "proveedores" (creadas fuera
+del flujo de migraciones, en una sesión de Gemini para otro propósito, sin relación con el resto
+del schema versionado en `supabase/migrations/`) tenían **RLS deshabilitado en producción** —
+cualquiera con la anon key podía leer/editar/borrar todo. Diagnóstico completo hecho en
+conversación (no hay doc en `docs/` para esta pieza): de las 6, solo 3 tenían datos reales y
+formaban un flujo conectado — `insumos` (12 filas) ↔ `precios` (60 filas, `insumo_id`+`corralon_id`)
+↔ `corralones` (8 filas, con `lat`/`lng` ya cargados). Las otras 3 — `proveedores` (1 fila de
+prueba), `insumos_proveedor` y `documentos_proveedor` (0 filas) — no tienen ninguna FK hacia/desde
+ese flujo real; probablemente un segundo intento de modelado que nunca se conectó al que quedó en
+uso. `calcular_precio_promedio_insumo()`, referenciada más arriba en este archivo como parte del
+motor de proveedores, no existía — era un nombre de función documentado como plan, nunca
+implementada (confirmado probando el RPC contra Supabase con varias firmas: `PGRST202`, ningún
+match en el schema cache).
+
+Resuelto en **`0013_rls_proveedores_precios.sql`**, aplicada y verificada en producción
+(2026-08-22, confirmado por el usuario en Database → Functions y Table Editor → Policies):
+
+- `corralones` suma columna `usuario_id uuid references auth.users(id)` (nullable — las 8 filas de
+  seed quedan sin dueño, congeladas para edición hasta asignación manual, comportamiento esperado).
+  RLS: `SELECT` abierto a cualquier autenticado (directorio nombre/ciudad/ubicación, sin precios,
+  para que un profesional elija a quién pedir presupuesto), `UPDATE` solo el dueño
+  (`usuario_id = auth.uid()` en `using` y `with check` — verificado que esto ya bloquea reasignar
+  el dueño en el mismo `UPDATE`, sin necesitar referencia a `OLD`, porque ambas cláusulas quedan
+  ancladas al mismo `auth.uid()`). Sin política `INSERT`/`DELETE` — no hay pantalla de alta de
+  corralón en la app todavía, alta sigue siendo manual vía SQL Editor.
+- `precios` (la tabla sensible real — cuánto cobra cada corralón por insumo): `SELECT`/`INSERT`/
+  `UPDATE` restringidos al dueño del corralón vía el helper `is_corralon_owner(corralon_id)`
+  (`SECURITY DEFINER`, mismo patrón que `is_obra_member` de `0004_rls_etapa3.sql`). Ni un
+  arquitecto autenticado puede hacer `SELECT` crudo. Sin `DELETE` — append-only, mismo criterio
+  que `libro_entradas`/`audit_log`.
+- `calcular_precio_promedio_insumo(p_insumo_id)`: ahora sí existe, `SECURITY DEFINER`, devuelve
+  `promedio, minimo, maximo, cantidad_corralones` (agregados únicamente, nunca `corralon_id` ni
+  `valor` fila por fila) — única vía legítima para que alguien fuera del dueño del corralón sepa
+  algo sobre precios. Promedio simple de todo lo que haya en `precios` para ese insumo, **sin**
+  filtro de radio geográfico ni fallback a MercadoLibre (eso es roadmap del motor de precios
+  completo, documentado aparte, fuera de alcance de esta pieza).
+- `insumos`: `SELECT` abierto a cualquier autenticado, sin política de escritura — en este proyecto
+  "admin" siempre significa `admin_maestro` (rol por obra), no existe un concepto de administrador
+  global de la plataforma e `insumos` no pertenece a ninguna obra, así que la escritura queda
+  exclusivamente a mano vía SQL Editor hasta que ese concepto se diseñe, si hace falta.
+- `proveedores`/`insumos_proveedor`/`documentos_proveedor`: RLS habilitada sin ninguna política →
+  bloqueo total (solo `service_role` ve algo). Sin diseño elaborado a propósito, porque están
+  vacías/desconectadas y puede que ni se terminen usando.
+
+**No implementado en esta pieza** (fuera de alcance desde el diseño, no un olvido): ninguna
+conexión a Dart/UI — grep sobre `lib/` no encontró ningún archivo que toque estas 6 tablas ni la
+función de promedio, así que este cierre de seguridad no rompe nada existente. El motor de precios
+completo (filtro de radio ~200km, fallback MercadoLibre, banda de precio con fuente/fecha) y los
+niveles de membresía paga por corralón siguen siendo roadmap sin construir — se dejó preparado el
+terreno donde no costaba nada (`lat`/`lng` ya estaban, el retorno de la función ya trae
+mínimo/máximo/cantidad para la futura banda de precio) pero sin anticipar columnas o mecanismos
+cuyo diseño final todavía no está cerrado (ej. columna de nivel de membresía, deliberadamente no
+agregada todavía).
+
+### Rubros / APU (Solapa 1 y 2): diseño de datos cerrado, sin implementar (2026-08-22)
+
+Pieza previa al Importador de Excel/PDF (ver más abajo) — se confirmó en conversación que Rubros/
+APU necesitan persistencia real en Supabase antes de que el Importador tenga a dónde mapear datos,
+y antes de poder cerrar el catálogo Freemium/PRO ya definido conceptualmente. Diseño completo en
+`docs/rubros_apu_diseno_datos.md`, **cerrado y aprobado pero sin ninguna migración escrita ni
+aplicada todavía** — a diferencia de las secciones anteriores de este archivo, esto no es estado de
+producción.
+
+**Diagnóstico confirmado**: `Rubro`/`Subitem`/`SubitemBase`/`Insumo`/`InsumoApu`/`ComponenteApu`
+(`data/models/`) son modelos Dart en memoria pura, sin ningún repository ni tabla de Supabase.
+`RubrosTab` está conectada a `PresupuestosScreen` pero se instancia sin pasar `rubros:` → arranca
+vacía en cada apertura, sin persistencia entre sesiones. `AnalisisPreciosTab` (candidato a Solapa 2)
+existe como archivo pero no está wireada — la pestaña "2. APU" sigue siendo el `_buildTabApu()`
+mock inline. Ninguna de las 13 migraciones aplicadas crea `rubros`/`subitems`/tabla de APU.
+
+**8 decisiones de diseño cerradas** (detalle completo en el doc, §3):
+- Catálogo de insumos para APU: **reusa la tabla `insumos` ya existente** (proveedores/precios, no
+  se crea una tabla nueva) — para que un insumo de APU sea el mismo que se cotiza contra corralones
+  vía `calcular_precio_promedio_insumo()`. Probablemente necesita `alter table` (columna `tipo`
+  material/mano_obra/equipo, `porcentaje_cargas_sociales`, `creador_usuario_id` nullable) — pendiente
+  verificar contra el schema real de producción.
+- Precio de un subítem: vivo mientras la obra está en presupuesto, se congela al emitir un
+  certificado (reusa el mecanismo de snapshot que ya tiene `emitir_certificado()`, no uno nuevo).
+- Un subítem puede repetirse en la misma obra (campo `sector` opcional en `obra_subitems`).
+- `macrorrubro` pasa a ser tabla fija (`macrorrubros`, ~17 valores) — **bloqueante real**: el
+  listado concreto todavía no lo tiene el usuario, no se puede sembrar la tabla sin él.
+- Personalización PRO de un subítem/APU: **de la persona (`creador_usuario_id`), no de la obra** —
+  mismo criterio que Etapa 3 ya cerró para ownership de APU. Reusable en todas las obras del dueño;
+  la visibilidad de un colaborador con `puede_ver_apu_ajena` sigue acotada por obra (política de RLS
+  exacta en el doc §2.6).
+- Free/PRO en la escritura del catálogo: queda en capa de app por ahora, marcado explícitamente
+  como **deuda técnica real de monetización** (no una convención cerrada) — no hay tabla de
+  plan/suscripción todavía de la cual colgar el control a nivel de RLS.
+- `sistema_constructivo`: relación muchos-a-muchos (`rubro_sistema_constructivo`), no columna única
+  — un rubro puede aplicar a varios sistemas constructivos a la vez.
+- Excel de 2 pestañas que el usuario está preparando (rendimientos reales): pendiente, sin resolver
+  hasta tenerlo — cuando esté listo, mapear columna→campo contra el archivo real.
+
+**Orden de implementación propuesto** (7 pasos, ninguno ejecutado): (0) introspectar schema real de
+`insumos` en producción; (A) `macrorrubros`+`sistemas_constructivos`+`rubros`+
+`rubro_sistema_constructivo`, bloqueada por el listado semille pendiente; (B) `subitems`; (C)
+`alter table insumos`; (D) `apu_composiciones`+`apu_composicion_items` (la política de RLS más
+delicada de la pieza); (E) `obra_subitems`; (F) cierre de las FKs pendientes de
+`modificaciones_obra.subitem_id`/`apu_privado_id` que quedaron sueltas desde Etapa 3. Ver
+`docs/rubros_apu_diseno_datos.md` §4 para el detalle completo.
+
+**Para retomar**: antes de escribir la Migración A, pedirle al usuario el listado semilla de
+macrorrubros (~17 valores) — es lo único que bloquea empezar. El resto del orden no depende de
+ninguna otra decisión externa.
+
+### Importador de Excel/PDF: diseño de datos cerrado en dos capas, sin implementar (2026-08-22)
+
+Puerta de entrada para que un profesional suba su propio cómputo/presupuesto (Excel/PDF/foto) sin
+migrar a Rubros/APU — disponible para TODOS los usuarios, con límite de documentos/mes en Free (no
+es funcionalidad bloqueada para Free). Pausado al principio de su diseño al descubrir que el mapeo
+final depende de Rubros/APU en Supabase (sección anterior, también sin implementar). Para no
+bloquear todo, se separó en dos capas — diseño completo en `docs/importador_capa1_diseno_datos.md`,
+**las 7 ambigüedades de la Capa 1 ya cerradas, pero cero migraciones escritas ni aplicadas**:
+
+- **Capa 1 — Lectura y extracción** (diseño cerrado): tablas `importaciones` (header: `obra_id`
+  **nullable** — puede importarse antes de crear la obra, ver más abajo —, `archivo_storage_path`
+  obligatorio, `hojas_seleccionadas text[]` elegidas por el usuario antes de leer, `moneda_default`,
+  estado `pendiente_revision`/`confirmado`/`descartado`, entrada mínima garantizada de
+  `pct_avance_manual`/`monto_certificado_manual` a nivel de documento completo) +
+  `importaciones_items` (filas extraídas: columnas estructuradas conocidas —
+  rubro/descripción/unidad/cantidad/precio/moneda, donde `moneda` null hereda el `moneda_default`
+  del header — más un `datos_originales jsonb` catch-all, mismo patrón que
+  `libro_entradas.adjuntos`/`audit_log.detalle`). No depende de que exista `rubros`/`subitems` en
+  Supabase — se puede implementar ya. RLS: con `obra_id` cargado, mismo criterio que `obra_subitems`
+  (`is_obra_member` + `tiene_rol_en_obra('admin_maestro'|'profesional')`); con `obra_id` null, la
+  fila es personal (`usuario_id = auth.uid()`) hasta que se asocie a una obra.
+- **Capa 2 — Mapeo y persistencia** (no diseñada, solo interfaz reservada): columnas
+  `importaciones_items.rubro_id`/`subitem_id` dejadas como `uuid` sueltos sin FK, mismo patrón que
+  `modificaciones_obra.subitem_id` en Etapa 3. Le queda pendiente además resolver a qué obra se
+  asocia una importación confirmada que llegó sin `obra_id`.
+
+**Mecanismo de lectura confirmado**: Edge Function de Supabase del lado servidor llamando al LLM,
+nunca desde el cliente Flutter — por seguridad (no exponer la API key en el binario) y para poder
+aplicar el límite mensual de Free desde el servidor. El archivo original se guarda en Supabase
+Storage (no solo el resultado de la lectura), como respaldo/trazabilidad.
+
+**Dos decisiones citaron precedentes de piezas que no están documentadas en este archivo ni en
+`docs/`** ("el importador de certificados externos" para el límite Free/PRO, "el freemium de
+estimación rápida" para `obra_id` nullable) — quedaron anotadas tal como las describió el usuario,
+sin poder verificarlas contra ningún doc del proyecto porque no existen todavía. Si se retoma este
+tema, puede hacer falta pedirle al usuario más detalle de esas dos piezas.
+
+**Para retomar**: nada bloquea empezar a escribir las migraciones de Capa 1 (todas las ambigüedades
+de diseño de datos están cerradas) salvo el detalle fino de la Edge Function (prompt, formato de
+respuesta, manejo de errores), que todavía no se diseñó. Capa 2 sigue esperando el listado semilla
+de macrorrubros de la pieza de Rubros/APU.
 
 ### Currency and formatting
 
