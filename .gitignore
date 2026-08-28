@@ -47,3 +47,6 @@ app.*.map.json
 
 # Credenciales de Supabase (URL/anon key) — usar env.example.json como plantilla
 env.json
+
+# Lockfiles transitorios de LibreOffice (ej. docs/seed/.~lock.*.ods#)
+.~lock.*#
