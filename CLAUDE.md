@@ -537,9 +537,144 @@ delicada de la pieza); (E) `obra_subitems`; (F) cierre de las FKs pendientes de
 `modificaciones_obra.subitem_id`/`apu_privado_id` que quedaron sueltas desde Etapa 3. Ver
 `docs/rubros_apu_diseno_datos.md` §4 para el detalle completo.
 
-**Para retomar**: antes de escribir la Migración A, pedirle al usuario el listado semilla de
-macrorrubros (~17 valores) — es lo único que bloquea empezar. El resto del orden no depende de
-ninguna otra decisión externa.
+**Actualización 2026-08-28 — ver sección siguiente**: el bloqueante de macrorrubros de este párrafo
+quedó **resuelto y reemplazado** por la parte 2 del diseño (`docs/rubros_apu_permisos_selector_diseno_datos.md`),
+que trae el listado real de 19 rubros y descarta `macrorrubros`/`sistemas_constructivos` del
+schema. No se toca este párrafo por lo demás, queda como registro histórico de cómo se llegó ahí.
+
+### Rubros / APU, parte 2: permisos Free/PRO, selector, listado real de 20 rubros — APLICADA EN PRODUCCIÓN (2026-08-28)
+
+Extiende la pieza anterior — **las 9 ambigüedades de negocio resueltas y las 8 migraciones
+aplicadas y verificadas en producción por el usuario, de punta a punta.** Capa de negocio de
+`docs/computopro_rubros_apu_spec.md`, verificada contra el archivo real
+`docs/seed/PLANILLA_BASE_2_0_v3_CORREGIDA.ods`. Diseño completo en
+`docs/rubros_apu_permisos_selector_diseno_datos.md`.
+
+**Cerrado a nivel de schema/base de datos. Dos cosas quedan explícitamente fuera de esta pieza, no
+son un olvido:**
+1. **Carga de composiciones reales de APU** (materiales/rendimientos de Steel Frame, Balloon
+   Frame, Metálicas Livianas, etc.) — tarea de curación del usuario, requiere expandir el
+   catálogo de `insumos` primero y limpiar a mano los nombres con caracteres corruptos del
+   archivo original. `apu_composiciones`/`apu_composicion_items` quedaron creadas vacías a
+   propósito (Migración 5, `0018_apu_composiciones.sql`).
+2. **Conexión a Dart/UI**: ningún archivo de `lib/` fue tocado en esta pieza (ni en la parte 1 ni
+   en la parte 2) — `RubrosTab`/`AnalisisPreciosTab` siguen exactamente como se diagnosticó al
+   principio (modelos en memoria pura, sin repository, sin persistencia). Wireearlos contra las
+   tablas reales de abajo es trabajo pendiente, no iniciado.
+
+**Migraciones aplicadas** (`supabase/migrations/0014` a `0021`, todas confirmadas por el usuario
+en Table Editor / Database → Policies / Database → Functions):
+- `0014_perfiles.sql`: tabla `perfiles` (`usuario_id` → `auth.users`, `es_pro boolean default
+  false`) — primer paso, deliberadamente chico, de la pieza más grande "Sistema de Registro/Login
+  de Usuarios" que este archivo ya tenía pendiente sin diseñar. Trigger `AFTER INSERT on
+  auth.users` + backfill. **RLS solo `SELECT`** — sin `UPDATE`/`INSERT` para el usuario mismo:
+  con `UPDATE using(usuario_id = auth.uid())` (el patrón que usa el resto del proyecto para
+  tablas de dueño) cualquier Free podría auto-otorgarse `es_pro = true` llamando directo a la API
+  de Supabase. `es_pro` cambia solo a mano vía SQL Editor hasta que haya un sistema de pagos real.
+- `0015_rubros.sql`: tabla `rubros` (`usa_apu boolean`, `tipo_precio_manual` `'unitario'|'global'`
+  con `check` de coherencia) sembrada con los 20 rubros reales — ver listado más abajo.
+- `0016_subitems.sql`: tabla `subitems`, sembrada con 116 subitems reales (excluye las filas
+  "OTRO" de cada rubro, esas van por `obra_subitems.descripcion_libre`). Un bug real en la
+  extracción automática se comía los 10 subitems de Rubro 1 en el primer intento — detectado y
+  corregido antes de aplicar, no llegó a producción.
+- `0017_alter_insumos.sql`: agrega `tipo`/`unidad_compra`/`factor_conversion`/
+  `porcentaje_cargas_sociales`/`creador_usuario_id` a `insumos` (backfill `tipo='material'` para
+  las 12 filas ya existentes, confirmado en vivo), siembra los 5 insumos oficiales de mano de obra
+  (Oficial Especializado/Oficial/Medio Oficial/Ayudante/Ayuda de Gremio, `porcentaje_cargas_sociales`
+  en `NULL` — la escala UOCRA queda pendiente de que el usuario la tenga actualizada). RLS
+  extendida con `INSERT`/`UPDATE`/`DELETE` por dueño, mismo patrón que `rubros`/`subitems`.
+- `0018_apu_composiciones.sql`: tablas `apu_composiciones` + `apu_composicion_items`, **solo
+  schema, sin ninguna composición sembrada** (ver punto 1 de arriba). Corrigió una imprecisión
+  real del diseño original: un `unique(subitem_id, creador_usuario_id)` sin más no alcanza para
+  garantizar "una sola receta oficial por subítem" en Postgres (dos `NULL` nunca son iguales entre
+  sí en una constraint `unique`) — se agregó el índice único parcial que sí lo cierra. Agrega
+  también las funciones `is_apu_composicion_owner`/`puede_ver_apu_composicion` (`SECURITY
+  DEFINER`), necesarias porque `apu_composicion_items` no tiene dueño propio, lo hereda vía join.
+- `0019_obra_subitems.sql`: tabla `obra_subitems` (`rubro_id` explícito, `subitem_id` nullable
+  para la fila OTRO, `precio_unitario_manual`) — el cómputo métrico real de una obra. De paso
+  cierra la limitación que venían arrastrando `rubros`/`subitems`/`apu_composiciones`: ahora que
+  existe una tabla real de "qué está tildado en qué obra", se extendieron esas 3 políticas de
+  `SELECT` (vía `ALTER POLICY`, no `DROP`/`CREATE`) para que un colaborador con
+  `puede_ver_apu_ajena` vea la personalización del dueño acotada a lo tildado en su obra, tal como
+  preveía el diseño desde el arranque.
+- `0020_obra_presupuesto_config.sql`: tabla `obra_presupuesto_config` (1:1 con `obras` — selector
+  de tipo de presupuesto, con/sin impuestos, suelo, zona sismorresistente, y los % del resumen
+  APU) + `obra_impuestos` (4 filas fijas por obra: IVA/IIBB/Tasas Municipales/Otro, con `check` de
+  coherencia). Trigger `AFTER INSERT on obras` + backfill para las obras ya existentes. Corrigió
+  otra imprecisión real: el `check` original exigía `nombre_otro` obligatorio en la fila `'otro'`,
+  lo que habría roto el propio `insert` del trigger en cada obra nueva (esa fila se siembra vacía
+  a propósito) — se invirtió la regla a "nombre_otro nunca se usa fuera de la fila 'otro'".
+- `0021_modificaciones_obra_fks.sql`: cierra las FKs de `modificaciones_obra.subitem_id`/
+  `apu_privado_id` que quedaban sueltas desde Etapa 3 (`0002_modificaciones_obra_audit_log.sql`),
+  ahora que `subitems`/`apu_composiciones` existen. Sin errores al aplicar — confirma que ninguna
+  fila vieja de `modificaciones_obra` tenía esos campos cargados con un valor huérfano.
+
+**6 definiciones de negocio cerradas esta sesión** (detalle en el doc §1-§2):
+- Coeficientes (GG/Imprevistos/EPP/Beneficio/Costo financiero): solo default a nivel de obra
+  (`obra_presupuesto_config`, tabla 1:1 nueva), sin override por partida en esta pieza.
+- "Gestión de materiales de terceros" (4% default, vista sin materiales): valor único por obra,
+  no por partida — misma tabla.
+- Impuestos: `obra_impuestos` (tabla nueva por obra) con `tipo` restringido
+  (`iva`/`iibb`/`tasas_municipales`/`otro`), no texto libre — evita variantes de string del mismo
+  impuesto entre obras. Sembrada con 4 filas default (21%/3%/1.5%/0%) al crear la obra.
+- `rubros.usa_apu` (columna nueva, booleana): flag genérico de "rubro sin vínculo a APU, precio
+  100% manual" — no hardcodeado a Rubro 1. Confirmado que aplica a 4 rubros (1, 18, 19, 20), con
+  dos sub-casos distintos — ver más abajo.
+- Fila "OTRO" de cada rubro: reusa `obra_subitems` (`subitem_id` pasa a nullable +
+  `descripcion_libre` + `rubro_id` explícito), no una tabla aparte.
+- Free/PRO: se suma una tabla nueva mínima `perfiles` (`usuario_id` → `auth.users`, `es_pro
+  boolean default false`) — primer paso, deliberadamente chico, de la pieza más grande "Sistema de
+  Registro/Login de Usuarios" que este archivo ya tenía pendiente sin diseñar. Aclarado además:
+  Free **ya podía** ver la composición completa del APU en modo lectura (el RLS fundacional nunca
+  la ocultó, solo la edición está restringida en capa de app) — no era una ambigüedad nueva, era
+  una aclaración de algo que el diseño ya permitía.
+
+**Bloqueante de macrorrubros resuelto — reemplazado, no complementado**: el usuario subió el
+archivo real de la planilla con la que trabajó una semana. El catálogo de ~17 "macrorrubros" de la
+sesión anterior queda **descartado**, no es un nivel jerárquico distinto — la tabla `macrorrubros`
+sale del diseño. Los 19 rubros reales, en orden: Tareas Preliminares, Movimientos de Suelos,
+Fundaciones, Estructuras de Hormigón Armado, Estructuras de Steel Frame, Estructuras de Balloon
+Frame, Estructuras Metálicas Livianas, Mamposterías, Capas Aisladoras, Revoques y Yesería,
+Contrapisos y Carpetas, Pisos y Zócalos, Revestimientos Húmedos, Revestimientos Secos, Cubiertas,
+Cielorrasos, Pinturas, Instalaciones, Carpinterías, y un **20º rubro confirmado: "VARIOS"**
+(subitems Limpieza Periódica de Obra / Limpieza Final de Obra / OTRO) — listado completo con
+código/orden en el doc §2.1.
+
+**`sistema_constructivo` se simplifica — `sistemas_constructivos`/`rubro_sistema_constructivo`
+salen del diseño.** El archivo real confirma que Hormigón Armado/Steel Frame/Balloon
+Frame/Metálicas Livianas ya son los rubros 4 a 7 de primer nivel, no subitems de un rubro
+"Estructura" común — no hace falta una relación N:M para modelar qué sistema constructivo usa una
+obra, alcanza con qué subitems de esos 4 rubros el usuario carga (pueden coexistir varios, ej.
+Fundaciones de Hormigón + Steel Frame arriba). De paso, se confirmó que las partidas de Steel
+Frame/Balloon Frame/Metálicas Livianas ya traen composición técnica real cargada en el archivo
+(ej. partida 5.1 con insumos y rendimientos puestos, no solo plantilla vacía) — el diseño ya
+cerrado de `apu_composicion_items`/`insumos` la absorbe sin cambios.
+
+**Las 3 preguntas quedaron cerradas** (respondidas por el usuario con una captura real de la
+planilla, ver doc §1 puntos 7-9):
+- Rubro 20 se llama **"VARIOS"**, no un nombre inventado — confirmado con la fila real del `.ods`.
+- `usa_apu = false` aplica a **4 rubros con 2 sub-casos**, no solo a Rubro 1: Rubro 1 y Rubro 20
+  usan precio **unitario** manual (cantidad × precio unitario, igual que un subítem normal, pero
+  tipeado a mano); Rubro 18 (Instalaciones) y Rubro 19 (Carpinterías) usan precio **global**
+  manual (un monto único para toda la partida, sin desglose por unidad técnica). Se agregó
+  `rubros.tipo_precio_manual` (`'unitario' | 'global'`, con `check` de coherencia con `usa_apu`)
+  para distinguirlos — ver doc §2.1.
+- Equipos se compone igual que Material/Mano de obra
+  (`apu_composicion_items.tipo_componente = 'equipo'`) — **el schema ya lo soportaba sin cambios**
+  desde el diseño fundacional, el `check constraint` ya incluía `'equipo'` como valor válido.
+
+**Salvedad de Equipos, cerrada**: el usuario confirmó con una captura real de la partida 19.3 que
+la fila "3 — EQUIPOS" del resumen existe pero el monto queda vacío — no es un problema de guardado
+del archivo (como se sospechaba), es que ese dato específicamente no está cargado todavía en la
+mayoría de las partidas de la planilla real. Confirma la lectura original: `equipo` se compone
+igual que material/mano de obra (`apu_composicion_items.tipo_componente = 'equipo'`, sin cambios
+de schema, ya estaba soportado), el campo queda vacío/editable para que el usuario lo complete
+partida por partida con su propio criterio.
+
+**Para retomar** (cuando se decida seguir con esta pieza): los dos puntos ya marcados arriba —
+carga de composiciones reales de APU (curación del usuario) y conexión a Dart/UI (no iniciada).
+Ninguno de los dos tiene diseño de datos pendiente, son trabajo de implementación/curación, no de
+diseño.
 
 ### Importador de Excel/PDF: diseño de datos cerrado en dos capas, sin implementar (2026-08-22)
 
