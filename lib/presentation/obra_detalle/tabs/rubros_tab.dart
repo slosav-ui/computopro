@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../data/models/obra_model.dart';
 import '../../../data/models/rubro_catalogo.dart';
 import '../../../services/rubros_repository.dart';
+import '../screens/subitems_screen.dart';
 
 class RubrosTab extends StatefulWidget {
   final ObraModel? obra;
@@ -134,6 +135,10 @@ class _RubrosTabState extends State<RubrosTab> {
                     'Precio manual (${rubro.tipoPrecioManual})',
                     style: const TextStyle(color: Colors.black54, fontSize: 11),
                   ),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => SubitemsScreen(rubro: rubro)),
+            ),
           ),
         );
       },
