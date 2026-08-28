@@ -11,7 +11,15 @@ class ObrasRepository {
   final SupabaseClient _client = Supabase.instance.client;
 
   Future<List<Map<String, dynamic>>> getObras() async {
-    final data = await _client.from('obras').select().order('created_at');
+    // ascending: false explícito a propósito: obras más nuevas primero, orden
+    // esperado para un dashboard de proyectos. No confundir con el default
+    // engañoso de postgrest-dart (order() sin ascending es descendente salvo
+    // que se pida ascending: true) — acá coincide con lo que se quiere, no es
+    // el mismo bug que tenían rubros_repository.dart/certificados_repository.dart.
+    final data = await _client
+        .from('obras')
+        .select()
+        .order('created_at', ascending: false);
     return (data as List)
         .map((row) => _fromRow(row as Map<String, dynamic>))
         .toList();

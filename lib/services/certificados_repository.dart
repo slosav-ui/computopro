@@ -19,7 +19,7 @@ class CertificadosRepository {
         .from('certificados')
         .select()
         .eq('obra_id', obraId)
-        .order('numero');
+        .order('numero', ascending: true);
     return (data as List)
         .map((row) => _fromRow(row as Map<String, dynamic>))
         .toList();
