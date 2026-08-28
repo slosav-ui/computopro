@@ -557,10 +557,9 @@ son un olvido:**
    catálogo de `insumos` primero y limpiar a mano los nombres con caracteres corruptos del
    archivo original. `apu_composiciones`/`apu_composicion_items` quedaron creadas vacías a
    propósito (Migración 5, `0018_apu_composiciones.sql`).
-2. **Conexión a Dart/UI**: ningún archivo de `lib/` fue tocado en esta pieza (ni en la parte 1 ni
-   en la parte 2) — `RubrosTab`/`AnalisisPreciosTab` siguen exactamente como se diagnosticó al
-   principio (modelos en memoria pura, sin repository, sin persistencia). Wireearlos contra las
-   tablas reales de abajo es trabajo pendiente, no iniciado.
+2. **Conexión a Dart/UI**: primer paso ya hecho y verificado por el usuario en el teléfono
+   (2026-08-28) — ver "Conexión a Dart/UI: catálogo de rubros y subitems" más abajo.
+   `AnalisisPreciosTab` sigue sin tocar, y dentro de Rubros todavía falta subitems/apu/obra_subitems.
 
 **Migraciones aplicadas** (`supabase/migrations/0014` a `0021`, todas confirmadas por el usuario
 en Table Editor / Database → Policies / Database → Functions):
@@ -671,10 +670,88 @@ igual que material/mano de obra (`apu_composicion_items.tipo_componente = 'equip
 de schema, ya estaba soportado), el campo queda vacío/editable para que el usuario lo complete
 partida por partida con su propio criterio.
 
-**Para retomar** (cuando se decida seguir con esta pieza): los dos puntos ya marcados arriba —
-carga de composiciones reales de APU (curación del usuario) y conexión a Dart/UI (no iniciada).
-Ninguno de los dos tiene diseño de datos pendiente, son trabajo de implementación/curación, no de
-diseño.
+**Para retomar** (cuando se decida seguir con esta pieza): carga de composiciones reales de APU
+(curación del usuario, no iniciada) y seguir la conexión a Dart/UI más allá del primer paso — ver
+sección siguiente para el estado exacto.
+
+### Conexión a Dart/UI: catálogo de rubros y subitems — verificado en producción (2026-08-28)
+
+Conexión real de Rubros/APU parte 2 a `lib/`, en pasos chicos y verificables, mismo criterio que se
+usó para conectar certificados. Dos pasos hechos hasta ahora, ambos **solo lectura**, sin tocar
+`apu_composiciones`/`obra_subitems` todavía:
+
+**Paso 1 — catálogo de rubros.** Solapa 1 lee los 20 rubros reales desde Supabase. Verificado por
+el usuario en el teléfono: orden correcto, "Precio manual (unitario)" visible en Tareas
+Preliminares.
+
+**Paso 2 — subitems por rubro.** Tocar un rubro en la lista abre una pantalla nueva con sus
+subitems reales de Supabase (antes no reaccionaba al tap, esperado en el paso 1). Verificado por el
+usuario en el teléfono con un rubro de más de 9 subitems (para confirmar el orden natural, ver
+abajo).
+
+**Diagnóstico confirmado antes de tocar código** (no había cambiado nada del "Paso 0" original):
+`RubrosTab` (`presupuestos_screen.dart:164`) se instanciaba como `RubrosTab(obra: obraModelParaTab)`
+sin pasar `rubros:`, así que `_listaRubros` arrancaba siempre vacía — confirmado, no asumido.
+`Rubro`/`Subitem` (`data/models/`) seguían siendo los modelos en memoria pura de siempre, sin
+relación con el schema real (sin `orden`/`usa_apu`/`tipo_precio_manual`, `Subitem` todavía mezcla
+catálogo con instancia de obra).
+
+**Qué se agregó**:
+- `lib/data/models/rubro_catalogo.dart` (`RubroCatalogo`) — fila de catálogo real (`id`, `codigo`,
+  `nombre`, `orden`, `usaApu`, `tipoPrecioManual`, `creadorUsuarioId`). Deliberadamente separado de
+  `Rubro` (que sigue existiendo tal cual, sin tocar, para el flujo de edición en memoria — son
+  conceptos distintos: fila de catálogo vs. instancia editable con subitems).
+- `lib/services/rubros_repository.dart` (`RubrosRepository.getCatalogoOficial()`) — mismo patrón
+  manual snake_case↔camelCase que `CertificadosRepository`/`ObraMembersRepository`. Sin parámetro
+  de obra: `rubros` es catálogo global, no depende de `obraId` (a diferencia de certificados).
+- `rubros_tab.dart` reescrito: 3 estados (`_cargando`/`_error`/lista) mismo patrón que
+  `gestion_obra_tab.dart`. **Se sacaron el FAB "Nuevo Rubro" y los íconos de editar/eliminar** (no
+  solo deshabilitados, eliminados) junto con los métodos que mutaban `_listaRubros` en memoria y la
+  barra "SUBTOTAL CÓMPUTO DIRECTO $0 · 0 Rubros" — mismo criterio ya aplicado en
+  `gestion_obra_tab.dart`: mostrar acciones/cifras que no reflejan nada real es peor que no
+  mostrarlas, y acá era más grave todavía por mezclar esa barra falsa con una lista de 20 rubros
+  reales debajo. Vuelven cuando se diseñe el alta real vía Supabase (custom PRO).
+
+**Bug real encontrado y corregido, no específico de esta pieza**: `postgrest-dart` (el cliente que
+usa `supabase_flutter`, confirmado en el paquete instalado, versión 2.9.1) tiene `.order()` con
+`ascending` en default **`false`** (descendente) — al revés de SQL y de `postgrest-js`, documentado
+así en el propio paquete. `rubros_repository.dart` lo pisaba sin darse cuenta (`.order('orden')`
+sin `ascending: true` → catálogo salía 20→1 en el teléfono). Revisados los 3 `.order()` que existen
+hoy en todo `lib/`:
+- `rubros_repository.dart` (`orden`) → corregido a `ascending: true` (bug real).
+- `certificados_repository.dart` (`numero`) → mismo bug latente, corregido también aunque no se
+  había notado todavía (ningún usuario con varios certificados fuera de orden hasta ahora).
+- `obras_repository.dart` (`created_at`, dashboard principal) → **no es el mismo bug**: el
+  resultado actual (obras más nuevas primero) es el orden esperado para un dashboard de proyectos,
+  no un accidente. Se dejó `ascending: false` explícito con comentario aclarando que es intencional,
+  para que no se confunda con los otros dos casos si alguien lo revisa después.
+
+**Qué se agregó en el paso 2**:
+- `lib/data/models/subitem_catalogo.dart` (`SubitemCatalogo`) — mismo criterio que
+  `RubroCatalogo`, fila de catálogo sin cantidad/precio (viven en `obra_subitems`, pieza siguiente).
+- `lib/services/subitems_repository.dart` (`SubitemsRepository.getSubitemsDeRubro(rubroId)`) —
+  **repositorio propio, no bundleado en `RubrosRepository`**, para mantener el patrón de un
+  repositorio por tabla que ya tenía todo el proyecto (`ObrasRepository`/`ObraMembersRepository`/
+  `CertificadosRepository`/`RubrosRepository`, cada uno una sola tabla).
+- `lib/presentation/obra_detalle/screens/subitems_screen.dart` (`SubitemsScreen`) — pantalla nueva
+  (no un tab embebido), empujada con `Navigator.push(MaterialPageRoute(...))` directo desde
+  `rubros_tab.dart`, mismo patrón de navegación que ya usa `obras_list_screen.dart` para abrir
+  `PresupuestosScreen` (las rutas nombradas de `main.dart` casi no se usan en la práctica — solo
+  `/` está realmente en uso).
+- `rubros_tab.dart`: `onTap` agregado al `ListTile` existente de cada rubro, sin necesitar
+  `InkWell`/`GestureDetector` aparte.
+
+**Bug real encontrado y corregido, distinto al de `.order()` de arriba**: `subitems.codigo` es
+texto jerárquico ("1.1", "12.10", "12.2"...), sin columna `orden` (a diferencia de `rubros`). Un
+orden por `codigo` en Supabase (o por `created_at`, que "funcionaría hoy de casualidad" por el
+orden de inserción de la migración 0016) es frágil o directamente incorrecto — "12.10" ordena antes
+que "12.2" lexicográficamente. Resuelto con un comparador natural en Dart dentro de
+`SubitemsRepository` (separa `codigo` por `.`, compara cada segmento como número), sin necesitar
+una columna `orden` nueva ni migración. Verificado en el teléfono con un rubro de más de 9 subitems.
+
+**Sigue pendiente**: `obra_subitems` (tildar/destildar por obra, requiere `obraId`) y
+`apu_composiciones`/`apu_composicion_items` (ver la composición real de una partida) — ninguno de
+los dos tocado todavía.
 
 ### Importador de Excel/PDF: diseño de datos cerrado en dos capas, sin implementar (2026-08-22)
 
