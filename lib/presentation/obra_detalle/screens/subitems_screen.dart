@@ -46,6 +46,10 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
   final Map<String, TextEditingController> _controllers = {};
   final Map<String, FocusNode> _focusNodes = {};
 
+  // subitemIds con la descripción expandida (más de 2 líneas). Colapsada por
+  // default para que entren más fichas en pantalla.
+  final Set<String> _expandidos = {};
+
   @override
   void initState() {
     super.initState();
@@ -282,37 +286,70 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
         final aplicable = _obraSubitemsPorSubitemId[subitem.id]?.esAplicable ?? false;
         final guardandoEste = _guardando.contains(subitem.id);
         final puedeEditar = widget.puedeEditarComputo && !guardandoEste;
+        final expandido = _expandidos.contains(subitem.id);
         return Card(
-          margin: const EdgeInsets.only(bottom: 8.0),
+          margin: const EdgeInsets.only(bottom: 6.0),
           elevation: 1,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           child: ListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
             leading: Checkbox(
               value: aplicable,
               onChanged: puedeEditar
                   ? (val) => _toggleSubitem(subitem, val ?? false)
                   : null,
             ),
-            title: Text(
-              '${subitem.codigo} - ${subitem.descripcion}',
-              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-            ),
-            subtitle: Text(
-              'Unidad: ${subitem.unidad}',
-              style: const TextStyle(color: Colors.black54, fontSize: 11),
+            // La unidad ya se ve en el suffixText del campo de cantidad — no
+            // se repite acá abajo (antes estaba en el subtitle "Unidad: X").
+            title: InkWell(
+              onTap: () => setState(() {
+                if (expandido) {
+                  _expandidos.remove(subitem.id);
+                } else {
+                  _expandidos.add(subitem.id);
+                }
+              }),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Text(
+                      '${subitem.codigo} - ${subitem.descripcion}',
+                      maxLines: expandido ? null : 2,
+                      overflow: expandido ? TextOverflow.visible : TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                    ),
+                  ),
+                  Icon(
+                    expandido ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                    size: 18,
+                    color: Colors.black45,
+                  ),
+                ],
+              ),
             ),
             trailing: SizedBox(
-              width: 72,
+              // Ancho suficiente para el número en fuente grande + el sufijo
+              // de unidad más largo del catálogo ("M2 O GL.", "UND O M2").
+              width: 140,
               child: TextFormField(
                 controller: _controllerPara(subitem),
                 focusNode: _focusNodePara(subitem),
                 enabled: aplicable && puedeEditar,
                 textAlign: TextAlign.right,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                style: const TextStyle(fontSize: 13),
-                decoration: const InputDecoration(
+                // Es el dato que el usuario está cargando: más peso visual
+                // que el texto descriptivo de la fila (título 13, subtítulo
+                // 11).
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                decoration: InputDecoration(
                   isDense: true,
-                  contentPadding: EdgeInsets.symmetric(vertical: 8),
+                  contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                  // Normalización solo visual (mayúsculas parejas) — la
+                  // columna subitems.unidad queda tal cual vino de la
+                  // planilla original, sin tocar la base.
+                  suffixText: subitem.unidad.toUpperCase(),
+                  suffixStyle: const TextStyle(fontSize: 12, color: Colors.black45),
                 ),
               ),
             ),

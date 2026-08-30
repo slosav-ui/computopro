@@ -39,6 +39,26 @@ class ObraSubitemsRepository {
     return mapa;
   }
 
+  /// Cuántos subitems están tildados (`es_aplicable = true`) por rubro, para
+  /// una obra puntual — el indicador "N de M" de RubrosTab. Misma consulta
+  /// plana agrupada en Dart que `getConteoOficialPorRubro` de
+  /// `SubitemsRepository`; misma precondición temporal `sector is null` que
+  /// `getMapaDeRubro` (ver ese método para el detalle).
+  Future<Map<String, int>> getConteoTildadosPorObra(String obraId) async {
+    final data = await _client
+        .from('obra_subitems')
+        .select('rubro_id')
+        .eq('obra_id', obraId)
+        .eq('es_aplicable', true)
+        .isFilter('sector', null);
+    final conteo = <String, int>{};
+    for (final row in data as List) {
+      final rubroId = (row as Map<String, dynamic>)['rubro_id'].toString();
+      conteo[rubroId] = (conteo[rubroId] ?? 0) + 1;
+    }
+    return conteo;
+  }
+
   /// Tilda un subítem por primera vez en la obra (todavía no tenía fila).
   /// `esAplicable` queda en `true` y `cantidad` en el default de la columna (0).
   Future<ObraSubitem> crear({

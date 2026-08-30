@@ -140,6 +140,11 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> with SingleTick
             ),
           ],
         ),
+        // Una sola línea, scrollable: probamos dos renglones (etiqueta corta +
+        // nombre completo chico) y el renglón chico se truncaba en casi todas
+        // las solapas — no aportaba nada. isScrollable: true a propósito para
+        // que la 6ª solape parcialmente el borde y se note que hay más a la
+        // derecha, en vez de forzar las 6 en el ancho de pantalla.
         bottom: TabBar(
           controller: _tabController,
           isScrollable: true,
@@ -149,12 +154,12 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> with SingleTick
           unselectedLabelColor: Colors.white70,
           labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
           tabs: const [
-            Tab(icon: Icon(Icons.calculate_outlined, size: 18), text: '1. Cómputo y Pres.'),
-            Tab(icon: Icon(Icons.analytics_outlined, size: 18), text: '2. APU'),
-            Tab(icon: Icon(Icons.inventory_2_outlined, size: 18), text: '3. Materiales y MO'),
-            Tab(icon: Icon(Icons.storefront_outlined, size: 18), text: '4. Proveedores'),
-            Tab(icon: Icon(Icons.show_chart_outlined, size: 18), text: '5. Gestión de Obra'),
-            Tab(icon: Icon(Icons.receipt_long_outlined, size: 18), text: '6. Resumen Final'),
+            Tab(text: 'Cómputo'),
+            Tab(text: 'APU'),
+            Tab(text: 'Mat y MO'),
+            Tab(text: 'Proveedores'),
+            Tab(text: 'Gestión de Obra'),
+            Tab(text: 'Resumen'),
           ],
         ),
       ),

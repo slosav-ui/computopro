@@ -25,6 +25,22 @@ class SubitemsRepository {
     return subitems;
   }
 
+  /// Total de subitems del catálogo oficial por rubro, para el indicador
+  /// "N de M tildados" de RubrosTab. Una sola consulta plana agrupada acá en
+  /// Dart, no una consulta por rubro (serían 20 roundtrips).
+  Future<Map<String, int>> getConteoOficialPorRubro() async {
+    final data = await _client
+        .from('subitems')
+        .select('rubro_id')
+        .isFilter('creador_usuario_id', null);
+    final conteo = <String, int>{};
+    for (final row in data as List) {
+      final rubroId = (row as Map<String, dynamic>)['rubro_id'].toString();
+      conteo[rubroId] = (conteo[rubroId] ?? 0) + 1;
+    }
+    return conteo;
+  }
+
   int _compararCodigoNatural(String a, String b) {
     final segmentosA = a.split('.');
     final segmentosB = b.split('.');

@@ -1261,7 +1261,10 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                                     Row(
                                       children: [
                                         Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                          // Dato de referencia para comparar obras entre sí —
+                                          // más presencia que antes (11px), sin competir con el
+                                          // monto (17px).
+                                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                                           decoration: BoxDecoration(
                                             color: Colors.grey[100],
                                             borderRadius: BorderRadius.circular(6),
@@ -1269,7 +1272,7 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                                           ),
                                           child: Text(
                                             '${obra['superficieM2']} m²',
-                                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.black87),
+                                            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.black87),
                                           ),
                                         ),
                                         if (tieneCac) ...[

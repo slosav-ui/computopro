@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../../../data/models/obra_model.dart';
 import '../../../data/models/rubro_catalogo.dart';
 import '../../../services/rubros_repository.dart';
+import '../../../services/subitems_repository.dart';
+import '../../../services/obra_subitems_repository.dart';
 import '../screens/subitems_screen.dart';
 
 class RubrosTab extends StatefulWidget {
@@ -22,8 +24,14 @@ class RubrosTab extends StatefulWidget {
 
 class _RubrosTabState extends State<RubrosTab> {
   final RubrosRepository _rubrosRepository = RubrosRepository();
+  final SubitemsRepository _subitemsRepository = SubitemsRepository();
+  final ObraSubitemsRepository _obraSubitemsRepository = ObraSubitemsRepository();
 
   List<RubroCatalogo> _catalogo = [];
+  // Indicador "N de M tildados" por rubro (ver diagnóstico: sin monto real
+  // todavía, unit-agnostic, no depende de APU/precio_unitario_manual).
+  Map<String, int> _totalPorRubro = {};
+  Map<String, int> _tildadosPorRubro = {};
   bool _cargando = true;
   String? _error;
 
@@ -40,9 +48,13 @@ class _RubrosTabState extends State<RubrosTab> {
     });
     try {
       final rubros = await _rubrosRepository.getCatalogoOficial();
+      final totales = await _subitemsRepository.getConteoOficialPorRubro();
+      final tildados = await _obraSubitemsRepository.getConteoTildadosPorObra(widget.obraId);
       if (!mounted) return;
       setState(() {
         _catalogo = rubros;
+        _totalPorRubro = totales;
+        _tildadosPorRubro = tildados;
         _cargando = false;
       });
     } catch (e) {
@@ -51,6 +63,25 @@ class _RubrosTabState extends State<RubrosTab> {
         _error = 'No se pudo cargar el catálogo de rubros.';
         _cargando = false;
       });
+    }
+  }
+
+  /// Refresca solo los dos mapas de conteo (no el catálogo entero) al volver
+  /// de SubitemsScreen — tildar/destildar ahí deja el "N de M" desactualizado
+  /// si no se refresca. Falla en silencio: un conteo desactualizado no
+  /// amerita interrumpir con un SnackBar, se corrige solo en el próximo
+  /// pull-to-refresh o reingreso a la pantalla.
+  Future<void> _cargarConteos() async {
+    try {
+      final totales = await _subitemsRepository.getConteoOficialPorRubro();
+      final tildados = await _obraSubitemsRepository.getConteoTildadosPorObra(widget.obraId);
+      if (!mounted) return;
+      setState(() {
+        _totalPorRubro = totales;
+        _tildadosPorRubro = tildados;
+      });
+    } catch (e) {
+      // silencioso, ver doc del método.
     }
   }
 
@@ -142,19 +173,48 @@ class _RubrosTabState extends State<RubrosTab> {
                     'Precio manual (${rubro.tipoPrecioManual})',
                     style: const TextStyle(color: Colors.black54, fontSize: 11),
                   ),
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => SubitemsScreen(
-                  rubro: rubro,
-                  obraId: widget.obraId,
-                  puedeEditarComputo: widget.puedeEditarComputo,
+            trailing: _buildConteoBadge(rubro),
+            onTap: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => SubitemsScreen(
+                    rubro: rubro,
+                    obraId: widget.obraId,
+                    puedeEditarComputo: widget.puedeEditarComputo,
+                  ),
                 ),
-              ),
-            ),
+              );
+              await _cargarConteos();
+            },
           ),
         );
       },
+    );
+  }
+
+  /// "N de M" tildados en esta obra, para ese rubro. `null` (sin badge) si
+  /// el rubro todavía no tiene subitems en el catálogo — evita mostrar un
+  /// confuso "0/0" en un rubro custom recién creado (ver Etapa A).
+  Widget? _buildConteoBadge(RubroCatalogo rubro) {
+    final total = _totalPorRubro[rubro.id] ?? 0;
+    if (total == 0) return null;
+    final tildados = _tildadosPorRubro[rubro.id] ?? 0;
+    final trabajado = tildados > 0;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: trabajado ? Colors.green[50] : Colors.grey[200],
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        '$tildados/$total',
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.bold,
+          color: trabajado ? Colors.green[800] : Colors.black45,
+        ),
+      ),
     );
   }
 }
