@@ -6,8 +6,15 @@ import '../screens/subitems_screen.dart';
 
 class RubrosTab extends StatefulWidget {
   final ObraModel? obra;
+  final String obraId;
+  final bool puedeEditarComputo;
 
-  const RubrosTab({Key? key, this.obra}) : super(key: key);
+  const RubrosTab({
+    Key? key,
+    this.obra,
+    required this.obraId,
+    required this.puedeEditarComputo,
+  }) : super(key: key);
 
   @override
   State<RubrosTab> createState() => _RubrosTabState();
@@ -137,7 +144,13 @@ class _RubrosTabState extends State<RubrosTab> {
                   ),
             onTap: () => Navigator.push(
               context,
-              MaterialPageRoute(builder: (context) => SubitemsScreen(rubro: rubro)),
+              MaterialPageRoute(
+                builder: (context) => SubitemsScreen(
+                  rubro: rubro,
+                  obraId: widget.obraId,
+                  puedeEditarComputo: widget.puedeEditarComputo,
+                ),
+              ),
             ),
           ),
         );

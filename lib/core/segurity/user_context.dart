@@ -58,6 +58,15 @@ class UserContext {
           m.permisosEspeciales.puedeAprobarCertificados &&
           _delegacionVigente(m));
 
+  // Regla de visibilidad 4: ¿Puede tildar/destildar subitems y cargar
+  // cantidades (obra_subitems)? Mismos dos roles que la política
+  // INSERT/UPDATE de supabase/migrations/0019_obra_subitems.sql. No es lo
+  // mismo que puedeVerMontosYAPU (esa regla es sobre visibilidad de $ y APU,
+  // esta es sobre edición de cómputo métrico) aunque hoy coincidan los
+  // mismos dos roles — no reusar una por la otra si en algún momento divergen.
+  bool get puedeEditarComputo =>
+      _tieneAlgunRol([RolProyecto.adminMaestro, RolProyecto.profesional]);
+
   bool _delegacionVigente(ObraMember m) {
     final inicio = m.permisosEspeciales.delegacionTemporalInicio;
     final fin = m.permisosEspeciales.delegacionTemporalFin;

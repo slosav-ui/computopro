@@ -161,7 +161,13 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> with SingleTick
       body: TabBarView(
         controller: _tabController,
         children: [
-          RubrosTab(obra: obraModelParaTab),
+          _obraId != null
+              ? RubrosTab(
+                  obra: obraModelParaTab,
+                  obraId: _obraId!,
+                  puedeEditarComputo: _userContext?.puedeEditarComputo == true,
+                )
+              : const Center(child: Text('No se pudo determinar la obra.')),
           _buildTabApu(),
           _buildTabMaterialesYMo(),
           _buildTabProveedores(),
