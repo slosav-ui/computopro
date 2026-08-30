@@ -6,8 +6,8 @@ import '../data/models/obra_subitem.dart';
 ///
 /// Traduce entre las columnas snake_case de la tabla (ver
 /// `supabase/migrations/0019_obra_subitems.sql`) y el modelo `ObraSubitem`.
-/// Primer paso de conexión: solo tildar/destildar (`esAplicable`), sin tocar
-/// `cantidad` ni `precioUnitarioManual` todavía.
+/// Tildar/destildar (`esAplicable`) y `cantidad` ya conectados;
+/// `precioUnitarioManual` sigue sin tocar.
 class ObraSubitemsRepository {
   final SupabaseClient _client = Supabase.instance.client;
 
@@ -73,6 +73,28 @@ class ObraSubitemsRepository {
         .from('obra_subitems')
         .update({
           'es_aplicable': esAplicable,
+          'ultima_modificacion_usuario_id': usuarioId,
+          'updated_at': DateTime.now().toIso8601String(),
+        })
+        .eq('id', id)
+        .select()
+        .single();
+    return _fromRow(updated);
+  }
+
+  /// Guarda la cantidad de un subítem que ya tenía fila (solo se edita
+  /// cantidad estando tildado, ver SubitemsScreen). La validación de que el
+  /// valor sea numérico y no negativo es responsabilidad de quien llama —
+  /// acá se persiste tal cual se recibe.
+  Future<ObraSubitem> actualizarCantidad({
+    required String id,
+    required double cantidad,
+    required String usuarioId,
+  }) async {
+    final updated = await _client
+        .from('obra_subitems')
+        .update({
+          'cantidad': cantidad,
           'ultima_modificacion_usuario_id': usuarioId,
           'updated_at': DateTime.now().toIso8601String(),
         })

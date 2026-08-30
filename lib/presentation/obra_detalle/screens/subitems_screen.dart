@@ -32,9 +32,19 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
   bool _cargando = true;
   String? _error;
 
-  // subitemIds con un toggle en vuelo, para deshabilitar su checkbox mientras
-  // se guarda y evitar doble tap.
+  // subitemIds con un toggle o un guardado de cantidad en vuelo: deshabilita
+  // esa fila entera (checkbox + campo de cantidad) mientras se persiste, para
+  // no disparar dos escrituras concurrentes sobre la misma fila de
+  // obra_subitems.
   final Set<String> _guardando = {};
+
+  // Un TextEditingController y un FocusNode por subítem, cacheados acá (no
+  // creados en itemBuilder) para no perder lo que el usuario está tipeando en
+  // cada rebuild del ListView. Se descartan y se recrean solo cuando
+  // _cargarDatos() vuelve a pedir todo (carga inicial o pull-to-refresh), así
+  // un refresh manual sí trae valores frescos del servidor.
+  final Map<String, TextEditingController> _controllers = {};
+  final Map<String, FocusNode> _focusNodes = {};
 
   @override
   void initState() {
@@ -42,7 +52,27 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
     _cargarDatos();
   }
 
+  @override
+  void dispose() {
+    for (final controller in _controllers.values) {
+      controller.dispose();
+    }
+    for (final focusNode in _focusNodes.values) {
+      focusNode.dispose();
+    }
+    super.dispose();
+  }
+
   Future<void> _cargarDatos() async {
+    for (final controller in _controllers.values) {
+      controller.dispose();
+    }
+    for (final focusNode in _focusNodes.values) {
+      focusNode.dispose();
+    }
+    _controllers.clear();
+    _focusNodes.clear();
+
     setState(() {
       _cargando = true;
       _error = null;
@@ -109,6 +139,90 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
     } finally {
       if (mounted) setState(() => _guardando.remove(subitem.id));
     }
+  }
+
+  /// Acepta coma o punto como separador decimal (el teclado numérico de un
+  /// dispositivo en es-AR pone coma) y rechaza vacío, no numérico o negativo.
+  double? _parsearCantidad(String texto) {
+    final normalizado = texto.trim().replaceAll(',', '.');
+    if (normalizado.isEmpty) return null;
+    final valor = double.tryParse(normalizado);
+    if (valor == null || valor < 0) return null;
+    return valor;
+  }
+
+  String _formatearCantidad(double valor) {
+    return valor == valor.roundToDouble() ? valor.toInt().toString() : valor.toString();
+  }
+
+  /// Se dispara al perder el foco el campo de cantidad de un subítem.
+  Future<void> _guardarCantidad(SubitemCatalogo subitem) async {
+    final existente = _obraSubitemsPorSubitemId[subitem.id];
+    // El campo solo está habilitado con el subítem tildado (ver
+    // _buildContenido), así que a esta altura siempre hay fila.
+    if (existente == null) return;
+
+    final controller = _controllers[subitem.id];
+    if (controller == null) return;
+
+    final nuevaCantidad = _parsearCantidad(controller.text);
+    if (nuevaCantidad == null) {
+      // Nada de fallback silencioso a 0: acá el dato es plata real de la
+      // obra (a diferencia de un campo de un diálogo de catálogo). Se
+      // revierte el texto al último valor válido y se avisa.
+      controller.text = _formatearCantidad(existente.cantidad);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Cantidad inválida. Ingresá un número mayor o igual a 0.')),
+      );
+      return;
+    }
+
+    if (nuevaCantidad == existente.cantidad) return; // sin cambios, nada que persistir
+
+    final usuarioId = _authService.usuarioActual?.id;
+    if (usuarioId == null) return;
+
+    setState(() => _guardando.add(subitem.id));
+    try {
+      final actualizado = await _obraSubitemsRepository.actualizarCantidad(
+        id: existente.id,
+        cantidad: nuevaCantidad,
+        usuarioId: usuarioId,
+      );
+      if (!mounted) return;
+      setState(() {
+        _obraSubitemsPorSubitemId = {
+          ..._obraSubitemsPorSubitemId,
+          subitem.id: actualizado,
+        };
+      });
+    } catch (e) {
+      controller.text = _formatearCantidad(existente.cantidad);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No se pudo guardar la cantidad. Probá de nuevo.')),
+      );
+    } finally {
+      if (mounted) setState(() => _guardando.remove(subitem.id));
+    }
+  }
+
+  TextEditingController _controllerPara(SubitemCatalogo subitem) {
+    return _controllers.putIfAbsent(subitem.id, () {
+      final existente = _obraSubitemsPorSubitemId[subitem.id];
+      return TextEditingController(text: _formatearCantidad(existente?.cantidad ?? 0));
+    });
+  }
+
+  FocusNode _focusNodePara(SubitemCatalogo subitem) {
+    return _focusNodes.putIfAbsent(subitem.id, () {
+      final focusNode = FocusNode();
+      focusNode.addListener(() {
+        if (!focusNode.hasFocus) _guardarCantidad(subitem);
+      });
+      return focusNode;
+    });
   }
 
   @override
@@ -186,6 +300,21 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
             subtitle: Text(
               'Unidad: ${subitem.unidad}',
               style: const TextStyle(color: Colors.black54, fontSize: 11),
+            ),
+            trailing: SizedBox(
+              width: 72,
+              child: TextFormField(
+                controller: _controllerPara(subitem),
+                focusNode: _focusNodePara(subitem),
+                enabled: aplicable && puedeEditar,
+                textAlign: TextAlign.right,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                style: const TextStyle(fontSize: 13),
+                decoration: const InputDecoration(
+                  isDense: true,
+                  contentPadding: EdgeInsets.symmetric(vertical: 8),
+                ),
+              ),
             ),
           ),
         );
