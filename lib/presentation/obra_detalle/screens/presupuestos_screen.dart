@@ -132,10 +132,14 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> with SingleTick
           children: [
             Text(
               _obraDatos['nombre'] ?? 'Presupuesto de Obra',
+              overflow: TextOverflow.ellipsis,
+              maxLines: 1,
               style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
             ),
             Text(
               '${_obraDatos['propietario']} • ${_obraDatos['superficieM2']} m² • ${moneda == 'USD' ? 'USD' : 'ARS (\$)'}',
+              overflow: TextOverflow.ellipsis,
+              maxLines: 1,
               style: const TextStyle(fontSize: 11, color: Colors.white70),
             ),
           ],
@@ -213,13 +217,24 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> with SingleTick
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Item APU Seleccionado:', style: TextStyle(fontSize: 10, color: Colors.black54)),
-                    Text('02.01 Hormigón armado en fundaciones', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF1B365D))),
-                  ],
+                // Expanded: el nombre del subítem es el texto largo y
+                // variable (el que dio el overflow más grande de la
+                // sesión, 128px), el monto a la derecha es corto y fijo.
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Item APU Seleccionado:', style: TextStyle(fontSize: 10, color: Colors.black54)),
+                      Text(
+                        '02.01 Hormigón armado en fundaciones',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF1B365D)),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 2,
+                      ),
+                    ],
+                  ),
                 ),
+                const SizedBox(width: 8),
                 Text(_fmt(320000.0), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF2E7D32))),
               ],
             ),
@@ -266,16 +281,34 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> with SingleTick
     );
   }
 
+  // Nombre en su propia línea, unidad/cantidad/precio/subtotal en la línea
+  // de abajo alineados a la derecha — antes eran 4 columnas en una sola
+  // fila (nombre en Expanded + 3 SizedBox de ancho fijo sin separador
+  // entre sí), y en pantalla angosta el nombre se apretaba contra columnas
+  // que ya no podían ceder, quedando pegado al primer valor sin aire.
+  // Separar en líneas resuelve el problema de raíz en vez de agregar un
+  // gap que en una pantalla todavía más angosta tampoco alcanzaría — mismo
+  // criterio ya usado para los chips m²/CAC y para cantidad+precio de
+  // subítems. Se usa en Materiales, Mano de Obra y Equipos (_buildApuSection).
   Widget _buildApuDetailRow(String concepto, String unidad, double consumo, double unitario) {
     final subtotal = consumo * unitario;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(child: Text(concepto, style: const TextStyle(fontSize: 11))),
-          SizedBox(width: 50, child: Text('$consumo $unidad', style: const TextStyle(fontSize: 11, color: Colors.black54))),
-          SizedBox(width: 80, child: Text(_fmt(unitario), style: const TextStyle(fontSize: 11, color: Colors.black54), textAlign: TextAlign.right)),
-          SizedBox(width: 90, child: Text(_fmt(subtotal), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold), textAlign: TextAlign.right)),
+          Text(concepto, style: const TextStyle(fontSize: 11)),
+          const SizedBox(height: 2),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              Text('$consumo $unidad', style: const TextStyle(fontSize: 11, color: Colors.black54)),
+              const SizedBox(width: 12),
+              Text(_fmt(unitario), style: const TextStyle(fontSize: 11, color: Colors.black54)),
+              const SizedBox(width: 12),
+              Text(_fmt(subtotal), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+            ],
+          ),
         ],
       ),
     );
@@ -435,7 +468,18 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> with SingleTick
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(etiqueta, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+            // Expanded: la etiqueta es texto variable (3 usos con distinto
+            // largo: "Gastos Generales / Indirectos", "Imprevistos /
+            // Contingencia", "Beneficio Empresarial"), el porcentaje a la
+            // derecha es corto y fijo.
+            Expanded(
+              child: Text(
+                etiqueta,
+                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(width: 8),
             Text('${valorActual.toStringAsFixed(1)} %', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF1B365D))),
           ],
         ),
@@ -457,7 +501,17 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> with SingleTick
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(etiqueta, style: TextStyle(fontSize: 12, fontWeight: isBold ? FontWeight.bold : FontWeight.normal, color: color)),
+          // Expanded: la etiqueta es texto variable (6 usos, algunos con
+          // porcentaje interpolado — "Gastos Generales (N%)" puede ser más
+          // largo de lo que entra), el valor a la derecha es corto y fijo.
+          Expanded(
+            child: Text(
+              etiqueta,
+              style: TextStyle(fontSize: 12, fontWeight: isBold ? FontWeight.bold : FontWeight.normal, color: color),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(width: 8),
           Text(valor, style: TextStyle(fontSize: 12, fontWeight: isBold ? FontWeight.bold : FontWeight.normal, color: color)),
         ],
       ),

@@ -94,6 +94,31 @@ class ObraSubitemsRepository {
     return obraIds.map((id) => nombresPorId[id] ?? 'obra sin acceso').toList();
   }
 
+  /// Igual que getNombresObrasConUso, pero por subítem en vez de por rubro —
+  /// se usa antes de ofrecer borrar un subítem propio en SubitemsScreen. La
+  /// FK `obra_subitems.subitem_id` (0019_obra_subitems.sql) tampoco tiene
+  /// `on delete cascade`, mismo mecanismo de protección a nivel de base.
+  Future<List<String>> getNombresObrasConUsoDeSubitem(String subitemId) async {
+    final data = await _client
+        .from('obra_subitems')
+        .select('obra_id')
+        .eq('subitem_id', subitemId);
+    final obraIds = <String>{
+      for (final row in data as List) (row as Map<String, dynamic>)['obra_id'].toString(),
+    };
+    if (obraIds.isEmpty) return [];
+
+    final obrasData = await _client
+        .from('obras')
+        .select('id, nombre')
+        .inFilter('id', obraIds.toList());
+    final nombresPorId = <String, String>{
+      for (final row in obrasData as List)
+        (row as Map<String, dynamic>)['id'].toString(): row['nombre'].toString(),
+    };
+    return obraIds.map((id) => nombresPorId[id] ?? 'obra sin acceso').toList();
+  }
+
   /// Tilda un subítem por primera vez en la obra (todavía no tenía fila).
   /// `esAplicable` queda en `true` y `cantidad` en el default de la columna (0).
   Future<ObraSubitem> crear({
@@ -164,9 +189,14 @@ class ObraSubitemsRepository {
   /// no puede venir nunca de una composición de APU. Mismo criterio que
   /// actualizarCantidad: la validación de numérico/no-negativo es
   /// responsabilidad de quien llama, acá se persiste tal cual se recibe.
+  ///
+  /// `precio` nullable: la columna siempre admitió `null` ("sin decidir
+  /// todavía"), y desde que se permite vaciar un precio ya cargado (antes se
+  /// bloqueaba, ver SubitemsScreen._guardarPrecio) también significa "el
+  /// usuario lo sacó a propósito".
   Future<ObraSubitem> actualizarPrecioUnitarioManual({
     required String id,
-    required double precio,
+    required double? precio,
     required String usuarioId,
   }) async {
     final updated = await _client

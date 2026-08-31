@@ -6,6 +6,8 @@ import '../../../data/models/obra_subitem.dart';
 import '../../../services/subitems_repository.dart';
 import '../../../services/obra_subitems_repository.dart';
 import '../../../services/auth_service.dart';
+import '../../../services/perfil_repository.dart';
+import '../../shared/pro_gate_dialog.dart';
 
 class SubitemsScreen extends StatefulWidget {
   final RubroCatalogo rubro;
@@ -32,11 +34,18 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
   final SubitemsRepository _subitemsRepository = SubitemsRepository();
   final ObraSubitemsRepository _obraSubitemsRepository = ObraSubitemsRepository();
   final AuthService _authService = AuthService();
+  final PerfilRepository _perfilRepository = PerfilRepository();
 
   List<SubitemCatalogo> _subitems = [];
   Map<String, ObraSubitem> _obraSubitemsPorSubitemId = {};
   bool _cargando = true;
   String? _error;
+  // Mismo criterio que RubrosTab: cacheado del load inicial, gatea el botón
+  // "Nuevo subítem" del AppBar. Fail-safe a false sin usuario logueado.
+  bool _esPro = false;
+  // subitemIds con un chequeo de uso o un DELETE en vuelo — mismo patrón que
+  // RubrosTab._procesandoEliminacion.
+  final Set<String> _procesandoEliminacion = {};
 
   // subitemIds con un toggle o un guardado de cantidad en vuelo: deshabilita
   // esa fila entera (checkbox + campo de cantidad) mientras se persiste, para
@@ -108,15 +117,18 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
       _error = null;
     });
     try {
-      final subitems = await _subitemsRepository.getSubitemsDeRubro(widget.rubro.id);
+      final usuarioId = _authService.usuarioActual?.id;
+      final subitems = await _subitemsRepository.getSubitemsDeRubro(widget.rubro.id, usuarioId: usuarioId);
       final mapa = await _obraSubitemsRepository.getMapaDeRubro(
         obraId: widget.obraId,
         rubroId: widget.rubro.id,
       );
+      final esPro = usuarioId != null ? await _perfilRepository.esPro(usuarioId) : false;
       if (!mounted) return;
       setState(() {
         _subitems = subitems;
         _obraSubitemsPorSubitemId = mapa;
+        _esPro = esPro;
         _cargando = false;
       });
     } catch (e) {
@@ -126,6 +138,316 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
         _cargando = false;
       });
     }
+  }
+
+  /// Código para un subítem propio nuevo: sigue la secuencia visible de
+  /// este rubro en esta obra ("{numeroPosicion}.{siguiente}"), no
+  /// rubro.codigo (interno desde la etapa de reordenamiento, ver
+  /// docs/rubros_orden_diseno_datos.md §3). No hace falta que sea único a
+  /// nivel de base — el índice único de subitems.codigo solo cubre filas
+  /// oficiales — esto es solo para que se lea bien en la lista, siguiendo
+  /// el mismo patrón "N.M" que ya usa el catálogo real.
+  String _siguienteCodigoPropio() {
+    var maxSegundo = 0;
+    for (final subitem in _subitems) {
+      final partes = subitem.codigo.split('.');
+      if (partes.length < 2) continue;
+      final segundo = int.tryParse(partes[1]);
+      if (segundo != null && segundo > maxSegundo) maxSegundo = segundo;
+    }
+    return '${widget.numeroPosicion}.${maxSegundo + 1}';
+  }
+
+  void _onNuevoSubitem() {
+    if (_esPro) {
+      _mostrarDialogoAltaSubitem();
+    } else {
+      mostrarDialogoFuncionPro(
+        context,
+        mensaje: 'Agregar tus propios subítems (para lo que el catálogo no cubre, '
+            'en cualquier rubro) es una función PRO.',
+      );
+    }
+  }
+
+  void _mostrarDialogoAltaSubitem() {
+    final descripcionCtrl = TextEditingController();
+    final unidadCtrl = TextEditingController();
+    // Declaradas fuera del builder: StatefulBuilder vuelve a ejecutar su
+    // builder en cada setModalState, así que una variable local ahí adentro
+    // se resetearía a su valor inicial en cada rebuild.
+    bool guardando = false;
+    String? error;
+
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (context, setModalState) {
+          Future<void> guardar() async {
+            final descripcion = descripcionCtrl.text.trim();
+            final unidad = unidadCtrl.text.trim();
+            if (descripcion.isEmpty) {
+              setModalState(() => error = 'Completá la descripción.');
+              return;
+            }
+            if (unidad.isEmpty) {
+              setModalState(() => error = 'Completá la unidad.');
+              return;
+            }
+            final usuarioId = _authService.usuarioActual?.id;
+            if (usuarioId == null) {
+              setModalState(() => error = 'No se pudo identificar al usuario.');
+              return;
+            }
+            setModalState(() {
+              guardando = true;
+              error = null;
+            });
+            try {
+              await _subitemsRepository.crearPersonalizado(
+                rubroId: widget.rubro.id,
+                codigo: _siguienteCodigoPropio(),
+                descripcion: descripcion,
+                unidad: unidad,
+                creadorUsuarioId: usuarioId,
+              );
+              if (!dialogCtx.mounted) return;
+              Navigator.of(dialogCtx).pop();
+              await _cargarDatos(); // trae el subítem nuevo, no solo tildados/cantidades
+            } catch (e) {
+              setModalState(() {
+                guardando = false;
+                error = 'No se pudo crear el subítem. Probá de nuevo.';
+              });
+            }
+          }
+
+          return AlertDialog(
+            title: const Text(
+              'Nuevo Subítem',
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1B365D)),
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TextField(
+                    controller: descripcionCtrl,
+                    autofocus: true,
+                    maxLines: null,
+                    decoration: const InputDecoration(labelText: 'Descripción', border: OutlineInputBorder(), isDense: true),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: unidadCtrl,
+                    decoration: const InputDecoration(labelText: 'Unidad (ej. M2, ML, GL)', border: OutlineInputBorder(), isDense: true),
+                  ),
+                  // Nunca tiene composición de APU (nadie la compuso
+                  // todavía) — se carga con precio manual sin importar si
+                  // el resto del rubro usa APU. Ver _buildContenido: la
+                  // condición de precio manual ahora también mira
+                  // creadorUsuarioId, no solo tipoPrecioManual.
+                  const SizedBox(height: 12),
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Se carga con precio manual — no depende de una composición de '
+                      'APU, que todavía nadie cargó para este subítem.',
+                      style: TextStyle(fontSize: 11, color: Colors.black54),
+                    ),
+                  ),
+                  if (error != null) ...[
+                    const SizedBox(height: 12),
+                    Text(error!, style: const TextStyle(color: Colors.red, fontSize: 12)),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: guardando ? null : () => Navigator.of(dialogCtx).pop(),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton(
+                onPressed: guardando ? null : guardar,
+                child: guardando
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Text('Crear'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  /// Chequea uso para decidir QUÉ diálogo mostrar, ya no para bloquear — el
+  /// catálogo propio es del usuario, la protección correcta es avisar qué
+  /// se pierde y dejarlo decidir (ver migración
+  /// 0028_obra_subitems_cascade_propio.sql para el porqué completo). Con
+  /// esa migración aplicada, obra_subitems.subitem_id tiene `on delete
+  /// cascade` — borrar el subítem se lleva puesto su cómputo en cualquier
+  /// obra donde estuviera cargado.
+  Future<void> _onEliminarSubitem(SubitemCatalogo subitem) async {
+    setState(() => _procesandoEliminacion.add(subitem.id));
+    List<String> obrasConUso;
+    try {
+      obrasConUso = await _obraSubitemsRepository.getNombresObrasConUsoDeSubitem(subitem.id);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _procesandoEliminacion.remove(subitem.id));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No se pudo verificar si el subítem tiene datos cargados. Probá de nuevo.')),
+      );
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _procesandoEliminacion.remove(subitem.id));
+
+    final confirmar = obrasConUso.isEmpty
+        ? await _mostrarDialogoConfirmarEliminarSubitem(subitem)
+        : await _mostrarDialogoConfirmarEliminarSubitemConDatos(subitem, obrasConUso);
+    if (confirmar != true) return;
+
+    setState(() => _procesandoEliminacion.add(subitem.id));
+    try {
+      await _subitemsRepository.eliminar(subitem.id);
+      if (!mounted) return;
+      await _cargarDatos();
+    } catch (e) {
+      // Ya no distingue 23503 como caso especial (esa era la señal de "está
+      // en uso", y ahora eso ya no bloquea) — cualquier error acá es
+      // inesperado de verdad.
+      if (!mounted) return;
+      setState(() => _procesandoEliminacion.remove(subitem.id));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No se pudo eliminar el subítem. Probá de nuevo.')),
+      );
+    }
+  }
+
+  Future<bool?> _mostrarDialogoConfirmarEliminarSubitem(SubitemCatalogo subitem) {
+    return showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text(
+          'Eliminar subítem',
+          style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1B365D)),
+        ),
+        content: Text('¿Eliminar "${subitem.codigo} - ${subitem.descripcion}"? Esta acción no se puede deshacer.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Eliminar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Antes bloqueaba ("No se puede eliminar"). Ahora advierte y deja
+  /// decidir — mismo criterio que _mostrarDialogoConfirmarEliminarSubitem,
+  /// pero con el detalle concreto de qué se pierde en vez de un genérico
+  /// "no se puede deshacer".
+  Future<bool?> _mostrarDialogoConfirmarEliminarSubitemConDatos(SubitemCatalogo subitem, List<String> obras) {
+    return showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text(
+          'Eliminar subítem con datos cargados',
+          style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1B365D)),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('"${subitem.codigo} - ${subitem.descripcion}" tiene cómputo cargado en:'),
+            const SizedBox(height: 8),
+            ...obras.map(
+              (nombre) => Padding(
+                padding: const EdgeInsets.only(bottom: 2),
+                child: Text('• $nombre', style: const TextStyle(fontWeight: FontWeight.w600)),
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Se va a borrar también ese cómputo (cantidad y precio cargados) en esas obras. '
+              'Esta acción no se puede deshacer.',
+              style: TextStyle(fontSize: 12, color: Colors.black54),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Eliminar de todos modos'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildChipPropio() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.amber[50],
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: Colors.amber[700]!),
+      ),
+      child: Text(
+        'Propio',
+        style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.amber[900]),
+      ),
+    );
+  }
+
+  /// Chip "Propio" + ícono de borrar, solo para subítems del usuario — los
+  /// oficiales no muestran trailing acá. El ícono queda deshabilitado y se
+  /// reemplaza por un spinner chico mientras hay un chequeo/DELETE en
+  /// vuelo para ese subítem puntual — mismo patrón que
+  /// RubrosTab._buildTrailingPropio.
+  Widget _buildTrailingPropio(SubitemCatalogo subitem) {
+    final procesando = _procesandoEliminacion.contains(subitem.id);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _buildChipPropio(),
+        const SizedBox(width: 4),
+        if (procesando)
+          const SizedBox(
+            width: 20,
+            height: 20,
+            child: Padding(
+              padding: EdgeInsets.all(2),
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          )
+        else
+          IconButton(
+            icon: const Icon(Icons.delete_outline, size: 20, color: Colors.red),
+            tooltip: 'Eliminar subítem',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+            onPressed: () => _onEliminarSubitem(subitem),
+          ),
+      ],
+    );
   }
 
   Future<void> _toggleSubitem(SubitemCatalogo subitem, bool nuevoValor) async {
@@ -250,15 +572,14 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
     return valor;
   }
 
-  /// _parsearPrecio colapsa vacío/no-numérico/negativo en un mismo `null`
-  /// para decidir si hay que persistir o no — acá se distingue cuál de los
-  /// tres fue en realidad, para no mostrarle al usuario el mismo mensaje
-  /// genérico ("inválido") en los tres casos (un número negativo sí es un
-  /// número, el problema real es que no puede ser negativo).
+  /// _parsearPrecio colapsa no-numérico/negativo en un mismo `null` para
+  /// decidir si hay que persistir o no — acá se distingue cuál de los dos
+  /// fue en realidad, para no mostrarle al usuario el mismo mensaje
+  /// genérico ("inválido") en los dos casos (un número negativo sí es un
+  /// número, el problema real es que no puede ser negativo). El caso
+  /// "vacío" ya no pasa por acá — _guardarPrecio lo maneja aparte, vaciar
+  /// un precio cargado es una acción válida, no un error.
   String _mensajeErrorPrecio(String texto) {
-    if (texto.isEmpty) {
-      return 'El precio no puede quedar vacío una vez cargado. Se restauró el valor anterior.';
-    }
     final valor = double.tryParse(texto.replaceAll(',', '.'));
     if (valor == null) return 'Precio inválido. Ingresá solo números.';
     return 'El precio no puede ser negativo.';
@@ -267,14 +588,15 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
   /// Se dispara al perder el foco el campo de precio de un subítem (rubros
   /// con tipoPrecioManual == 'unitario' únicamente, ver _buildContenido).
   ///
-  /// Una diferencia real con _guardarCantidad: cantidad siempre arranca en
-  /// un valor real (default 0 de la columna), así que un campo vacío
-  /// siempre es un error. precio_unitario_manual arranca en `null` recién
-  /// tildado — vacío ahí es un estado válido ("todavía no decidido"), no un
-  /// error, así que tocar el campo y salir sin tipear nada no dispara
-  /// ningún aviso. Si ya había un precio cargado y el campo quedó vacío, sí
-  /// es un intento de edición inválido — mismo criterio que cantidad desde
-  /// ahí en más.
+  /// Vaciar un precio ya cargado es una acción válida, no un error: la
+  /// columna admite `null` ("sin decidir" recién tildado, o "el usuario lo
+  /// sacó a propósito" después de haber tenido uno) — si el campo queda
+  /// vacío al perder el foco, se persiste `null` sin avisar ni revertir
+  /// (antes se bloqueaba con un mensaje de error; el usuario puede
+  /// deshacer lo que carga en su propio catálogo). Distinto de cantidad,
+  /// que siempre arranca en un valor real (default 0 de la columna, no
+  /// nullable) — ahí un campo vacío sigue siendo un error real, no una
+  /// decisión del usuario.
   Future<void> _guardarPrecio(SubitemCatalogo subitem) async {
     final existente = _obraSubitemsPorSubitemId[subitem.id];
     if (existente == null) return;
@@ -283,7 +605,12 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
     if (controller == null) return;
 
     final texto = controller.text.trim();
-    if (texto.isEmpty && existente.precioUnitarioManual == null) return;
+
+    if (texto.isEmpty) {
+      if (existente.precioUnitarioManual == null) return; // nunca tuvo precio, nada que hacer
+      await _guardarPrecioValor(subitem, existente, null);
+      return;
+    }
 
     final nuevoPrecio = _parsearPrecio(texto);
     if (nuevoPrecio == null) {
@@ -298,7 +625,14 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
     }
 
     if (nuevoPrecio == existente.precioUnitarioManual) return; // sin cambios
+    await _guardarPrecioValor(subitem, existente, nuevoPrecio);
+  }
 
+  /// Guardado propiamente dicho, compartido entre cargar/cambiar un precio
+  /// y vaciarlo (precio null) — mismo manejo de _guardando/error/revert en
+  /// los dos casos, solo cambia el valor que se persiste.
+  Future<void> _guardarPrecioValor(SubitemCatalogo subitem, ObraSubitem existente, double? precio) async {
+    final controller = _preciosControllers[subitem.id];
     final usuarioId = _authService.usuarioActual?.id;
     if (usuarioId == null) return;
 
@@ -306,7 +640,7 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
     try {
       final actualizado = await _obraSubitemsRepository.actualizarPrecioUnitarioManual(
         id: existente.id,
-        precio: nuevoPrecio,
+        precio: precio,
         usuarioId: usuarioId,
       );
       if (!mounted) return;
@@ -317,12 +651,12 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
         };
       });
     } catch (e) {
-      controller.text = existente.precioUnitarioManual != null
+      controller?.text = existente.precioUnitarioManual != null
           ? _formatearCantidad(existente.precioUnitarioManual!)
           : '';
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No se pudo guardar el precio. Probá de nuevo.')),
+        SnackBar(content: Text(precio == null ? 'No se pudo borrar el precio. Probá de nuevo.' : 'No se pudo guardar el precio. Probá de nuevo.')),
       );
     } finally {
       if (mounted) setState(() => _guardando.remove(subitem.id));
@@ -367,9 +701,41 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('${widget.numeroPosicion} - ${widget.rubro.nombre}'),
+        // Sin el número de posición del rubro (antes "3 - Nombre"): abajo
+        // los subítems muestran su propio código de catálogo ("5.1", "5.2"),
+        // una numeración distinta y correcta a propósito (posición del
+        // rubro en esta obra vs. código de catálogo del subítem, ver
+        // docs/rubros_orden_diseno_datos.md §3) — pero mezclar los dos acá
+        // arriba chocaba visualmente sin aportar nada que la pantalla
+        // anterior (RubrosTab) no mostrara ya.
+        title: Text(
+          widget.rubro.nombre,
+          overflow: TextOverflow.ellipsis,
+          maxLines: 1,
+          // Explícito y más chico que el default del AppBar (~20-22): sin el
+          // "N - " el nombre solo, a ese tamaño, se veía desproporcionado
+          // respecto del resto de la pantalla. 16 en vez de 17 para dejar
+          // margen real con nombres largos como "ESTRUCTURAS METALICAS
+          // LIVIANAS" (30 caracteres) — no hay forma de garantizar que
+          // entre sin verlo renderizado, así que conviene revisarlo
+          // puntualmente con ese rubro.
+          style: const TextStyle(fontSize: 16),
+        ),
         backgroundColor: const Color(0xFF1B365D),
         foregroundColor: Colors.white,
+        // Acción del AppBar, no una fila propia arriba de la lista — esta
+        // pantalla ya viene peleando el espacio vertical (ver ajustes de
+        // compactación de rubros/subítems); una fila más para "Nuevo
+        // subítem" comería justo lo que se ganó. Siempre visible, para PRO
+        // y para Free (mismo criterio que "Nuevo Rubro" — Free ve el
+        // diálogo de función PRO al tocarlo, no se oculta la función).
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.add),
+            tooltip: 'Nuevo subítem',
+            onPressed: _cargando ? null : _onNuevoSubitem,
+          ),
+        ],
       ),
       // Sin esto, tocar fuera de un campo de texto (otra parte de la
       // pantalla que no sea otro campo/checkbox) no le saca el foco —
@@ -437,7 +803,7 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
         // subítem ya es una tarjeta con margen propio) — la franja/fondo
         // marca el estado, no la posición en la lista.
         return Card(
-          margin: const EdgeInsets.only(bottom: 6.0),
+          margin: const EdgeInsets.only(bottom: 4.0),
           elevation: 1,
           color: aplicable ? const Color(0xFFEAF1FB) : null,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
@@ -459,9 +825,21 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
             child: Column(
               children: [
                 ListTile(
+                  // dense faltaba acá — rubros_tab.dart sí lo tenía, y reduce
+                  // la altura mínima del tile por sí solo, más allá de lo
+                  // que ya hacían contentPadding/minVerticalPadding.
+                  dense: true,
                   contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                  minVerticalPadding: 0,
                   leading: Checkbox(
                     value: aplicable,
+                    // Compacto pero no al mínimo: el tap target de 48x48
+                    // default de Material era el piso real de la altura de
+                    // la fila, sin importar cuánto se ajustara el resto —
+                    // se achica de forma moderada, no al extremo, para no
+                    // perder precisión al tocar (app pensada para usarse
+                    // en obra).
+                    visualDensity: const VisualDensity(horizontal: -2, vertical: -2),
                     onChanged: puedeEditar
                         ? (val) => _toggleSubitem(subitem, val ?? false)
                         : null,
@@ -483,20 +861,18 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
                         Expanded(
                           child: Text(
                             '${subitem.codigo} - ${subitem.descripcion}',
-                            // 3 en vez de 2: no hace falta que entre
-                            // completo (para eso está el chevron, que
-                            // expande a null/sin límite), pero con 2 cortaba
-                            // demasiado pronto en pantallas angostas —
-                            // sobre todo tras subir la fuente de 13 a 15.
-                            // Una línea más escala con cualquier ancho, a
-                            // diferencia de pelear por los pocos px fijos
-                            // del checkbox o el chevron.
-                            maxLines: expandido ? null : 3,
+                            // Vuelta a 2 (había subido a 3): con el chevron
+                            // como vía para ver el texto completo, no hace
+                            // falta que el colapsado muestre todo — es la
+                            // compactación pedida tras juntar varios ajustes
+                            // que por separado tenían sentido pero acumulados
+                            // dejaban entrar solo 4 subítems en pantalla.
+                            maxLines: expandido ? null : 2,
                             overflow: expandido ? TextOverflow.visible : TextOverflow.ellipsis,
-                            // Es lo que el usuario lee para saber qué está
-                            // tildando — más peso que antes (13), para que no
-                            // quede por debajo de los números que carga al lado.
-                            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+                            // 13, igual que en RubrosTab (pedido explícito
+                            // para que las dos pantallas compactadas queden
+                            // consistentes entre sí).
+                            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
                           ),
                         ),
                         Icon(
@@ -507,6 +883,9 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
                       ],
                     ),
                   ),
+                  // Chip "Propio" + borrar, solo para subítems del usuario —
+                  // los oficiales no muestran nada acá.
+                  trailing: subitem.creadorUsuarioId != null ? _buildTrailingPropio(subitem) : null,
                 ),
                 // Fila propia debajo del título, ya no en el trailing del
                 // ListTile: ahí el alto quedaba fijado por el título (una o dos
@@ -523,39 +902,56 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
                 // Instalaciones, 19 Carpinterías) no tienen cantidad — el
                 // precio tipeado ya es el monto total de la partida, sin
                 // multiplicar, así que no hay subtotal aparte: mostrarlo
-                // repetiría el mismo número que ya está en el campo. El
-                // resto (usaApu == true) sigue mostrando solo cantidad.
+                // repetiría el mismo número que ya está en el campo. Un
+                // subítem propio (creadorUsuarioId != null) en un rubro que
+                // sí usa APU (usaApu == true, tipoPrecioManual null) también
+                // agrupa cantidad+precio+subtotal, igual que 'unitario': un
+                // subítem que nadie compuso no tiene de dónde derivar un
+                // precio, precio manual es la única opción honesta (ver
+                // diagnóstico de esta pieza). El resto (usaApu == true,
+                // subítem oficial) sigue mostrando solo cantidad — ahí sí
+                // el precio debería venir de APU, cuando ese motor exista.
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
                   child: widget.rubro.tipoPrecioManual == 'unitario'
-                      ? Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Row(
-                              children: [
-                                Expanded(child: _buildCampoCantidad(subitem, aplicable, puedeEditar)),
-                                const SizedBox(width: 8),
-                                Expanded(child: _buildCampoPrecio(subitem, aplicable, puedeEditar)),
-                              ],
-                            ),
-                            _buildSubtotal(subitem, aplicable),
-                          ],
-                        )
+                      ? _buildFilaCantidadPrecioConSubtotal(subitem, aplicable, puedeEditar)
                       : widget.rubro.tipoPrecioManual == 'global'
                           ? _buildCampoPrecio(subitem, aplicable, puedeEditar, hint: 'Monto total')
-                          : Align(
-                              alignment: Alignment.centerRight,
-                              child: SizedBox(
-                                width: 140,
-                                child: _buildCampoCantidad(subitem, aplicable, puedeEditar),
-                              ),
-                            ),
+                          : subitem.creadorUsuarioId != null
+                              ? _buildFilaCantidadPrecioConSubtotal(subitem, aplicable, puedeEditar)
+                              : Align(
+                                  alignment: Alignment.centerRight,
+                                  child: SizedBox(
+                                    width: 140,
+                                    child: _buildCampoCantidad(subitem, aplicable, puedeEditar),
+                                  ),
+                                ),
                 ),
               ],
             ),
           ),
         );
       },
+    );
+  }
+
+  /// Cantidad + precio agrupados en una fila, subtotal debajo — usado por
+  /// rubros 'unitario' y por cualquier subítem propio (ver _buildContenido,
+  /// tiene la misma necesidad de precio manual que 'unitario' aunque el
+  /// rubro use APU). Extraído para no duplicarlo entre esos dos casos.
+  Widget _buildFilaCantidadPrecioConSubtotal(SubitemCatalogo subitem, bool aplicable, bool puedeEditar) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(child: _buildCampoCantidad(subitem, aplicable, puedeEditar)),
+            const SizedBox(width: 8),
+            Expanded(child: _buildCampoPrecio(subitem, aplicable, puedeEditar)),
+          ],
+        ),
+        _buildSubtotal(subitem, aplicable),
+      ],
     );
   }
 
@@ -574,7 +970,7 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
       style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
       decoration: InputDecoration(
         isDense: true,
-        contentPadding: const EdgeInsets.symmetric(vertical: 8),
+        contentPadding: const EdgeInsets.symmetric(vertical: 6),
         // Normalización solo visual (mayúsculas parejas) — la columna
         // subitems.unidad queda tal cual vino de la planilla original, sin
         // tocar la base. Un `suffix` con padding en vez de `suffixText` para
@@ -616,7 +1012,7 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
       style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
       decoration: InputDecoration(
         isDense: true,
-        contentPadding: const EdgeInsets.symmetric(vertical: 6),
+        contentPadding: const EdgeInsets.symmetric(vertical: 4),
         prefixText: '\$ ',
         prefixStyle: const TextStyle(fontSize: 12, color: Colors.black45),
         // labelText, no hintText: el hint desaparece apenas hay un valor

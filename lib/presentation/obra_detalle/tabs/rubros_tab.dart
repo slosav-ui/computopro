@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
 import '../../../data/models/obra_model.dart';
 import '../../../data/models/rubro_catalogo.dart';
 import '../../../services/rubros_repository.dart';
@@ -344,8 +343,8 @@ class _RubrosTabState extends State<RubrosTab> {
   /// _buildContenido).
   Widget _buildBadgeNumero(int numero) {
     return Container(
-      width: 24,
-      height: 24,
+      width: 20,
+      height: 20,
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: const Color(0xFF1B365D).withValues(alpha: 0.08),
@@ -353,7 +352,7 @@ class _RubrosTabState extends State<RubrosTab> {
       ),
       child: Text(
         '$numero',
-        style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1B365D), fontSize: 12),
+        style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1B365D), fontSize: 11),
       ),
     );
   }
@@ -442,12 +441,18 @@ class _RubrosTabState extends State<RubrosTab> {
         return Card(
           // ReorderableListView exige una Key única y estable por ítem.
           key: ValueKey(rubro.id),
-          margin: const EdgeInsets.only(bottom: 6.0),
+          margin: const EdgeInsets.only(bottom: 4.0),
           elevation: 1,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           child: ListTile(
             dense: true,
             contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+            // Padding interno del ListTile que dense/contentPadding no
+            // cubren — compactación pedida tras juntar en una sola
+            // pantalla varios ajustes que por separado tenían sentido
+            // (fuente del badge, dense) pero acumulados dejaban entrar
+            // solo 7 rubros en pantalla.
+            minVerticalPadding: 0,
             // El número pasa del prefijo del título ("N - Nombre") a un
             // badge acá, junto al drag handle — el nombre completo del
             // rubro sigue mostrándose entero (nada se recorta), pero ya no
@@ -472,7 +477,17 @@ class _RubrosTabState extends State<RubrosTab> {
             ),
             title: Text(
               rubro.nombre,
-              style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1B365D), fontSize: 14),
+              // 13 (antes 14) y un tope de 2 líneas — ninguno de los 20
+              // nombres oficiales del catálogo pasa de 2 líneas a este
+              // tamaño (verificado contra el listado de CLAUDE.md), así
+              // que en la práctica esto no recorta catálogo real; es una
+              // red de seguridad para un rubro personalizado con nombre
+              // muy largo. Esta pantalla no tiene chevron para expandir —
+              // si algún día hace falta ver el nombre completo, se ve
+              // igual al entrar al rubro (AppBar de SubitemsScreen).
+              style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1B365D), fontSize: 13),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
             ),
             subtitle: rubro.usaApu
                 ? null
@@ -581,13 +596,13 @@ class _RubrosTabState extends State<RubrosTab> {
     );
   }
 
-  /// Chequea uso antes de ofrecer confirmar, y solo confirma si no hay
-  /// ninguna fila de `obra_subitems` apuntando a este rubro (ver
-  /// ObraSubitemsRepository.getNombresObrasConUso para el criterio exacto).
-  /// El catch de `PostgrestException` código 23503 es una red de seguridad
-  /// por si algo se cargó entre el chequeo y el DELETE (otro dispositivo,
-  /// otra pestaña) — vuelve a consultar para mostrar el mismo diálogo con
-  /// nombres reales en vez de un mensaje genérico.
+  /// Chequea uso para decidir QUÉ diálogo mostrar, ya no para bloquear — el
+  /// catálogo propio es del usuario, la protección correcta es avisar qué
+  /// se pierde y dejarlo decidir, no impedirle borrar lo suyo (ver migración
+  /// 0028_obra_subitems_cascade_propio.sql para el porqué completo). Con
+  /// esa migración aplicada, obra_subitems.rubro_id tiene `on delete
+  /// cascade` — borrar el rubro se lleva puesto su cómputo en cualquier
+  /// obra donde estuviera cargado.
   Future<void> _onEliminarRubro(RubroCatalogo rubro, int numeroMostrado) async {
     setState(() => _procesandoEliminacion.add(rubro.id));
     List<String> obrasConUso;
@@ -596,18 +611,15 @@ class _RubrosTabState extends State<RubrosTab> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _procesandoEliminacion.remove(rubro.id));
-      _mostrarSnackError('No se pudo verificar si el rubro está en uso. Probá de nuevo.');
+      _mostrarSnackError('No se pudo verificar si el rubro tiene datos cargados. Probá de nuevo.');
       return;
     }
     if (!mounted) return;
     setState(() => _procesandoEliminacion.remove(rubro.id));
 
-    if (obrasConUso.isNotEmpty) {
-      _mostrarDialogoBloqueadoPorUso(rubro, numeroMostrado, obrasConUso);
-      return;
-    }
-
-    final confirmar = await _mostrarDialogoConfirmarEliminar(rubro, numeroMostrado);
+    final confirmar = obrasConUso.isEmpty
+        ? await _mostrarDialogoConfirmarEliminar(rubro, numeroMostrado)
+        : await _mostrarDialogoConfirmarEliminarConDatos(rubro, numeroMostrado, obrasConUso);
     if (confirmar != true) return;
 
     setState(() => _procesandoEliminacion.add(rubro.id));
@@ -615,17 +627,10 @@ class _RubrosTabState extends State<RubrosTab> {
       await _rubrosRepository.eliminar(rubro.id);
       if (!mounted) return;
       await _cargarCatalogo();
-    } on PostgrestException catch (e) {
-      if (!mounted) return;
-      setState(() => _procesandoEliminacion.remove(rubro.id));
-      if (e.code == '23503') {
-        final obrasActualizadas = await _obraSubitemsRepository.getNombresObrasConUso(rubro.id);
-        if (!mounted) return;
-        _mostrarDialogoBloqueadoPorUso(rubro, numeroMostrado, obrasActualizadas);
-      } else {
-        _mostrarSnackError('No se pudo eliminar el rubro. Probá de nuevo.');
-      }
     } catch (e) {
+      // Ya no distingue 23503 como caso especial (esa era la señal de "está
+      // en uso", y ahora eso ya no bloquea) — cualquier error acá es
+      // inesperado de verdad.
       if (!mounted) return;
       setState(() => _procesandoEliminacion.remove(rubro.id));
       _mostrarSnackError('No se pudo eliminar el rubro. Probá de nuevo.');
@@ -656,19 +661,27 @@ class _RubrosTabState extends State<RubrosTab> {
     );
   }
 
-  void _mostrarDialogoBloqueadoPorUso(RubroCatalogo rubro, int numeroMostrado, List<String> obras) {
-    showDialog(
+  /// Antes bloqueaba ("No se puede eliminar"). Ahora advierte y deja
+  /// decidir — mismo criterio que _mostrarDialogoConfirmarEliminar, pero
+  /// con el detalle concreto de qué se pierde en vez de un genérico "no se
+  /// puede deshacer".
+  Future<bool?> _mostrarDialogoConfirmarEliminarConDatos(
+    RubroCatalogo rubro,
+    int numeroMostrado,
+    List<String> obras,
+  ) {
+    return showDialog<bool>(
       context: context,
       builder: (dialogCtx) => AlertDialog(
         title: const Text(
-          'No se puede eliminar',
+          'Eliminar rubro con datos cargados',
           style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1B365D)),
         ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('"$numeroMostrado - ${rubro.nombre}" tiene datos cargados en:'),
+            Text('"$numeroMostrado - ${rubro.nombre}" tiene cómputo cargado en:'),
             const SizedBox(height: 8),
             ...obras.map(
               (nombre) => Padding(
@@ -678,15 +691,21 @@ class _RubrosTabState extends State<RubrosTab> {
             ),
             const SizedBox(height: 8),
             const Text(
-              'Sacá esas filas primero desde esas obras para poder eliminarlo.',
+              'Se va a borrar también ese cómputo (cantidades y precios cargados) en esas obras. '
+              'Esta acción no se puede deshacer.',
               style: TextStyle(fontSize: 12, color: Colors.black54),
             ),
           ],
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(dialogCtx).pop(),
-            child: const Text('Entendido'),
+            onPressed: () => Navigator.of(dialogCtx).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Eliminar de todos modos'),
           ),
         ],
       ),

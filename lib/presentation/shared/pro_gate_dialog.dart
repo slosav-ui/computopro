@@ -20,7 +20,11 @@ Future<void> mostrarDialogoFuncionPro(
         children: [
           Icon(Icons.workspace_premium, color: Colors.amber),
           SizedBox(width: 8),
-          Text('Función PRO'),
+          // Mismo patrón que los demás títulos de diálogo de la app —
+          // riesgo casi nulo acá (texto corto), pero consistente con el
+          // resto para no dejar el mismo hueco sin cerrar en un widget
+          // compartido que se reusa en varias pantallas.
+          Expanded(child: Text('Función PRO')),
         ],
       ),
       content: Text(mensaje),

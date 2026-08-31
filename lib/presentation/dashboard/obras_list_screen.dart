@@ -108,7 +108,12 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
           children: [
             Icon(Icons.map_outlined, color: Color(0xFF1B365D)),
             SizedBox(width: 8),
-            Text('Mapa de Obras Registradas', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            // Mismo patrón que los otros 2 títulos de diálogo ya corregidos
+            // en esta sesión — título de AlertDialog sin Expanded desborda
+            // en pantallas angostas.
+            Expanded(
+              child: Text('Mapa de Obras Registradas', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            ),
           ],
         ),
         content: SizedBox(
@@ -344,12 +349,18 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                     ],
                   ),
                   const SizedBox(height: 10),
-                  Row(
+                  // Wrap, no Row: acá ambos textos son cortos y fijos (bajo
+                  // riesgo por el criterio de la memoria), pero dentro de un
+                  // AlertDialog el margen es chico igual — si algún día no
+                  // entran los tres juntos, el badge pasa a la línea
+                  // siguiente en vez de desbordar.
+                  Wrap(
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 6,
+                    runSpacing: 4,
                     children: [
                       const Icon(Icons.person_pin_circle_outlined, size: 14, color: Colors.black45),
-                      const SizedBox(width: 6),
                       const Text('Creador: Vos', style: TextStyle(fontSize: 11, color: Colors.black54)),
-                      const SizedBox(width: 6),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(color: Colors.grey[200], borderRadius: BorderRadius.circular(4)),
@@ -730,12 +741,25 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                   child: const Icon(Icons.workspace_premium, color: Color(0xFF1B365D), size: 28),
                 ),
                 const SizedBox(width: 12),
-                const Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Suscripción Profesional', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1B365D))),
-                    Text('Gestión técnica y financiera avanzada', style: TextStyle(fontSize: 12, color: Colors.black54)),
-                  ],
+                // Expanded: mismo patrón de siempre — el ícono con badge de
+                // la izquierda es de ancho fijo, el bloque de texto tiene
+                // que ceder si no entra.
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Suscripción Profesional',
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1B365D)),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        'Gestión técnica y financiera avanzada',
+                        style: TextStyle(fontSize: 12, color: Colors.black54),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -811,7 +835,11 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
               children: [
                 Icon(Icons.assignment_outlined, color: Color(0xFF1B365D)),
                 SizedBox(width: 8),
-                Text('Servicios Especiales', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                // Mismo patrón que los otros títulos de diálogo ya
+                // corregidos en esta sesión.
+                Expanded(
+                  child: Text('Servicios Especiales', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                ),
               ],
             ),
             content: SingleChildScrollView(
