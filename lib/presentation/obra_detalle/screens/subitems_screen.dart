@@ -3,8 +3,10 @@ import '../../../core/utils/currency_formatter.dart';
 import '../../../data/models/rubro_catalogo.dart';
 import '../../../data/models/subitem_catalogo.dart';
 import '../../../data/models/obra_subitem.dart';
+import '../../../data/models/apu_precio_subitem.dart';
 import '../../../services/subitems_repository.dart';
 import '../../../services/obra_subitems_repository.dart';
+import '../../../services/apu_composiciones_repository.dart';
 import '../../../services/auth_service.dart';
 import '../../../services/perfil_repository.dart';
 import '../../shared/pro_gate_dialog.dart';
@@ -33,6 +35,7 @@ class SubitemsScreen extends StatefulWidget {
 class _SubitemsScreenState extends State<SubitemsScreen> {
   final SubitemsRepository _subitemsRepository = SubitemsRepository();
   final ObraSubitemsRepository _obraSubitemsRepository = ObraSubitemsRepository();
+  final ApuComposicionesRepository _apuComposicionesRepository = ApuComposicionesRepository();
   final AuthService _authService = AuthService();
   final PerfilRepository _perfilRepository = PerfilRepository();
 
@@ -40,6 +43,23 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
   Map<String, ObraSubitem> _obraSubitemsPorSubitemId = {};
   bool _cargando = true;
   String? _error;
+  // Paso 1 de la vinculación con APU: solo existencia, sin precio todavía
+  // (ver ApuComposicionesRepository). Solo se carga para rubros con
+  // usaApu == true (tipoPrecioManual null) — en los otros 4 el precio
+  // siempre es manual, la composición no aplica.
+  Set<String> _subitemsConComposicion = {};
+  // Paso 3: precio derivado de la composición, solo para los subitemIds
+  // que están en _subitemsConComposicion — nunca un double pelado, ver
+  // ApuPrecioSubitem.completo.
+  Map<String, ApuPrecioSubitem> _preciosApuPorSubitemId = {};
+  // true cuando la composición existe pero calcularPreciosSubitems() (RPC
+  // calcular_precio_apu_subitems, migración 0029) falló — hoy siempre,
+  // porque esa migración todavía no está aplicada (ver memoria
+  // "mat_y_mo_fuentes_precio"). Distinto de "incompleto" (_preciosApuPorSubitemId
+  // vacío por sí solo): acá el mecanismo entero no está disponible, no que
+  // falten precios de insumos puntuales — _buildPrecioApuDerivado lo marca
+  // aparte para no leerse como si fuera lo mismo.
+  bool _precioApuNoDisponible = false;
   // Mismo criterio que RubrosTab: cacheado del load inicial, gatea el botón
   // "Nuevo subítem" del AppBar. Fail-safe a false sin usuario logueado.
   bool _esPro = false;
@@ -124,11 +144,36 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
         rubroId: widget.rubro.id,
       );
       final esPro = usuarioId != null ? await _perfilRepository.esPro(usuarioId) : false;
+      // Solo tiene sentido consultar para rubros con usaApu == true — en
+      // 'unitario'/'global' el precio siempre es manual, no hay receta que
+      // buscar.
+      final conComposicion = widget.rubro.tipoPrecioManual == null
+          ? await _apuComposicionesRepository.getSubitemIdsConComposicion(
+              subitems.map((s) => s.id).toList(),
+            )
+          : <String>{};
+      // Paso 3: precio derivado, solo para los que ya sabemos que tienen
+      // composición — no tiene sentido pedirlo para el resto. Aislado en su
+      // propio try/catch: la RPC calcular_precio_apu_subitems (migración
+      // 0029) todavía no está aplicada, y un fallo acá no puede tumbar la
+      // carga de subitems/cantidades, que sí funcionan sin depender de esto.
+      var precios = <String, ApuPrecioSubitem>{};
+      var precioApuNoDisponible = false;
+      if (conComposicion.isNotEmpty) {
+        try {
+          precios = await _apuComposicionesRepository.calcularPreciosSubitems(conComposicion.toList());
+        } catch (e) {
+          precioApuNoDisponible = true;
+        }
+      }
       if (!mounted) return;
       setState(() {
         _subitems = subitems;
         _obraSubitemsPorSubitemId = mapa;
         _esPro = esPro;
+        _subitemsConComposicion = conComposicion;
+        _preciosApuPorSubitemId = precios;
+        _precioApuNoDisponible = precioApuNoDisponible;
         _cargando = false;
       });
     } catch (e) {
@@ -414,6 +459,26 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
         'Propio',
         style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.amber[900]),
       ),
+    );
+  }
+
+  /// Paso 1 de la vinculación con APU: indicador puro, no interactivo
+  /// todavía — ver una composición o calcular su precio son pasos
+  /// siguientes, sin construir. Con 233 de 234 insumos reales sin precio
+  /// cargado (ver diagnóstico de esta pieza), este chip hoy dice "hay un
+  /// APU cargado" y nada más, deliberadamente — no "cuánto cuesta". Texto
+  /// "APU" a secas (no "Con receta" — jerga de cocina, no de construcción;
+  /// APU ya es el vocabulario de toda la app) — dos letras, sin ícono, para
+  /// no competir por espacio con el resto de la fila.
+  Widget _buildChipConReceta() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.blue[50],
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: Colors.blue[200]!),
+      ),
+      child: Text('APU', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.blue[700])),
     );
   }
 
@@ -883,9 +948,16 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
                       ],
                     ),
                   ),
-                  // Chip "Propio" + borrar, solo para subítems del usuario —
-                  // los oficiales no muestran nada acá.
-                  trailing: subitem.creadorUsuarioId != null ? _buildTrailingPropio(subitem) : null,
+                  // Chip "Propio" + borrar para subítems del usuario. Para
+                  // los oficiales de un rubro con APU, el mismo lugar (hoy
+                  // vacío) muestra si ya tienen receta cargada — paso 1 de
+                  // la vinculación con APU, solo existencia, sin precio
+                  // todavía (ver ApuComposicionesRepository).
+                  trailing: subitem.creadorUsuarioId != null
+                      ? _buildTrailingPropio(subitem)
+                      : _subitemsConComposicion.contains(subitem.id)
+                          ? _buildChipConReceta()
+                          : null,
                 ),
                 // Fila propia debajo del título, ya no en el trailing del
                 // ListTile: ahí el alto quedaba fijado por el título (una o dos
@@ -908,9 +980,12 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
                 // agrupa cantidad+precio+subtotal, igual que 'unitario': un
                 // subítem que nadie compuso no tiene de dónde derivar un
                 // precio, precio manual es la única opción honesta (ver
-                // diagnóstico de esta pieza). El resto (usaApu == true,
-                // subítem oficial) sigue mostrando solo cantidad — ahí sí
-                // el precio debería venir de APU, cuando ese motor exista.
+                // diagnóstico de esta pieza). Un subítem OFICIAL con
+                // composición cargada (chip "APU", ver
+                // _subitemsConComposicion) muestra cantidad editable +
+                // precio derivado de solo lectura — paso 3 de la
+                // vinculación con APU. El resto (usaApu == true, oficial,
+                // sin composición) sigue mostrando solo cantidad.
                 Padding(
                   padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
                   child: widget.rubro.tipoPrecioManual == 'unitario'
@@ -919,13 +994,15 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
                           ? _buildCampoPrecio(subitem, aplicable, puedeEditar, hint: 'Monto total')
                           : subitem.creadorUsuarioId != null
                               ? _buildFilaCantidadPrecioConSubtotal(subitem, aplicable, puedeEditar)
-                              : Align(
-                                  alignment: Alignment.centerRight,
-                                  child: SizedBox(
-                                    width: 140,
-                                    child: _buildCampoCantidad(subitem, aplicable, puedeEditar),
-                                  ),
-                                ),
+                              : _subitemsConComposicion.contains(subitem.id)
+                                  ? _buildFilaCantidadPrecioApu(subitem, aplicable, puedeEditar)
+                                  : Align(
+                                      alignment: Alignment.centerRight,
+                                      child: SizedBox(
+                                        width: 140,
+                                        child: _buildCampoCantidad(subitem, aplicable, puedeEditar),
+                                      ),
+                                    ),
                 ),
               ],
             ),
@@ -952,6 +1029,125 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
         ),
         _buildSubtotal(subitem, aplicable),
       ],
+    );
+  }
+
+  /// Cantidad editable + precio derivado de la composición de APU, de solo
+  /// lectura — paso 3 de la vinculación con APU, solo para subítems
+  /// oficiales con composición cargada (chip "APU", ver
+  /// _subitemsConComposicion). Mismo patrón visual que
+  /// _buildFilaCantidadPrecioConSubtotal (cantidad+precio en una fila,
+  /// subtotal debajo), pero acá el precio nunca se tipea.
+  Widget _buildFilaCantidadPrecioApu(SubitemCatalogo subitem, bool aplicable, bool puedeEditar) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: _buildCampoCantidad(subitem, aplicable, puedeEditar)),
+            const SizedBox(width: 8),
+            Expanded(child: _buildPrecioApuDerivado(subitem.id)),
+          ],
+        ),
+        _buildSubtotalApu(subitem, aplicable),
+      ],
+    );
+  }
+
+  /// Recuadro gris de solo lectura, deliberadamente sin la apariencia de un
+  /// `TextFormField` (sin borde de campo, relleno sólido) — para que nadie
+  /// intente tocarlo pensando que se puede tipear, a diferencia del campo
+  /// de cantidad al lado. Naranja + contador en vez de un número cuando la
+  /// composición existe pero no todos sus insumos tienen precio — con solo
+  /// 1 de 234 insumos con precio real cargado hoy, este es el caso normal,
+  /// no la excepción, y nunca puede leerse como si fuera un precio real.
+  ///
+  /// _precioApuNoDisponible (mecanismo entero caído, ver _cargarDatos) se
+  /// distingue de "incompleto" (mecanismo funcionando, faltan precios de
+  /// insumos puntuales) — mismo texto naranja pero mensaje distinto, para no
+  /// leer "no disponible" como si fuera "0 de N insumos con precio".
+  Widget _buildPrecioApuDerivado(String subitemId) {
+    if (_precioApuNoDisponible) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.orange[50],
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: Colors.orange[200]!),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.info_outline, size: 12, color: Colors.orange[800]),
+            const SizedBox(width: 4),
+            Flexible(
+              child: Text(
+                'Precio no disponible',
+                style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.orange[800]),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    final resultado = _preciosApuPorSubitemId[subitemId];
+    final completo = resultado?.completo ?? false;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: completo ? Colors.grey[100] : Colors.orange[50],
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: completo ? Colors.black12 : Colors.orange[200]!),
+      ),
+      child: completo
+          ? Text(
+              CurrencyFormatter.formatARS(resultado!.precioTotal),
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.black87),
+              textAlign: TextAlign.right,
+            )
+          : Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.info_outline, size: 12, color: Colors.orange[800]),
+                const SizedBox(width: 4),
+                Flexible(
+                  child: Text(
+                    'Incompleto (${resultado?.insumosConPrecio ?? 0}/${resultado?.insumosTotal ?? 0})',
+                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.orange[800]),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+    );
+  }
+
+  /// Igual criterio que _buildSubtotal (oculto si no hay nada real que
+  /// mostrar): sin subtotal si el precio derivado está incompleto — no hay
+  /// nada que multiplicar todavía — ni si el subítem está destildado.
+  Widget _buildSubtotalApu(SubitemCatalogo subitem, bool aplicable) {
+    final resultado = _preciosApuPorSubitemId[subitem.id];
+    if (resultado == null || !resultado.completo || !aplicable) return const SizedBox.shrink();
+    final cantidad = _obraSubitemsPorSubitemId[subitem.id]?.cantidad ?? 0;
+    final subtotal = resultado.precioTotal * cantidad;
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Divider(height: 1, color: Color(0x1F1B365D)),
+          const SizedBox(height: 6),
+          Align(
+            alignment: Alignment.centerRight,
+            child: Text(
+              CurrencyFormatter.formatARS(subtotal),
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1B365D)),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

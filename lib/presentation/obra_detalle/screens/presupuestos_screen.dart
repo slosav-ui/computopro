@@ -5,6 +5,7 @@ import '../../../services/auth_service.dart';
 import '../../../services/obra_members_repository.dart';
 import '../tabs/rubros_tab.dart';
 import '../tabs/gestion_obra_tab.dart';
+import '../tabs/mat_y_mo_tab.dart';
 
 class PresupuestosScreen extends StatefulWidget {
   final dynamic obra;
@@ -178,7 +179,9 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> with SingleTick
                 )
               : const Center(child: Text('No se pudo determinar la obra.')),
           _buildTabApu(),
-          _buildTabMaterialesYMo(),
+          _obraId != null
+              ? MatYMoTab(obraId: _obraId!)
+              : const Center(child: Text('No se pudo determinar la obra.')),
           _buildTabProveedores(),
           _obraId != null
               ? GestionObraTab(obraId: _obraId!)
@@ -310,40 +313,6 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> with SingleTick
             ],
           ),
         ],
-      ),
-    );
-  }
-
-  // 3. MATERIALES Y MO
-  Widget _buildTabMaterialesYMo() {
-    return ListView(
-      padding: const EdgeInsets.all(12),
-      children: [
-        Card(
-          child: ListTile(
-            leading: const Icon(Icons.inventory, color: Color(0xFF1B365D)),
-            title: const Text('Consolidado Total de Insumos', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-            subtitle: const Text('Listado general de insumos requeridos para el total de la obra', style: TextStyle(fontSize: 11)),
-          ),
-        ),
-        const SizedBox(height: 8),
-        _buildInsumoCard('Cemento Portland (Bolsa 50kg)', '650 Bolsas', 12500.0, 8125000.0),
-        _buildInsumoCard('Arena Medida Fina/Gruesa', '45 m³', 28000.0, 1260000.0),
-        _buildInsumoCard('Hierro Aletado 10mm (Barra 12m)', '180 Unidades', 22500.0, 4050000.0),
-        _buildInsumoCard('Oficial Albañil (Horas Totales)', '1200 Horas', 4800.0, 5760000.0),
-        _buildInsumoCard('Ayudante (Horas Totales)', '1600 Horas', 3900.0, 6240000.0),
-      ],
-    );
-  }
-
-  Widget _buildInsumoCard(String nombre, String cantidad, double unitario, double total) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 6),
-      child: ListTile(
-        dense: true,
-        title: Text(nombre, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-        subtitle: Text('Cantidad necesaria: $cantidad  •  Unitario: ${_fmt(unitario)}', style: const TextStyle(fontSize: 10)),
-        trailing: Text(_fmt(total), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF2E7D32))),
       ),
     );
   }
