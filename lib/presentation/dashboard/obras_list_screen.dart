@@ -88,6 +88,28 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
     return moneda == 'USD' ? 'USD $formateado' : '\$ $formateado';
   }
 
+  /// Acepta coma o punto como separador decimal (mismo criterio que
+  /// _parsearCantidad/_parsearPrecio de SubitemsScreen) y rechaza vacío,
+  /// no numérico o <= 0 — una obra de 0 m² no tiene sentido. Antes el alta
+  /// no validaba esto en absoluto: `double.tryParse(...) ?? 100.0` caía en
+  /// silencio a un valor inventado si el texto no parseaba, sin avisar
+  /// nada — peligroso siempre, y directamente inaceptable en edición
+  /// (podía pisar la superficie real de una obra en curso sin que nadie se
+  /// enterara).
+  double? _parsearSuperficie(String texto) {
+    final normalizado = texto.trim().replaceAll(',', '.');
+    if (normalizado.isEmpty) return null;
+    final valor = double.tryParse(normalizado);
+    if (valor == null || valor <= 0) return null;
+    return valor;
+  }
+
+  /// Para precargar el campo de superficie en el diálogo de edición sin
+  /// mostrar "120.0" cuando el valor real es un entero.
+  String _formatearCantidadSuperficie(double valor) {
+    return valor == valor.roundToDouble() ? valor.toInt().toString() : valor.toString();
+  }
+
   // --- Navegación a la Solapa de Presupuesto ---
   void _abrirPresupuesto(Map<String, dynamic> obra) {
     Navigator.push(
@@ -390,7 +412,13 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                           );
                           return;
                         }
-                        final double sup = double.tryParse(superficieCtrl.text) ?? 100.0;
+                        final double? sup = _parsearSuperficie(superficieCtrl.text);
+                        if (sup == null) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Ingresá una superficie válida, mayor a 0.')),
+                          );
+                          return;
+                        }
                         final double montoArs = monedaSeleccionada == 'ARS' ? sup * 1000000.0 : (sup * 750.0) * _cotizacionUsdEfectiva;
                         final double montoUsd = monedaSeleccionada == 'USD' ? sup * 750.0 : (sup * 1000000.0) / _cotizacionUsdEfectiva;
                         final double montoTotal = monedaSeleccionada == 'ARS' ? montoArs : montoUsd;
@@ -434,6 +462,222 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                         child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                       )
                     : const Text('Crear Obra', style: TextStyle(color: Colors.white)),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  // --- Diálogo: Editar Obra ---
+  //
+  // Reusa la estructura del alta, pero deliberadamente NO reusa su
+  // guardado: acá no hay ningún campo de moneda (eso queda exclusivo del
+  // diálogo de Ajuste Económico — mezclarlos correría el riesgo real de
+  // cambiar la moneda por acá sin la lógica de default de CAC que ya tiene
+  // ese diálogo), y el guardado escribe un mapa parcial con solo los 5
+  // campos descriptivos — nunca montoTotal, moneda ni aplicaCac. El alta
+  // recalcula montoTotal desde la superficie como estimación de arranque;
+  // reusar ese cálculo acá le pisaría el monto real de una obra en curso
+  // con esa fórmula cruda cada vez que alguien corrija solo el nombre.
+  void _mostrarModalEditarObra(Map<String, dynamic> obra) {
+    final nombreCtrl = TextEditingController(text: obra['nombre'] as String? ?? '');
+    final propietarioCtrl = TextEditingController(text: obra['propietario'] as String? ?? '');
+    final ubicacionCtrl = TextEditingController(text: obra['ubicacion'] as String? ?? '');
+    final superficieCtrl = TextEditingController(
+      text: _formatearCantidadSuperficie((obra['superficieM2'] as num?)?.toDouble() ?? 0),
+    );
+    String tipoSeleccionado = (obra['tipoObra'] as String?) ?? 'Residencial';
+    bool guardando = false;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setModalState) {
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            title: const Row(
+              children: [
+                Icon(Icons.edit_outlined, color: Color(0xFF1B365D)),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text('Editar Obra', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                ),
+              ],
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.amber[50],
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.amber[700]!),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.gavel_outlined, size: 18, color: Colors.amber[900]),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Estos datos se consolidan en las carátulas, encabezados y legajos '
+                            'exportables en PDF — el cambio se refleja en cualquier documento nuevo '
+                            'que se genere de acá en más.',
+                            style: TextStyle(fontSize: 10, color: Colors.amber[900], height: 1.3, fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: nombreCtrl,
+                    autofocus: true,
+                    style: const TextStyle(fontSize: 12),
+                    decoration: const InputDecoration(
+                      labelText: 'Nombre de la Obra / Proyecto',
+                      labelStyle: TextStyle(fontSize: 12),
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: propietarioCtrl,
+                    style: const TextStyle(fontSize: 12),
+                    decoration: const InputDecoration(
+                      labelText: 'Propietario / Comitente',
+                      labelStyle: TextStyle(fontSize: 12),
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: ubicacionCtrl,
+                    style: const TextStyle(fontSize: 12),
+                    decoration: const InputDecoration(
+                      labelText: 'Ubicación / Localidad',
+                      labelStyle: TextStyle(fontSize: 12),
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: superficieCtrl,
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          style: const TextStyle(fontSize: 12),
+                          decoration: const InputDecoration(
+                            labelText: 'Superficie (m²)',
+                            labelStyle: TextStyle(fontSize: 12),
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: DropdownButtonFormField<String>(
+                          initialValue: tipoSeleccionado,
+                          isExpanded: true,
+                          decoration: const InputDecoration(
+                            labelText: 'Tipo',
+                            labelStyle: TextStyle(fontSize: 11),
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                          style: const TextStyle(fontSize: 11, color: Colors.black87),
+                          items: ['Residencial', 'Comercial/Residencial', 'Industrial', 'Infraestructura']
+                              .map((t) => DropdownMenuItem(
+                                    value: t,
+                                    child: Text(t, style: const TextStyle(fontSize: 11), overflow: TextOverflow.ellipsis),
+                                  ))
+                              .toList(),
+                          onChanged: (val) {
+                            if (val != null) setModalState(() => tipoSeleccionado = val);
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: guardando ? null : () => Navigator.pop(ctx),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1B365D)),
+                onPressed: guardando
+                    ? null
+                    : () async {
+                        if (nombreCtrl.text.trim().isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Por favor ingrese el nombre de la obra.')),
+                          );
+                          return;
+                        }
+                        final double? sup = _parsearSuperficie(superficieCtrl.text);
+                        if (sup == null) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Ingresá una superficie válida, mayor a 0.')),
+                          );
+                          return;
+                        }
+
+                        setModalState(() => guardando = true);
+                        try {
+                          final nombre = nombreCtrl.text.trim();
+                          final propietario = propietarioCtrl.text.trim().isEmpty ? 'Sin Especificar' : propietarioCtrl.text.trim();
+                          final ubicacion = ubicacionCtrl.text.trim().isEmpty ? 'Ubicación Faltante' : ubicacionCtrl.text.trim();
+                          // Mapa parcial a propósito — sin montoTotal, moneda
+                          // ni aplicaCac, ver comentario del método.
+                          await _obrasRepository.actualizarObra(obra['id'] as String, {
+                            'nombre': nombre,
+                            'propietario': propietario,
+                            'ubicacion': ubicacion,
+                            'superficieM2': sup,
+                            'tipoObra': tipoSeleccionado,
+                          });
+                          if (!context.mounted) return;
+                          setState(() {
+                            obra['nombre'] = nombre;
+                            obra['propietario'] = propietario;
+                            obra['ubicacion'] = ubicacion;
+                            obra['superficieM2'] = sup;
+                            obra['tipoObra'] = tipoSeleccionado;
+                          });
+                          Navigator.pop(ctx);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Obra actualizada.')),
+                          );
+                        } catch (e) {
+                          if (!context.mounted) return;
+                          setModalState(() => guardando = false);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('No se pudo guardar los cambios. Probá de nuevo.')),
+                          );
+                        }
+                      },
+                child: guardando
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Text('Guardar Cambios', style: TextStyle(color: Colors.white)),
               ),
             ],
           );
@@ -1319,7 +1563,7 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                // Cabecera: Nombre + Estado
+                                // Cabecera: Nombre + Editar + Estado
                                 Row(
                                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                   children: [
@@ -1329,6 +1573,19 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                                         style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1B365D)),
                                         overflow: TextOverflow.ellipsis,
                                       ),
+                                    ),
+                                    // Lápiz acá, no un cuarto ícono en el pie
+                                    // de la tarjeta (ya tiene 3, apretados
+                                    // contra "Última Modif" — ver memoria de
+                                    // overflow en pantalla angosta). Editar
+                                    // el nombre es lo que el usuario está
+                                    // mirando cuando lo quiere corregir.
+                                    IconButton(
+                                      icon: const Icon(Icons.edit_outlined, size: 16, color: Colors.black45),
+                                      tooltip: 'Editar Obra',
+                                      constraints: const BoxConstraints(),
+                                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                                      onPressed: () => _mostrarModalEditarObra(obra),
                                     ),
                                     Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
