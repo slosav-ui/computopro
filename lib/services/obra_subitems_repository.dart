@@ -159,6 +159,29 @@ class ObraSubitemsRepository {
     return _fromRow(updated);
   }
 
+  /// Guarda el precio manual de un subítem que ya tenía fila — rubros con
+  /// `usa_apu = false` (1, 18, 19, 20 y cualquier custom), donde el precio
+  /// no puede venir nunca de una composición de APU. Mismo criterio que
+  /// actualizarCantidad: la validación de numérico/no-negativo es
+  /// responsabilidad de quien llama, acá se persiste tal cual se recibe.
+  Future<ObraSubitem> actualizarPrecioUnitarioManual({
+    required String id,
+    required double precio,
+    required String usuarioId,
+  }) async {
+    final updated = await _client
+        .from('obra_subitems')
+        .update({
+          'precio_unitario_manual': precio,
+          'ultima_modificacion_usuario_id': usuarioId,
+          'updated_at': DateTime.now().toIso8601String(),
+        })
+        .eq('id', id)
+        .select()
+        .single();
+    return _fromRow(updated);
+  }
+
   ObraSubitem _fromRow(Map<String, dynamic> row) {
     return ObraSubitem(
       id: row['id'].toString(),
