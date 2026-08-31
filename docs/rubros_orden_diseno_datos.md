@@ -1,8 +1,9 @@
 # Rubros: código vs. número impreso, reordenamiento por obra — diseño de datos
 
 Estado: **diseño cerrado, implementación en curso.** Diagnóstico + 4 ambigüedades resueltas en
-conversación el 2026-08-31. Etapas A, B y C **verificadas en el teléfono** — ver estado detallado en
-§4. Falta D (alta de rubro sin código) y E (numeración en el PDF).
+conversación el 2026-08-31. Etapas A, B y C **verificadas en el teléfono**. Etapa D **código escrito,
+pendiente de aplicar la migración 0027 y de que el usuario lo verifique en el teléfono** — ver estado
+detallado en §4. Falta E (numeración en el PDF).
 
 Retoma el tema anotado en la memoria `rubros-codigo-orden-numeracion` (originado el 2026-08-30 al
 diseñar la validación de código duplicado, migración `0025_rubros_codigo_unique_global.sql`, ya
@@ -217,10 +218,32 @@ yendo primero, ordenados por `rubros.orden`, igual que hoy.
     para siempre en esa obra sin ninguna salida — se agregó un ícono `info_outline` chico
     (`_restaurarAviso`) que ocupa el lugar del banner una vez descartado y lo vuelve a mostrar al
     tocarlo; no reaparece solo (eso seguía siendo lo pedido), pero queda accesible.
-- **D — Alta de rubro sin código**: sacar el campo "Código" del diálogo de alta
-  (`RubrosTab._mostrarDialogoAltaRubro`), sacar el chequeo de duplicado en Dart, generar `codigo`
-  automáticamente del lado del servidor (decisión §3.4) — mecanismo exacto (secuencia, `uuid`, u
-  otro) a definir al escribir esa migración.
+- **D — Alta de rubro sin código**. Diagnóstico cerrado en conversación el 2026-08-31 (4 puntos, sin
+  ambigüedades reales — el usuario invitó una recomendación en el punto 4, no un fork). **Código
+  escrito el mismo día, pendiente de aplicar la migración y de verificación en el teléfono.** Qué se
+  tocó:
+  - `rubros.codigo` genera su valor solo, del lado de la base — `alter column codigo set default
+    gen_random_uuid()::text` (migración `0027_rubros_codigo_default.sql`), mismo mecanismo que ya
+    usa `rubros.id` en esta misma tabla. Elegido por sobre generarlo en Dart: cero dependencia
+    nueva, colisión bajo concurrencia tan improbable como la que ya se acepta hoy para `id`, y cubre
+    cualquier camino de escritura futuro, no solo `RubrosRepository.crearPersonalizado`. La migración
+    0025 (índice único global) sigue exactamente igual, sin tocar — sigue de red de seguridad.
+    **Hay que aplicar 0027 antes de que el cambio de Dart llegue a producción**: sin el default, el
+    insert sin `codigo` rompería el `not null` de la columna.
+  - `RubrosRepository.crearPersonalizado` deja de recibir `codigo` como parámetro y de mandarlo en
+    el insert.
+  - `RubrosTab._mostrarDialogoAltaRubro`: se sacó el `TextField` de Código, el `codigoCtrl`, el loop
+    de chequeo de duplicado contra `_catalogo` (ya no aplica — nada que el usuario haya tipeado
+    puede chocar) y el branch `23505` del catch de `PostgrestException` (colapsado en el mismo
+    mensaje genérico que el resto de los errores). El diálogo mantiene su estructura (loading, error,
+    texto explicativo) con Nombre como único campo — no se simplificó a otra cosa, seguía
+    necesitando estado async y manejo de error igual. `autofocus: true` en el campo Nombre.
+  - Diálogos de confirmar/bloquear borrado (anotado desde Etapa B): pasaron de mostrar
+    `rubro.codigo` a mostrar el número posicional (`numeroMostrado`), enhebrado desde el
+    `itemBuilder` a través de `_buildTrailingPropio` → `_onEliminarRubro` → ambos diálogos —
+    incluida la segunda llamada a `_mostrarDialogoBloqueadoPorUso` dentro del catch de `23503`.
+    Auditoría completa de `rubro.codigo` en `lib/`: no quedó ningún otro lugar de la UI mostrándolo
+    crudo.
 - **E — PDF**: filtrado a rubros con datos + renumeración correlativa sobre ese subconjunto. Solo
   diseño por ahora — no hay generador de PDF en el proyecto (`pdf`/`printing` en `pubspec.yaml` sin
   usar en ningún archivo de `lib/`, ver `CLAUDE.md`, "Dependencies not yet used in code").

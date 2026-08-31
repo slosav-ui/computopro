@@ -57,15 +57,19 @@ class RubrosRepository {
   /// pensar en esa distinción al crear su propio rubro. Se habilita
   /// `usaApu = true` cuando exista la Solapa 2 (APU) de verdad — hoy un
   /// rubro con usaApu = true no tendría manera de tener precio nunca.
+  ///
+  /// Sin `codigo`: ya no lo elige el usuario (Etapa D de
+  /// docs/rubros_orden_diseno_datos.md) — lo completa el default de la
+  /// columna (`gen_random_uuid()::text`, ver migración 0027). El código
+  /// queda puramente interno, nunca visible en la UI; el número que ve el
+  /// usuario es el posicional que arma RubrosTab.
   Future<RubroCatalogo> crearPersonalizado({
-    required String codigo,
     required String nombre,
     required String creadorUsuarioId,
   }) async {
     final inserted = await _client
         .from('rubros')
         .insert({
-          'codigo': codigo,
           'nombre': nombre,
           'usa_apu': false,
           'tipo_precio_manual': 'unitario',

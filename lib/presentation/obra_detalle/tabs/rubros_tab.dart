@@ -434,7 +434,7 @@ class _RubrosTabState extends State<RubrosTab> {
             // Revisar cuando exista esa UI y un rubro propio sí tenga
             // subitems.
             trailing: rubro.creadorUsuarioId != null
-                ? _buildTrailingPropio(rubro)
+                ? _buildTrailingPropio(rubro, numeroMostrado)
                 : _buildConteoBadge(rubro),
             onTap: () async {
               await Navigator.push(
@@ -500,7 +500,7 @@ class _RubrosTabState extends State<RubrosTab> {
   /// oficiales nunca lo muestran (`_buildConteoBadge` sigue siendo su
   /// trailing). El ícono queda deshabilitado y se reemplaza por un spinner
   /// chico mientras hay un chequeo/DELETE en vuelo para ese rubro puntual.
-  Widget _buildTrailingPropio(RubroCatalogo rubro) {
+  Widget _buildTrailingPropio(RubroCatalogo rubro, int numeroMostrado) {
     final procesando = _procesandoEliminacion.contains(rubro.id);
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -522,7 +522,7 @@ class _RubrosTabState extends State<RubrosTab> {
             tooltip: 'Eliminar rubro',
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(),
-            onPressed: () => _onEliminarRubro(rubro),
+            onPressed: () => _onEliminarRubro(rubro, numeroMostrado),
           ),
       ],
     );
@@ -535,7 +535,7 @@ class _RubrosTabState extends State<RubrosTab> {
   /// por si algo se cargó entre el chequeo y el DELETE (otro dispositivo,
   /// otra pestaña) — vuelve a consultar para mostrar el mismo diálogo con
   /// nombres reales en vez de un mensaje genérico.
-  Future<void> _onEliminarRubro(RubroCatalogo rubro) async {
+  Future<void> _onEliminarRubro(RubroCatalogo rubro, int numeroMostrado) async {
     setState(() => _procesandoEliminacion.add(rubro.id));
     List<String> obrasConUso;
     try {
@@ -550,11 +550,11 @@ class _RubrosTabState extends State<RubrosTab> {
     setState(() => _procesandoEliminacion.remove(rubro.id));
 
     if (obrasConUso.isNotEmpty) {
-      _mostrarDialogoBloqueadoPorUso(rubro, obrasConUso);
+      _mostrarDialogoBloqueadoPorUso(rubro, numeroMostrado, obrasConUso);
       return;
     }
 
-    final confirmar = await _mostrarDialogoConfirmarEliminar(rubro);
+    final confirmar = await _mostrarDialogoConfirmarEliminar(rubro, numeroMostrado);
     if (confirmar != true) return;
 
     setState(() => _procesandoEliminacion.add(rubro.id));
@@ -568,7 +568,7 @@ class _RubrosTabState extends State<RubrosTab> {
       if (e.code == '23503') {
         final obrasActualizadas = await _obraSubitemsRepository.getNombresObrasConUso(rubro.id);
         if (!mounted) return;
-        _mostrarDialogoBloqueadoPorUso(rubro, obrasActualizadas);
+        _mostrarDialogoBloqueadoPorUso(rubro, numeroMostrado, obrasActualizadas);
       } else {
         _mostrarSnackError('No se pudo eliminar el rubro. Probá de nuevo.');
       }
@@ -579,7 +579,7 @@ class _RubrosTabState extends State<RubrosTab> {
     }
   }
 
-  Future<bool?> _mostrarDialogoConfirmarEliminar(RubroCatalogo rubro) {
+  Future<bool?> _mostrarDialogoConfirmarEliminar(RubroCatalogo rubro, int numeroMostrado) {
     return showDialog<bool>(
       context: context,
       builder: (dialogCtx) => AlertDialog(
@@ -587,7 +587,7 @@ class _RubrosTabState extends State<RubrosTab> {
           'Eliminar rubro',
           style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1B365D)),
         ),
-        content: Text('¿Eliminar "${rubro.codigo} - ${rubro.nombre}"? Esta acción no se puede deshacer.'),
+        content: Text('¿Eliminar "$numeroMostrado - ${rubro.nombre}"? Esta acción no se puede deshacer.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogCtx).pop(false),
@@ -603,7 +603,7 @@ class _RubrosTabState extends State<RubrosTab> {
     );
   }
 
-  void _mostrarDialogoBloqueadoPorUso(RubroCatalogo rubro, List<String> obras) {
+  void _mostrarDialogoBloqueadoPorUso(RubroCatalogo rubro, int numeroMostrado, List<String> obras) {
     showDialog(
       context: context,
       builder: (dialogCtx) => AlertDialog(
@@ -615,7 +615,7 @@ class _RubrosTabState extends State<RubrosTab> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('"${rubro.codigo} - ${rubro.nombre}" tiene datos cargados en:'),
+            Text('"$numeroMostrado - ${rubro.nombre}" tiene datos cargados en:'),
             const SizedBox(height: 8),
             ...obras.map(
               (nombre) => Padding(
@@ -657,7 +657,6 @@ class _RubrosTabState extends State<RubrosTab> {
   }
 
   void _mostrarDialogoAltaRubro() {
-    final codigoCtrl = TextEditingController();
     final nombreCtrl = TextEditingController();
     // Declaradas fuera del builder: StatefulBuilder vuelve a ejecutar su
     // builder en cada setModalState, así que una variable local ahí adentro
@@ -670,33 +669,14 @@ class _RubrosTabState extends State<RubrosTab> {
       builder: (dialogCtx) => StatefulBuilder(
         builder: (context, setModalState) {
           Future<void> guardar() async {
-            final codigo = codigoCtrl.text.trim();
             final nombre = nombreCtrl.text.trim();
-            if (codigo.isEmpty || nombre.isEmpty) {
-              setModalState(() => error = 'Completá código y nombre.');
+            if (nombre.isEmpty) {
+              setModalState(() => error = 'Completá el nombre.');
               return;
             }
             final usuarioId = _authService.usuarioActual?.id;
             if (usuarioId == null) {
               setModalState(() => error = 'No se pudo identificar al usuario.');
-              return;
-            }
-            // Validación contra el catálogo ya cargado (oficiales + propios,
-            // getCatalogoCompleto) antes de intentar el insert — unicidad
-            // global de código, decisión de negocio: dos ítems con el mismo
-            // número en el presupuesto impreso confunden al cliente.
-            final codigoNormalizado = codigo.toLowerCase();
-            RubroCatalogo? conflicto;
-            for (final r in _catalogo) {
-              if (r.codigo.trim().toLowerCase() == codigoNormalizado) {
-                conflicto = r;
-                break;
-              }
-            }
-            if (conflicto != null) {
-              setModalState(() {
-                error = 'Ya existe un rubro con el código ${conflicto!.codigo} (${conflicto.nombre}).';
-              });
               return;
             }
             setModalState(() {
@@ -705,25 +685,17 @@ class _RubrosTabState extends State<RubrosTab> {
             });
             try {
               await _rubrosRepository.crearPersonalizado(
-                codigo: codigo,
                 nombre: nombre,
                 creadorUsuarioId: usuarioId,
               );
               if (!dialogCtx.mounted) return;
               Navigator.of(dialogCtx).pop();
               await _cargarCatalogo(); // trae el rubro nuevo, no solo los conteos
-            } on PostgrestException catch (e) {
-              // Red de seguridad del constraint de la base (0025), para el
-              // caso raro que la validación de arriba no cubre (ej. otro
-              // dispositivo creó el mismo código un instante antes de este
-              // insert). Código 23505 = unique_violation en Postgres.
-              setModalState(() {
-                guardando = false;
-                error = e.code == '23505'
-                    ? 'Ese código ya existe. Elegí otro.'
-                    : 'No se pudo crear el rubro. Probá de nuevo.';
-              });
             } catch (e) {
+              // Ya no hay un código elegido a mano que pueda chocar (Etapa D
+              // de docs/rubros_orden_diseno_datos.md — se genera solo del
+              // lado de la base, migración 0027) — sin distinción de causa
+              // que el usuario pueda accionar, un solo mensaje genérico.
               setModalState(() {
                 guardando = false;
                 error = 'No se pudo crear el rubro. Probá de nuevo.';
@@ -740,12 +712,8 @@ class _RubrosTabState extends State<RubrosTab> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 TextField(
-                  controller: codigoCtrl,
-                  decoration: const InputDecoration(labelText: 'Código', border: OutlineInputBorder(), isDense: true),
-                ),
-                const SizedBox(height: 12),
-                TextField(
                   controller: nombreCtrl,
+                  autofocus: true,
                   decoration: const InputDecoration(labelText: 'Nombre', border: OutlineInputBorder(), isDense: true),
                 ),
                 // Precio manual por subítem, sin selector — 'global' queda
