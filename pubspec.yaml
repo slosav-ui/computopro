@@ -26,6 +26,23 @@ dev_dependencies:
     sdk: flutter
 
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4
 
 flutter:
   uses-material-design: true
+
+# Config de flutter_launcher_icons (`dart run flutter_launcher_icons` para
+# regenerar). Fuente: assets/icon/ — capa completa, fondo y primer plano
+# (66% de zona segura) para el ícono adaptativo de Android, y monocromo
+# para el ícono "themed" de Android 13+ (adaptive_icon_monochrome).
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon/computopro_icon.png"
+  adaptive_icon_background: "assets/icon/computopro_icon_background.png"
+  adaptive_icon_foreground: "assets/icon/computopro_icon_foreground.png"
+  adaptive_icon_monochrome: "assets/icon/computopro_icon_monochrome.png"
+  # Apple rechaza íconos de App Store con canal alpha — computopro_icon.png
+  # es RGBA, esto lo aplana automáticamente contra fondo opaco al generar
+  # los assets de iOS.
+  remove_alpha_ios: true
