@@ -511,8 +511,12 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
                 // ver RubrosRepository.crearPersonalizado) agrupan cantidad y
                 // precio (las dos entradas) en una fila, y el subtotal (el
                 // resultado) va debajo, separado y más prominente — ver
-                // _buildSubtotal. El resto (usaApu == true, o 'global' — Etapa
-                // siguiente) sigue mostrando solo cantidad.
+                // _buildSubtotal. Rubros con tipoPrecioManual == 'global' (18
+                // Instalaciones, 19 Carpinterías) no tienen cantidad — el
+                // precio tipeado ya es el monto total de la partida, sin
+                // multiplicar, así que no hay subtotal aparte: mostrarlo
+                // repetiría el mismo número que ya está en el campo. El
+                // resto (usaApu == true) sigue mostrando solo cantidad.
                 Padding(
                   padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
                   child: widget.rubro.tipoPrecioManual == 'unitario'
@@ -529,13 +533,15 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
                             _buildSubtotal(subitem, aplicable),
                           ],
                         )
-                      : Align(
-                          alignment: Alignment.centerRight,
-                          child: SizedBox(
-                            width: 140,
-                            child: _buildCampoCantidad(subitem, aplicable, puedeEditar),
-                          ),
-                        ),
+                      : widget.rubro.tipoPrecioManual == 'global'
+                          ? _buildCampoPrecio(subitem, aplicable, puedeEditar, hint: 'Monto total')
+                          : Align(
+                              alignment: Alignment.centerRight,
+                              child: SizedBox(
+                                width: 140,
+                                child: _buildCampoCantidad(subitem, aplicable, puedeEditar),
+                              ),
+                            ),
                 ),
               ],
             ),
@@ -577,10 +583,19 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
   }
 
   /// Solo se renderiza para rubros con tipoPrecioManual == 'unitario' (ver
-  /// _buildContenido) — precio por subítem, se multiplica por cantidad para
-  /// el subtotal (_buildSubtotal). El caso 'global' (Rubros 18/19, un monto
-  /// único sin cantidad) queda para la próxima etapa.
-  Widget _buildCampoPrecio(SubitemCatalogo subitem, bool aplicable, bool puedeEditar) {
+  /// _buildContenido) — mismo campo (`precio_unitario_manual`) para los dos
+  /// casos de rubro sin APU, solo cambia el hint: en 'unitario' (Rubros 1,
+  /// 20, custom) es precio por unidad, se multiplica por cantidad para el
+  /// subtotal (_buildSubtotal). En 'global' (Rubros 18, 19) es el monto
+  /// total de la partida directamente — no hay cantidad ni subtotal
+  /// aparte, por eso el hint por defecto sigue diciendo "Precio" pero
+  /// _buildContenido lo pisa a "Monto total" para ese caso.
+  Widget _buildCampoPrecio(
+    SubitemCatalogo subitem,
+    bool aplicable,
+    bool puedeEditar, {
+    String hint = 'Precio',
+  }) {
     return TextFormField(
       controller: _controllerPrecioPara(subitem),
       focusNode: _focusNodePrecioPara(subitem),
@@ -591,13 +606,17 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
       // como si el "$" fuera parte del campo de cantidad de al lado).
       keyboardType: const TextInputType.numberWithOptions(decimal: true),
       style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-      decoration: const InputDecoration(
+      decoration: InputDecoration(
         isDense: true,
-        contentPadding: EdgeInsets.symmetric(vertical: 6),
+        contentPadding: const EdgeInsets.symmetric(vertical: 6),
         prefixText: '\$ ',
-        prefixStyle: TextStyle(fontSize: 12, color: Colors.black45),
-        hintText: 'Precio',
-        hintStyle: TextStyle(fontSize: 11, color: Colors.black38),
+        prefixStyle: const TextStyle(fontSize: 12, color: Colors.black45),
+        // labelText, no hintText: el hint desaparece apenas hay un valor
+        // cargado — acá "Monto total" tiene que seguir leyéndose siempre.
+        // Con labelText, Flutter lo flota arriba del campo en vez de
+        // taparlo con el número.
+        labelText: hint,
+        labelStyle: const TextStyle(fontSize: 11, color: Colors.black38),
       ),
     );
   }
