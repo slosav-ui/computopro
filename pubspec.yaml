@@ -16,6 +16,7 @@ dependencies:
   pdf: ^3.10.8
   printing: ^5.11.1
   path_provider: ^2.1.2
+  shared_preferences: ^2.5.5
 
   cupertino_icons: ^1.0.8
   supabase_flutter: ^2.17.2

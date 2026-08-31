@@ -10,6 +10,8 @@ class RubroCatalogo {
   final bool usaApu;
   final String? tipoPrecioManual; // 'unitario' | 'global' | null (cuando usaApu == true)
   final String? creadorUsuarioId; // null = catálogo oficial
+  final DateTime createdAt; // desempate de orden default para propios sin override en una obra,
+                             // ver docs/rubros_orden_diseno_datos.md §3 (reemplaza a codigo).
 
   const RubroCatalogo({
     required this.id,
@@ -17,6 +19,7 @@ class RubroCatalogo {
     required this.nombre,
     required this.orden,
     required this.usaApu,
+    required this.createdAt,
     this.tipoPrecioManual,
     this.creadorUsuarioId,
   });

@@ -59,6 +59,41 @@ class ObraSubitemsRepository {
     return conteo;
   }
 
+  /// Nombres de las obras donde el rubro `rubroId` ya tiene alguna fila en
+  /// `obra_subitems` — tildada o no: la FK `obra_subitems.rubro_id` (ver
+  /// 0019_obra_subitems.sql) no tiene `on delete cascade`, así que cualquier
+  /// fila, incluso una destildada con cantidad cargada, alcanza para que
+  /// Postgres rechace el DELETE de ese rubro. Se usa antes de ofrecer borrar
+  /// un rubro propio (RubrosTab), para avisar en qué obra(s) está en vez de
+  /// dejar al usuario buscando a ciegas.
+  ///
+  /// "obra sin acceso" como fallback si la política de SELECT de `obras`
+  /// (dueño único, `id_admin_creador = auth.uid()`) no deja ver el nombre de
+  /// alguna de esas obras — puede pasar si el dueño del rubro es colaborador,
+  /// no dueño, de esa obra puntual. No debería darse en el caso típico (un
+  /// PRO usa su propio rubro en sus propias obras), pero no hay que romper
+  /// el diálogo si pasa.
+  Future<List<String>> getNombresObrasConUso(String rubroId) async {
+    final data = await _client
+        .from('obra_subitems')
+        .select('obra_id')
+        .eq('rubro_id', rubroId);
+    final obraIds = <String>{
+      for (final row in data as List) (row as Map<String, dynamic>)['obra_id'].toString(),
+    };
+    if (obraIds.isEmpty) return [];
+
+    final obrasData = await _client
+        .from('obras')
+        .select('id, nombre')
+        .inFilter('id', obraIds.toList());
+    final nombresPorId = <String, String>{
+      for (final row in obrasData as List)
+        (row as Map<String, dynamic>)['id'].toString(): row['nombre'].toString(),
+    };
+    return obraIds.map((id) => nombresPorId[id] ?? 'obra sin acceso').toList();
+  }
+
   /// Tilda un subítem por primera vez en la obra (todavía no tenía fila).
   /// `esAplicable` queda en `true` y `cantidad` en el default de la columna (0).
   Future<ObraSubitem> crear({

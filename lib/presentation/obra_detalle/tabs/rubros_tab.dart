@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
 import '../../../data/models/obra_model.dart';
 import '../../../data/models/rubro_catalogo.dart';
 import '../../../services/rubros_repository.dart';
 import '../../../services/subitems_repository.dart';
 import '../../../services/obra_subitems_repository.dart';
+import '../../../services/obra_rubros_orden_repository.dart';
 import '../../../services/perfil_repository.dart';
 import '../../../services/auth_service.dart';
 import '../../shared/pro_gate_dialog.dart';
@@ -30,10 +32,21 @@ class _RubrosTabState extends State<RubrosTab> {
   final RubrosRepository _rubrosRepository = RubrosRepository();
   final SubitemsRepository _subitemsRepository = SubitemsRepository();
   final ObraSubitemsRepository _obraSubitemsRepository = ObraSubitemsRepository();
+  final ObraRubrosOrdenRepository _obraRubrosOrdenRepository = ObraRubrosOrdenRepository();
   final PerfilRepository _perfilRepository = PerfilRepository();
   final AuthService _authService = AuthService();
 
+  // Ya mezclado con los overrides de obra_rubros_orden y ordenado — el
+  // número mostrado en cada fila es directamente su índice+1 acá adentro
+  // (ver _mezclarOrden), no un campo aparte que haya que mantener en
+  // sincronía.
   List<RubroCatalogo> _catalogo = [];
+  // Posición efectiva (real, no un índice sintético) de cada rubro en
+  // _catalogo, mismo orden — necesaria para calcular el punto medio correcto
+  // al arrastrar (ver _onReorder). No alcanza con recalcular a partir del
+  // índice en cada drag: un vecino puede ya tener un override persistido con
+  // una magnitud real distinta a la que le daría su posición en la lista.
+  List<double> _posicionesCatalogo = [];
   // Indicador "N de M tildados" por rubro (ver diagnóstico: sin monto real
   // todavía, unit-agnostic, no depende de APU/precio_unitario_manual).
   Map<String, int> _totalPorRubro = {};
@@ -41,16 +54,53 @@ class _RubrosTabState extends State<RubrosTab> {
   bool _cargando = true;
   String? _error;
 
+  // Ids de rubros con un borrado en curso (chequeo de uso o DELETE en
+  // vuelo) — deshabilita el ícono de esa fila puntual y lo reemplaza por un
+  // spinner chico, sin bloquear el resto de la lista.
+  final Set<String> _procesandoEliminacion = {};
+
   // Fail-closed a Free hasta que se resuelva la consulta real (ver
   // PerfilRepository.esPro) — el botón "Nuevo Rubro" queda deshabilitado
   // mientras _cargando es true, así que no llega a mostrarse con este
   // default incorrecto.
   bool _esPro = false;
 
+  // Default false (aviso visible) hasta que se resuelva la lectura real de
+  // SharedPreferences — mismo criterio "fail-closed hacia lo más seguro" que
+  // _esPro, pero acá lo seguro es mostrar el aviso, no ocultarlo.
+  bool _avisoOrdenDescartado = false;
+
+  String get _claveAvisoOrden => 'orden_rubros_aviso_descartado_${widget.obraId}';
+
   @override
   void initState() {
     super.initState();
     _cargarCatalogo();
+    _cargarAvisoDescartado();
+  }
+
+  Future<void> _cargarAvisoDescartado() async {
+    final prefs = await SharedPreferences.getInstance();
+    final descartado = prefs.getBool(_claveAvisoOrden) ?? false;
+    if (!mounted) return;
+    setState(() => _avisoOrdenDescartado = descartado);
+  }
+
+  /// Descarta el aviso solo para esta obra — guardado en SharedPreferences
+  /// (por dispositivo, no sincronizado entre dispositivos ni usuarios), así
+  /// que vuelve a aparecer al abrir otra obra o en otro dispositivo/usuario
+  /// que no lo haya descartado ahí. No reaparece solo en esta obra — para
+  /// eso está el ícono chico de _buildAvisoOrden que lo trae de vuelta.
+  Future<void> _descartarAviso() async {
+    setState(() => _avisoOrdenDescartado = true);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_claveAvisoOrden, true);
+  }
+
+  Future<void> _restaurarAviso() async {
+    setState(() => _avisoOrdenDescartado = false);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_claveAvisoOrden, false);
   }
 
   Future<void> _cargarCatalogo() async {
@@ -66,9 +116,12 @@ class _RubrosTabState extends State<RubrosTab> {
       final esPro = usuarioId != null ? await _perfilRepository.esPro(usuarioId) : false;
       final totales = await _subitemsRepository.getConteoOficialPorRubro();
       final tildados = await _obraSubitemsRepository.getConteoTildadosPorObra(widget.obraId);
+      final overrides = await _obraRubrosOrdenRepository.getOverridesDeObra(widget.obraId);
       if (!mounted) return;
+      final (catalogoOrdenado, posiciones) = _mezclarOrden(rubros, overrides);
       setState(() {
-        _catalogo = rubros;
+        _catalogo = catalogoOrdenado;
+        _posicionesCatalogo = posiciones;
         _esPro = esPro;
         _totalPorRubro = totales;
         _tildadosPorRubro = tildados;
@@ -80,6 +133,100 @@ class _RubrosTabState extends State<RubrosTab> {
         _error = 'No se pudo cargar el catálogo de rubros.';
         _cargando = false;
       });
+    }
+  }
+
+  /// Combina el orden default (`catalogoDefault`, ya viene ordenado:
+  /// oficiales por `orden`, propios por `createdAt` — ver
+  /// RubrosRepository.getCatalogoCompleto) con los overrides explícitos de
+  /// esta obra (`obra_rubros_orden`, indexación fraccionaria — ver
+  /// docs/rubros_orden_diseno_datos.md §2.2). Sin overrides, el resultado es
+  /// exactamente `catalogoDefault` sin cambios, con posiciones sintéticas.
+  ///
+  /// La posición default de un rubro sin override es (índice en la lista ya
+  /// ordenada + 1) * 1000 — no rubros.orden * 1000 directamente, porque así
+  /// también les da un lugar coherente a los propios (que no tienen
+  /// `orden`), reutilizando el orden que getCatalogoCompleto ya calculó bien
+  /// en vez de reimplementarlo acá.
+  ///
+  /// Devuelve también las posiciones (mismo orden que la lista) porque
+  /// _onReorder las necesita como valores reales al calcular el punto medio
+  /// entre vecinos — no alcanza con la lista de rubros sola.
+  (List<RubroCatalogo>, List<double>) _mezclarOrden(
+    List<RubroCatalogo> catalogoDefault,
+    Map<String, double> overrides,
+  ) {
+    final conPosicion = <MapEntry<RubroCatalogo, double>>[
+      for (var i = 0; i < catalogoDefault.length; i++)
+        MapEntry(
+          catalogoDefault[i],
+          overrides[catalogoDefault[i].id] ?? (i + 1) * 1000.0,
+        ),
+    ];
+    conPosicion.sort((a, b) => a.value.compareTo(b.value));
+    return (
+      conPosicion.map((e) => e.key).toList(),
+      conPosicion.map((e) => e.value).toList(),
+    );
+  }
+
+  /// Se dispara al soltar un rubro en una posición nueva. Calcula la nueva
+  /// posición como el punto medio entre los dos vecinos que le quedan en la
+  /// lista sin el rubro movido (`newIndex`, con `onReorderItem`, ya viene
+  /// ajustado para indexar esa lista sin el ítem removido — no hace falta el
+  /// `if (oldIndex < newIndex) newIndex -= 1` manual que pedía el `onReorder`
+  /// viejo, deprecado). Actualización optimista: la lista local cambia antes
+  /// del request; si el upsert falla, se revierte al snapshot previo.
+  Future<void> _onReorder(int oldIndex, int newIndex) async {
+    // Red de seguridad: el handle de arrastre no debería estar visible sin
+    // este permiso (ver _buildContenido), así que esto no debería disparar
+    // en la práctica.
+    if (!widget.puedeEditarComputo) return;
+    if (oldIndex == newIndex) return;
+
+    final usuarioId = _authService.usuarioActual?.id;
+    if (usuarioId == null) return;
+
+    final rubro = _catalogo[oldIndex];
+    final catalogoPrevio = List<RubroCatalogo>.from(_catalogo);
+    final posicionesPrevias = List<double>.from(_posicionesCatalogo);
+
+    final catalogoSinMovido = List<RubroCatalogo>.from(_catalogo)..removeAt(oldIndex);
+    final posicionesSinMovido = List<double>.from(_posicionesCatalogo)..removeAt(oldIndex);
+
+    final anterior = newIndex > 0 ? posicionesSinMovido[newIndex - 1] : null;
+    final siguiente = newIndex < posicionesSinMovido.length ? posicionesSinMovido[newIndex] : null;
+
+    final double nuevaPosicion;
+    if (anterior != null && siguiente != null) {
+      nuevaPosicion = (anterior + siguiente) / 2;
+    } else if (anterior != null) {
+      nuevaPosicion = anterior + 1000; // fue al final, sin cota superior
+    } else if (siguiente != null) {
+      nuevaPosicion = siguiente / 2; // fue al principio, sin cota inferior
+    } else {
+      nuevaPosicion = 1000; // único rubro en la lista (no debería pasar)
+    }
+
+    setState(() {
+      _catalogo = List<RubroCatalogo>.from(catalogoSinMovido)..insert(newIndex, rubro);
+      _posicionesCatalogo = List<double>.from(posicionesSinMovido)..insert(newIndex, nuevaPosicion);
+    });
+
+    try {
+      await _obraRubrosOrdenRepository.moverRubro(
+        obraId: widget.obraId,
+        rubroId: rubro.id,
+        posicion: nuevaPosicion,
+        usuarioId: usuarioId,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _catalogo = catalogoPrevio;
+        _posicionesCatalogo = posicionesPrevias;
+      });
+      _mostrarSnackError('No se pudo guardar el nuevo orden. Probá de nuevo.');
     }
   }
 
@@ -126,6 +273,10 @@ class _RubrosTabState extends State<RubrosTab> {
               ],
             ),
           ),
+        // Independiente del rol: la sorpresa de "veo otro número acá" le
+        // puede pasar a cualquiera que mire la obra, no solo a quien puede
+        // arrastrar — así que no se gatea por puedeEditarComputo.
+        _buildAvisoOrden(),
         // Siempre visible, para PRO y para Free (Free ve el diálogo de
         // función PRO al tocarlo, ver _onNuevoRubro — no se oculta la
         // función, mismo criterio que el resto del spec Free/PRO).
@@ -151,6 +302,53 @@ class _RubrosTabState extends State<RubrosTab> {
           ),
         ),
       ],
+    );
+  }
+
+  /// Aviso de que la numeración es posicional y de esta obra puntual —
+  /// descartable, guardado por obra en SharedPreferences (ver
+  /// _descartarAviso). Descartado no es lo mismo que ausente: queda un
+  /// ícono chico que lo trae de vuelta (_restaurarAviso) — no reaparece
+  /// solo, pero tampoco desaparece para siempre sin salida.
+  Widget _buildAvisoOrden() {
+    if (_avisoOrdenDescartado) {
+      return Padding(
+        padding: const EdgeInsets.only(left: 12, top: 4),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: IconButton(
+            icon: const Icon(Icons.info_outline, size: 16, color: Colors.black38),
+            tooltip: 'Sobre la numeración de rubros',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+            onPressed: _restaurarAviso,
+          ),
+        ),
+      );
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      color: Colors.blueGrey[50],
+      child: Row(
+        children: [
+          const Icon(Icons.info_outline, size: 16, color: Color(0xFF1B365D)),
+          const SizedBox(width: 8),
+          const Expanded(
+            child: Text(
+              'Los números se ajustan al orden que le des a esta obra. En otras obras la '
+              'numeración puede ser distinta.',
+              style: TextStyle(fontSize: 11, color: Color(0xFF1B365D)),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.close, size: 16, color: Color(0xFF1B365D)),
+            tooltip: 'Cerrar aviso',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+            onPressed: _descartarAviso,
+          ),
+        ],
+      ),
     );
   }
 
@@ -188,18 +386,39 @@ class _RubrosTabState extends State<RubrosTab> {
         ],
       );
     }
-    return ListView.builder(
+    return ReorderableListView.builder(
       padding: const EdgeInsets.all(12.0),
+      // Sin esto, Flutter arma un drag handle automático (long-press en
+      // toda la fila en mobile) — lo desactivamos para que el ÚNICO gesto de
+      // arrastre válido sea el ícono dedicado de abajo, sin pisar el onTap
+      // que abre SubitemsScreen ni el ícono de borrar.
+      buildDefaultDragHandles: false,
       itemCount: _catalogo.length,
+      onReorderItem: _onReorder,
       itemBuilder: (context, index) {
         final rubro = _catalogo[index];
+        // Número mostrado = posición en _catalogo, que ya viene mezclado y
+        // ordenado (ver _mezclarOrden) — nunca rubro.codigo, que queda
+        // interno desde esta etapa (docs/rubros_orden_diseno_datos.md §3).
+        final numeroMostrado = index + 1;
         return Card(
+          // ReorderableListView exige una Key única y estable por ítem.
+          key: ValueKey(rubro.id),
           margin: const EdgeInsets.only(bottom: 8.0),
           elevation: 1,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           child: ListTile(
+            // Oculto (no solo deshabilitado) para quien no puede editar el
+            // cómputo — mismo criterio que el checkbox de SubitemsScreen,
+            // pero acá "no debería aparecer" en vez de "deshabilitado".
+            leading: widget.puedeEditarComputo
+                ? ReorderableDragStartListener(
+                    index: index,
+                    child: const Icon(Icons.drag_handle, color: Colors.black38),
+                  )
+                : null,
             title: Text(
-              '${rubro.codigo} - ${rubro.nombre}',
+              '$numeroMostrado - ${rubro.nombre}',
               style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1B365D), fontSize: 14),
             ),
             subtitle: rubro.usaApu
@@ -215,7 +434,7 @@ class _RubrosTabState extends State<RubrosTab> {
             // Revisar cuando exista esa UI y un rubro propio sí tenga
             // subitems.
             trailing: rubro.creadorUsuarioId != null
-                ? _buildChipPropio()
+                ? _buildTrailingPropio(rubro)
                 : _buildConteoBadge(rubro),
             onTap: () async {
               await Navigator.push(
@@ -225,6 +444,7 @@ class _RubrosTabState extends State<RubrosTab> {
                     rubro: rubro,
                     obraId: widget.obraId,
                     puedeEditarComputo: widget.puedeEditarComputo,
+                    numeroPosicion: numeroMostrado,
                   ),
                 ),
               );
@@ -274,6 +494,154 @@ class _RubrosTabState extends State<RubrosTab> {
         style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.amber[900]),
       ),
     );
+  }
+
+  /// Chip "Propio" + ícono de borrar, solo para rubros del usuario — los
+  /// oficiales nunca lo muestran (`_buildConteoBadge` sigue siendo su
+  /// trailing). El ícono queda deshabilitado y se reemplaza por un spinner
+  /// chico mientras hay un chequeo/DELETE en vuelo para ese rubro puntual.
+  Widget _buildTrailingPropio(RubroCatalogo rubro) {
+    final procesando = _procesandoEliminacion.contains(rubro.id);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _buildChipPropio(),
+        const SizedBox(width: 4),
+        if (procesando)
+          const SizedBox(
+            width: 20,
+            height: 20,
+            child: Padding(
+              padding: EdgeInsets.all(2),
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          )
+        else
+          IconButton(
+            icon: const Icon(Icons.delete_outline, size: 20, color: Colors.red),
+            tooltip: 'Eliminar rubro',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+            onPressed: () => _onEliminarRubro(rubro),
+          ),
+      ],
+    );
+  }
+
+  /// Chequea uso antes de ofrecer confirmar, y solo confirma si no hay
+  /// ninguna fila de `obra_subitems` apuntando a este rubro (ver
+  /// ObraSubitemsRepository.getNombresObrasConUso para el criterio exacto).
+  /// El catch de `PostgrestException` código 23503 es una red de seguridad
+  /// por si algo se cargó entre el chequeo y el DELETE (otro dispositivo,
+  /// otra pestaña) — vuelve a consultar para mostrar el mismo diálogo con
+  /// nombres reales en vez de un mensaje genérico.
+  Future<void> _onEliminarRubro(RubroCatalogo rubro) async {
+    setState(() => _procesandoEliminacion.add(rubro.id));
+    List<String> obrasConUso;
+    try {
+      obrasConUso = await _obraSubitemsRepository.getNombresObrasConUso(rubro.id);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _procesandoEliminacion.remove(rubro.id));
+      _mostrarSnackError('No se pudo verificar si el rubro está en uso. Probá de nuevo.');
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _procesandoEliminacion.remove(rubro.id));
+
+    if (obrasConUso.isNotEmpty) {
+      _mostrarDialogoBloqueadoPorUso(rubro, obrasConUso);
+      return;
+    }
+
+    final confirmar = await _mostrarDialogoConfirmarEliminar(rubro);
+    if (confirmar != true) return;
+
+    setState(() => _procesandoEliminacion.add(rubro.id));
+    try {
+      await _rubrosRepository.eliminar(rubro.id);
+      if (!mounted) return;
+      await _cargarCatalogo();
+    } on PostgrestException catch (e) {
+      if (!mounted) return;
+      setState(() => _procesandoEliminacion.remove(rubro.id));
+      if (e.code == '23503') {
+        final obrasActualizadas = await _obraSubitemsRepository.getNombresObrasConUso(rubro.id);
+        if (!mounted) return;
+        _mostrarDialogoBloqueadoPorUso(rubro, obrasActualizadas);
+      } else {
+        _mostrarSnackError('No se pudo eliminar el rubro. Probá de nuevo.');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _procesandoEliminacion.remove(rubro.id));
+      _mostrarSnackError('No se pudo eliminar el rubro. Probá de nuevo.');
+    }
+  }
+
+  Future<bool?> _mostrarDialogoConfirmarEliminar(RubroCatalogo rubro) {
+    return showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text(
+          'Eliminar rubro',
+          style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1B365D)),
+        ),
+        content: Text('¿Eliminar "${rubro.codigo} - ${rubro.nombre}"? Esta acción no se puede deshacer.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Eliminar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _mostrarDialogoBloqueadoPorUso(RubroCatalogo rubro, List<String> obras) {
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text(
+          'No se puede eliminar',
+          style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1B365D)),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('"${rubro.codigo} - ${rubro.nombre}" tiene datos cargados en:'),
+            const SizedBox(height: 8),
+            ...obras.map(
+              (nombre) => Padding(
+                padding: const EdgeInsets.only(bottom: 2),
+                child: Text('• $nombre', style: const TextStyle(fontWeight: FontWeight.w600)),
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Sacá esas filas primero desde esas obras para poder eliminarlo.',
+              style: TextStyle(fontSize: 12, color: Colors.black54),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(),
+            child: const Text('Entendido'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _mostrarSnackError(String mensaje) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(mensaje)));
   }
 
   void _onNuevoRubro() {

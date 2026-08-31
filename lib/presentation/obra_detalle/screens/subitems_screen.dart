@@ -10,12 +10,17 @@ class SubitemsScreen extends StatefulWidget {
   final RubroCatalogo rubro;
   final String obraId;
   final bool puedeEditarComputo;
+  // Posición del rubro en la lista ya mezclada/ordenada de esa obra (ver
+  // RubrosTab._mezclarOrden) — no rubro.codigo, que queda interno desde esta
+  // etapa (docs/rubros_orden_diseno_datos.md §3).
+  final int numeroPosicion;
 
   const SubitemsScreen({
     Key? key,
     required this.rubro,
     required this.obraId,
     required this.puedeEditarComputo,
+    required this.numeroPosicion,
   }) : super(key: key);
 
   @override
@@ -233,7 +238,7 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('${widget.rubro.codigo} - ${widget.rubro.nombre}'),
+        title: Text('${widget.numeroPosicion} - ${widget.rubro.nombre}'),
         backgroundColor: const Color(0xFF1B365D),
         foregroundColor: Colors.white,
       ),

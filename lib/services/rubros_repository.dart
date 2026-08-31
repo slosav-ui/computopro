@@ -25,12 +25,13 @@ class RubrosRepository {
   /// un rubro custom nunca aparecería en la lista — getCatalogoOficial()
   /// filtra explícitamente `creador_usuario_id is null`.
   ///
-  /// Orden: oficiales primero (por `orden`, igual que siempre), propios
-  /// después — mismo criterio documentado en `0015_rubros.sql` ("los rubros
-  /// custom de un PRO se listan después"), sin depender de calcular a mano
-  /// un `orden` más alto que 20 al crearlos. Dentro de cada bloque, por
-  /// código (no por nombre: alfabético dejaba "22 - MOV C/MAQ" antes que
-  /// "21 - PARQUIZADO", que se lee raro).
+  /// Orden default (fallback cuando la obra no tiene overrides en
+  /// `obra_rubros_orden` — ver docs/rubros_orden_diseno_datos.md): oficiales
+  /// primero (por `orden`, igual que siempre), propios después. Dentro de
+  /// cada bloque: oficiales por `orden`; propios por `createdAt` — cambiado
+  /// desde `codigo` (que ordenaba antes) porque el código deja de ser
+  /// visible en la UI, así que ordenar por él ya no tiene sentido para el
+  /// usuario; "en el orden en que los creaste" es más intuitivo.
   Future<List<RubroCatalogo>> getCatalogoCompleto(String usuarioId) async {
     final data = await _client
         .from('rubros')
@@ -43,19 +44,9 @@ class RubrosRepository {
       final aOficial = a.creadorUsuarioId == null;
       final bOficial = b.creadorUsuarioId == null;
       if (aOficial != bOficial) return aOficial ? -1 : 1;
-      return aOficial ? a.orden.compareTo(b.orden) : _compararCodigo(a.codigo, b.codigo);
+      return aOficial ? a.orden.compareTo(b.orden) : a.createdAt.compareTo(b.createdAt);
     });
     return rubros;
-  }
-
-  /// Compara códigos numéricamente cuando ambos lo son (evita que "100"
-  /// ordene antes que "21" por comparación de texto); si alguno no es
-  /// numérico (código custom libre, ej. "C1"), cae a comparación de texto.
-  int _compararCodigo(String a, String b) {
-    final numA = int.tryParse(a);
-    final numB = int.tryParse(b);
-    if (numA != null && numB != null) return numA.compareTo(numB);
-    return a.compareTo(b);
   }
 
   /// Alta de un rubro personalizado (PRO). Nace con `usaApu = false` y
@@ -85,6 +76,18 @@ class RubrosRepository {
     return _fromRow(inserted);
   }
 
+  /// Borra un rubro propio. La política RLS `rubros_delete` (0015_rubros.sql)
+  /// ya restringe esto a `creador_usuario_id = auth.uid()` — un intento de
+  /// borrar un rubro ajeno o el catálogo oficial no encuentra fila para
+  /// borrar, sin necesidad de chequear el dueño acá también. RubrosTab valida
+  /// antes de llamar acá que el rubro no tenga uso en `obra_subitems` (ver
+  /// ObraSubitemsRepository.getNombresObrasConUso), pero quien realmente lo
+  /// impide a nivel de base es la FK `obra_subitems.rubro_id` (sin cascade,
+  /// ver 0019_obra_subitems.sql) si esa validación quedó desactualizada.
+  Future<void> eliminar(String rubroId) async {
+    await _client.from('rubros').delete().eq('id', rubroId);
+  }
+
   RubroCatalogo _fromRow(Map<String, dynamic> row) {
     return RubroCatalogo(
       id: row['id'].toString(),
@@ -92,6 +95,7 @@ class RubrosRepository {
       nombre: row['nombre'].toString(),
       orden: (row['orden'] as num).toInt(),
       usaApu: row['usa_apu'] == true,
+      createdAt: DateTime.tryParse(row['created_at']?.toString() ?? '') ?? DateTime.now(),
       tipoPrecioManual: row['tipo_precio_manual']?.toString(),
       creadorUsuarioId: row['creador_usuario_id']?.toString(),
     );
