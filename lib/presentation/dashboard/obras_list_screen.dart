@@ -200,7 +200,14 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
               children: [
                 Icon(Icons.add_business_outlined, color: Color(0xFF1B365D)),
                 SizedBox(width: 8),
-                Text('Alta de Nueva Obra', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                // Expanded preventivo: mismo riesgo que tenía el título de
+                // "Ajuste Económico & Moneda" (título de AlertDialog sin
+                // Expanded desborda en pantallas angostas) — este texto es
+                // más corto y no se reportó roto todavía, pero es el mismo
+                // patrón sin resolver.
+                Expanded(
+                  child: Text('Alta de Nueva Obra', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                ),
               ],
             ),
             content: SingleChildScrollView(
@@ -233,19 +240,38 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                   TextField(
                     controller: nombreCtrl,
                     style: const TextStyle(fontSize: 12),
-                    decoration: const InputDecoration(labelText: 'Nombre de la Obra / Proyecto', border: OutlineInputBorder(), isDense: true),
+                    // labelStyle a juego con el texto tipeado (12) — el label
+                    // heredaba el tamaño default del tema (~16), que no
+                    // entraba entero en un campo angosto y se recortaba con
+                    // "...". A 12 entra sin tocar ninguna palabra del texto.
+                    decoration: const InputDecoration(
+                      labelText: 'Nombre de la Obra / Proyecto',
+                      labelStyle: TextStyle(fontSize: 12),
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
                   ),
                   const SizedBox(height: 10),
                   TextField(
                     controller: propietarioCtrl,
                     style: const TextStyle(fontSize: 12),
-                    decoration: const InputDecoration(labelText: 'Propietario / Comitente', border: OutlineInputBorder(), isDense: true),
+                    decoration: const InputDecoration(
+                      labelText: 'Propietario / Comitente',
+                      labelStyle: TextStyle(fontSize: 12),
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
                   ),
                   const SizedBox(height: 10),
                   TextField(
                     controller: ubicacionCtrl,
                     style: const TextStyle(fontSize: 12),
-                    decoration: const InputDecoration(labelText: 'Ubicación / Localidad', border: OutlineInputBorder(), isDense: true),
+                    decoration: const InputDecoration(
+                      labelText: 'Ubicación / Localidad',
+                      labelStyle: TextStyle(fontSize: 12),
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
                   ),
                   const SizedBox(height: 10),
                   Row(
@@ -255,7 +281,12 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                           controller: superficieCtrl,
                           keyboardType: TextInputType.number,
                           style: const TextStyle(fontSize: 12),
-                          decoration: const InputDecoration(labelText: 'Superficie (m²)', border: OutlineInputBorder(), isDense: true),
+                          decoration: const InputDecoration(
+                            labelText: 'Superficie (m²)',
+                            labelStyle: TextStyle(fontSize: 12),
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -263,7 +294,12 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                         child: DropdownButtonFormField<String>(
                           initialValue: tipoSeleccionado,
                           isExpanded: true,
-                          decoration: const InputDecoration(labelText: 'Tipo', border: OutlineInputBorder(), isDense: true),
+                          decoration: const InputDecoration(
+                            labelText: 'Tipo',
+                            labelStyle: TextStyle(fontSize: 11),
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
                           style: const TextStyle(fontSize: 11, color: Colors.black87),
                           items: ['Residencial', 'Comercial/Residencial', 'Industrial', 'Infraestructura']
                               .map((t) => DropdownMenuItem(
@@ -279,10 +315,18 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                     ],
                   ),
                   const SizedBox(height: 10),
-                  Row(
+                  // Wrap en vez de Row: acá no hay ningún widget con texto
+                  // que pueda ceder ancho (los chips no truncan su label
+                  // solo, y "Moneda Base:" ya es corto) — si algún día no
+                  // entran los tres en una línea, el que sobra pasa a la
+                  // siguiente en vez de desbordar. Robusto a cualquier
+                  // ancho, no solo al de este diálogo hoy.
+                  Wrap(
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 8,
+                    runSpacing: 4,
                     children: [
                       const Text('Moneda Base:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                      const SizedBox(width: 12),
                       ChoiceChip(
                         label: const Text('ARS (\$)', style: TextStyle(fontSize: 11)),
                         selected: monedaSeleccionada == 'ARS',
@@ -290,7 +334,6 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                           if (sel) setModalState(() => monedaSeleccionada = 'ARS');
                         },
                       ),
-                      const SizedBox(width: 6),
                       ChoiceChip(
                         label: const Text('USD', style: TextStyle(fontSize: 11)),
                         selected: monedaSeleccionada == 'USD',
@@ -408,7 +451,15 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
               children: [
                 Icon(Icons.payments_outlined, color: Color(0xFF1B365D)),
                 SizedBox(width: 8),
-                Text('Ajuste Económico & Moneda', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                // Expanded: el título de un AlertDialog no está dentro del
+                // SingleChildScrollView del content, así que sin esto el
+                // Row desborda en vez de que el texto ajuste — mismo
+                // patrón de siempre, acá con un título más largo que el
+                // de "Alta de Nueva Obra" (que tiene el mismo riesgo
+                // latente, corregido de paso más abajo).
+                Expanded(
+                  child: Text('Ajuste Económico & Moneda', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                ),
               ],
             ),
             content: SingleChildScrollView(
@@ -431,13 +482,24 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            const Text('Dólar Ref. Banco Nación (BNA):', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF1B365D))),
-                            if (_esPlanPro)
+                            // Expanded: mismo patrón de siempre — el badge
+                            // "PRO" es corto y fijo, el label es el que
+                            // tiene que ceder si no entra.
+                            Expanded(
+                              child: Text(
+                                'Dólar Ref. Banco Nación (BNA):',
+                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF1B365D)),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            if (_esPlanPro) ...[
+                              const SizedBox(width: 6),
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                 decoration: BoxDecoration(color: Colors.amber[700], borderRadius: BorderRadius.circular(4)),
                                 child: const Text('PRO', style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold)),
                               ),
+                            ],
                           ],
                         ),
                         const SizedBox(height: 4),
@@ -543,11 +605,20 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                     ],
                     selected: {monedaSeleccionada},
                     onSelectionChanged: (Set<String> newSelection) {
+                      final String nuevaMoneda = newSelection.first;
                       setDialogState(() {
-                        monedaSeleccionada = newSelection.first;
-                        if (monedaSeleccionada == 'USD') {
+                        if (nuevaMoneda == 'USD') {
                           aplicaCac = false;
+                        } else if (nuevaMoneda == 'ARS' && monedaSeleccionada != 'ARS') {
+                          // En pesos el CAC no es opcional por defecto — un
+                          // presupuesto en ARS sin referencia de ajuste no
+                          // se sostiene en el tiempo. Se activa solo al
+                          // pasar A pesos (cada vez, no solo la primera
+                          // vez); el usuario lo puede destildar antes de
+                          // guardar, ver SwitchListTile de abajo.
+                          aplicaCac = true;
                         }
+                        monedaSeleccionada = nuevaMoneda;
                       });
                     },
                   ),
@@ -567,6 +638,20 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                         setDialogState(() => aplicaCac = val);
                       },
                     ),
+                    // Fijo mientras esté apagado, no un pop-up al destildar
+                    // — así queda visible cada vez que se revisa este
+                    // estado, no solo en el instante de apagarlo.
+                    if (!aplicaCac)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          'Sin el ajuste por CAC, este presupuesto en pesos queda fijo: no se '
+                          'actualiza solo con el costo de la construcción. Tenelo en cuenta sobre '
+                          'todo al certificar avances — un monto viejo sin ajustar termina '
+                          'cobrando menos de lo que le cuesta la obra.',
+                          style: TextStyle(fontSize: 10, color: Colors.orange[900]),
+                        ),
+                      ),
                   ],
                 ],
               ),
@@ -1123,20 +1208,31 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'USD Ref. BNA: \$${_cotizacionUsdEfectiva.toStringAsFixed(2)}',
-                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        'CAC Último Mes: +$_variacionCacUltimoMes%',
-                        style: const TextStyle(color: Colors.white70, fontSize: 10),
-                      ),
-                    ],
+                  // Expanded para que ceda ancho al bloque de la fecha en
+                  // pantallas angostas (antes ninguno de los dos lados podía
+                  // achicarse, y la suma de sus anchos naturales desbordaba
+                  // en equipos más chicos que el emulador de referencia).
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'USD Ref. BNA: \$${_cotizacionUsdEfectiva.toStringAsFixed(2)}',
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'CAC Último Mes: +$_variacionCacUltimoMes%',
+                          style: const TextStyle(color: Colors.white70, fontSize: 10),
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
+                        ),
+                      ],
+                    ),
                   ),
+                  const SizedBox(width: 8),
                   Row(
                     children: [
                       const Icon(Icons.refresh, color: Colors.white70, size: 14),
@@ -1170,7 +1266,10 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                     : _obras.isEmpty
                 ? const Center(child: Text('No hay obras registradas. Presione "+" para agregar una.'))
                 : ListView.builder(
-                    padding: const EdgeInsets.all(12),
+                    // Padding inferior extra para que "NUEVA OBRA" (FAB)
+                    // no tape la última tarjeta — antes solo tenía el
+                    // padding parejo de 12 en los 4 lados.
+                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 88),
                     itemCount: _obras.length,
                     itemBuilder: (context, index) {
                       final obra = _obras[index];
@@ -1227,7 +1326,17 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                                   children: [
                                     const Icon(Icons.person_outline, size: 13, color: Colors.black45),
                                     const SizedBox(width: 4),
-                                    Text(obra['propietario'], style: const TextStyle(fontSize: 11, color: Colors.black54)),
+                                    // Flexible (no Expanded): si el nombre entra entero, lo
+                                    // muestra completo; si no hay lugar, cede en vez de
+                                    // reclamar su ancho natural sin límite (eso era lo que
+                                    // dejaba a ubicación sin espacio en pantallas angostas).
+                                    Flexible(
+                                      child: Text(
+                                        obra['propietario'],
+                                        style: const TextStyle(fontSize: 11, color: Colors.black54),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
                                     const SizedBox(width: 10),
                                     const Icon(Icons.location_on_outlined, size: 13, color: Colors.black45),
                                     const SizedBox(width: 4),
@@ -1242,22 +1351,25 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                                 ),
                                 const SizedBox(height: 12),
 
-                                // Fila Central: Monto Base + Chips (m² / CAC)
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                // Monto Base, y debajo (línea propia, no
+                                // compartiendo renglón) los chips m² / CAC.
+                                // Antes competían por ancho en el mismo Row
+                                // sin que ninguno pudiera ceder — al agrandar
+                                // el chip de m² (pedido de otra sesión) dejó
+                                // de entrar en pantallas angostas y el chip
+                                // CAC se pintaba fuera del borde visible.
+                                // Separarlos en líneas evita la competencia
+                                // de raíz, sin achicar el chip.
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        const Text('Monto Estimado Base', style: TextStyle(fontSize: 9, color: Colors.black45, fontWeight: FontWeight.bold)),
-                                        const SizedBox(height: 2),
-                                        Text(
-                                          _formatearMonto(monto, obra['moneda']),
-                                          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Color(0xFF1B365D)),
-                                        ),
-                                      ],
+                                    const Text('Monto Estimado Base', style: TextStyle(fontSize: 9, color: Colors.black45, fontWeight: FontWeight.bold)),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      _formatearMonto(monto, obra['moneda']),
+                                      style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Color(0xFF1B365D)),
                                     ),
+                                    const SizedBox(height: 8),
                                     Row(
                                       children: [
                                         Container(
@@ -1350,26 +1462,37 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                                   child: Row(
                                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                     children: [
-                                      Row(
-                                        children: [
-                                          Icon(
-                                            estadoServicio == 'En Revision' ? Icons.hourglass_top : Icons.engineering_outlined,
-                                            size: 14,
-                                            color: estadoServicio == 'En Revision' ? Colors.amber[900] : const Color(0xFF1B365D),
-                                          ),
-                                          const SizedBox(width: 6),
-                                          Text(
-                                            estadoServicio == 'En Revision'
-                                                ? 'Estudio Técnico en Revisión'
-                                                : '¿Necesitás Cómputo / IRAM / Legajo?',
-                                            style: TextStyle(
-                                              fontSize: 10,
-                                              fontWeight: FontWeight.w600,
+                                      // Expanded: mismo criterio que el banner superior y la
+                                      // fila propietario/ubicación — el label es el texto largo
+                                      // y variable, "Solicitar"/"Ver Solicitud" es corto y fijo,
+                                      // así que es el label el que tiene que ceder.
+                                      Expanded(
+                                        child: Row(
+                                          children: [
+                                            Icon(
+                                              estadoServicio == 'En Revision' ? Icons.hourglass_top : Icons.engineering_outlined,
+                                              size: 14,
                                               color: estadoServicio == 'En Revision' ? Colors.amber[900] : const Color(0xFF1B365D),
                                             ),
-                                          ),
-                                        ],
+                                            const SizedBox(width: 6),
+                                            Expanded(
+                                              child: Text(
+                                                estadoServicio == 'En Revision'
+                                                    ? 'Estudio Técnico en Revisión'
+                                                    : '¿Necesitás Cómputo / IRAM / Legajo?',
+                                                style: TextStyle(
+                                                  fontSize: 10,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: estadoServicio == 'En Revision' ? Colors.amber[900] : const Color(0xFF1B365D),
+                                                ),
+                                                overflow: TextOverflow.ellipsis,
+                                                maxLines: 1,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
                                       ),
+                                      const SizedBox(width: 8),
                                       InkWell(
                                         onTap: () => _abrirModalServiciosEspeciales(obra),
                                         child: Text(

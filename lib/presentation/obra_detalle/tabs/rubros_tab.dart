@@ -276,25 +276,47 @@ class _RubrosTabState extends State<RubrosTab> {
         // Independiente del rol: la sorpresa de "veo otro número acá" le
         // puede pasar a cualquiera que mire la obra, no solo a quien puede
         // arrastrar — así que no se gatea por puedeEditarComputo.
-        _buildAvisoOrden(),
-        // Siempre visible, para PRO y para Free (Free ve el diálogo de
-        // función PRO al tocarlo, ver _onNuevoRubro — no se oculta la
-        // función, mismo criterio que el resto del spec Free/PRO).
-        // RubrosTab no es un Scaffold (vive dentro del TabBarView de
-        // PresupuestosScreen), así que va como fila propia en vez de un
-        // floatingActionButton.
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-          child: Align(
-            alignment: Alignment.centerRight,
-            child: OutlinedButton.icon(
-              onPressed: _cargando ? null : _onNuevoRubro,
-              icon: const Icon(Icons.add, size: 18),
-              label: const Text('Nuevo Rubro'),
-              style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF1B365D)),
+        //
+        // Cuando el aviso está descartado (caso común, es lo que se ve la
+        // gran mayoría del tiempo) el ícono chico que lo restaura y el botón
+        // "Nuevo Rubro" comparten la misma fila — antes cada uno ocupaba su
+        // propia fila completa, y esa altura duplicada era justamente lo que
+        // le robaba lugar a la lista en pantallas donde ya el alto escasea.
+        // Con el banner completo visible (sin descartar) sí van apilados,
+        // porque el banner ya ocupa todo el ancho con su propio texto.
+        if (_avisoOrdenDescartado)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 4, 16, 0),
+            child: Row(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.info_outline, size: 16, color: Colors.black38),
+                  tooltip: 'Sobre la numeración de rubros',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  onPressed: _restaurarAviso,
+                ),
+                const Spacer(),
+                _buildBotonNuevoRubro(),
+              ],
+            ),
+          )
+        else ...[
+          _buildAvisoOrden(),
+          // Siempre visible, para PRO y para Free (Free ve el diálogo de
+          // función PRO al tocarlo, ver _onNuevoRubro — no se oculta la
+          // función, mismo criterio que el resto del spec Free/PRO).
+          // RubrosTab no es un Scaffold (vive dentro del TabBarView de
+          // PresupuestosScreen), así que va como fila propia en vez de un
+          // floatingActionButton.
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: _buildBotonNuevoRubro(),
             ),
           ),
-        ),
+        ],
         Expanded(
           child: RefreshIndicator(
             onRefresh: _cargarCatalogo,
@@ -305,27 +327,43 @@ class _RubrosTabState extends State<RubrosTab> {
     );
   }
 
-  /// Aviso de que la numeración es posicional y de esta obra puntual —
-  /// descartable, guardado por obra en SharedPreferences (ver
-  /// _descartarAviso). Descartado no es lo mismo que ausente: queda un
-  /// ícono chico que lo trae de vuelta (_restaurarAviso) — no reaparece
-  /// solo, pero tampoco desaparece para siempre sin salida.
+  /// Botón "Nuevo Rubro" — extraído para no duplicarlo entre la fila
+  /// combinada con el ícono de aviso (descartado) y la fila propia debajo
+  /// del banner completo (sin descartar), ver build().
+  Widget _buildBotonNuevoRubro() {
+    return OutlinedButton.icon(
+      onPressed: _cargando ? null : _onNuevoRubro,
+      icon: const Icon(Icons.add, size: 18),
+      label: const Text('Nuevo Rubro'),
+      style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF1B365D)),
+    );
+  }
+
+  /// Badge del número de posición del rubro, en el leading del ListTile —
+  /// reemplaza al prefijo "N - " que antes formaba parte del título (ver
+  /// _buildContenido).
+  Widget _buildBadgeNumero(int numero) {
+    return Container(
+      width: 24,
+      height: 24,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: const Color(0xFF1B365D).withValues(alpha: 0.08),
+        shape: BoxShape.circle,
+      ),
+      child: Text(
+        '$numero',
+        style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1B365D), fontSize: 12),
+      ),
+    );
+  }
+
+  /// Banner completo del aviso de que la numeración es posicional y de esta
+  /// obra puntual — descartable, guardado por obra en SharedPreferences (ver
+  /// _descartarAviso). Solo se llama cuando NO está descartado — el estado
+  /// descartado (ícono chico que lo restaura, _restaurarAviso) se arma en
+  /// build() compartiendo fila con "Nuevo Rubro", no acá.
   Widget _buildAvisoOrden() {
-    if (_avisoOrdenDescartado) {
-      return Padding(
-        padding: const EdgeInsets.only(left: 12, top: 4),
-        child: Align(
-          alignment: Alignment.centerLeft,
-          child: IconButton(
-            icon: const Icon(Icons.info_outline, size: 16, color: Colors.black38),
-            tooltip: 'Sobre la numeración de rubros',
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(),
-            onPressed: _restaurarAviso,
-          ),
-        ),
-      );
-    }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       color: Colors.blueGrey[50],
@@ -404,21 +442,36 @@ class _RubrosTabState extends State<RubrosTab> {
         return Card(
           // ReorderableListView exige una Key única y estable por ítem.
           key: ValueKey(rubro.id),
-          margin: const EdgeInsets.only(bottom: 8.0),
+          margin: const EdgeInsets.only(bottom: 6.0),
           elevation: 1,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           child: ListTile(
-            // Oculto (no solo deshabilitado) para quien no puede editar el
-            // cómputo — mismo criterio que el checkbox de SubitemsScreen,
-            // pero acá "no debería aparecer" en vez de "deshabilitado".
-            leading: widget.puedeEditarComputo
-                ? ReorderableDragStartListener(
+            dense: true,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+            // El número pasa del prefijo del título ("N - Nombre") a un
+            // badge acá, junto al drag handle — el nombre completo del
+            // rubro sigue mostrándose entero (nada se recorta), pero ya no
+            // compite por ancho contra el "N - " y el título envuelve menos
+            // seguido en pantallas angostas.
+            leading: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (widget.puedeEditarComputo) ...[
+                  // Oculto (no solo deshabilitado) para quien no puede editar
+                  // el cómputo — mismo criterio que el checkbox de
+                  // SubitemsScreen, pero acá "no debería aparecer" en vez de
+                  // "deshabilitado".
+                  ReorderableDragStartListener(
                     index: index,
-                    child: const Icon(Icons.drag_handle, color: Colors.black38),
-                  )
-                : null,
+                    child: const Icon(Icons.drag_handle, color: Colors.black38, size: 20),
+                  ),
+                  const SizedBox(width: 4),
+                ],
+                _buildBadgeNumero(numeroMostrado),
+              ],
+            ),
             title: Text(
-              '$numeroMostrado - ${rubro.nombre}',
+              rubro.nombre,
               style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1B365D), fontSize: 14),
             ),
             subtitle: rubro.usaApu

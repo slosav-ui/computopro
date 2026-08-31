@@ -483,7 +483,15 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
                         Expanded(
                           child: Text(
                             '${subitem.codigo} - ${subitem.descripcion}',
-                            maxLines: expandido ? null : 2,
+                            // 3 en vez de 2: no hace falta que entre
+                            // completo (para eso está el chevron, que
+                            // expande a null/sin límite), pero con 2 cortaba
+                            // demasiado pronto en pantallas angostas —
+                            // sobre todo tras subir la fuente de 13 a 15.
+                            // Una línea más escala con cualquier ancho, a
+                            // diferencia de pelear por los pocos px fijos
+                            // del checkbox o el chevron.
+                            maxLines: expandido ? null : 3,
                             overflow: expandido ? TextOverflow.visible : TextOverflow.ellipsis,
                             // Es lo que el usuario lee para saber qué está
                             // tildando — más peso que antes (13), para que no
