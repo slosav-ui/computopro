@@ -138,13 +138,24 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
       _error = null;
     });
     try {
+      // subitems, mapa y esPro son independientes entre sí -- se disparan
+      // las 3 antes de awaitear ninguna (una función async ya arranca a
+      // ejecutarse al llamarla) para que corran en paralelo, mismo patrón
+      // que _cargarCatalogo en RubrosTab. conComposicion sigue secuencial
+      // después: necesita la lista real de IDs que devuelve subitems, no
+      // se puede adelantar sin cambiar qué recibe getSubitemIdsConComposicion
+      // (ver memoria "subitems_conComposicion_por_rubro", pieza aparte).
       final usuarioId = _authService.usuarioActual?.id;
-      final subitems = await _subitemsRepository.getSubitemsDeRubro(widget.rubro.id, usuarioId: usuarioId);
-      final mapa = await _obraSubitemsRepository.getMapaDeRubro(
+      final subitemsFuture = _subitemsRepository.getSubitemsDeRubro(widget.rubro.id, usuarioId: usuarioId);
+      final mapaFuture = _obraSubitemsRepository.getMapaDeRubro(
         obraId: widget.obraId,
         rubroId: widget.rubro.id,
       );
-      final esPro = usuarioId != null ? await _perfilRepository.esPro(usuarioId) : false;
+      final esProFuture = usuarioId != null ? _perfilRepository.esPro(usuarioId) : Future.value(false);
+
+      final subitems = await subitemsFuture;
+      final mapa = await mapaFuture;
+      final esPro = await esProFuture;
       // Solo tiene sentido consultar para rubros con usaApu == true — en
       // 'unitario'/'global' el precio siempre es manual, no hay receta que
       // buscar.
