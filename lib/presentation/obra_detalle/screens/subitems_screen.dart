@@ -54,12 +54,14 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
   // ApuPrecioSubitem.completo.
   Map<String, ApuPrecioSubitem> _preciosApuPorSubitemId = {};
   // true cuando la composición existe pero calcularPreciosSubitems() (RPC
-  // calcular_precio_apu_subitems, migración 0029) falló — hoy siempre,
-  // porque esa migración todavía no está aplicada (ver memoria
-  // "mat_y_mo_fuentes_precio"). Distinto de "incompleto" (_preciosApuPorSubitemId
-  // vacío por sí solo): acá el mecanismo entero no está disponible, no que
-  // falten precios de insumos puntuales — _buildPrecioApuDerivado lo marca
-  // aparte para no leerse como si fuera lo mismo.
+  // calcular_precio_apu_subitems, migración 0034) falló -- con 0034
+  // aplicada esto ya no debería pasar en el camino normal (ver el
+  // cortocircuito autocorrectivo en ApuComposicionesRepository, para
+  // cuando la función alguna vez faltara de verdad). Distinto de
+  // "incompleto" (_preciosApuPorSubitemId vacío por sí solo): acá el
+  // mecanismo entero no está disponible, no que falten precios de insumos
+  // puntuales — _buildPrecioApuDerivado lo marca aparte para no leerse
+  // como si fuera lo mismo.
   bool _precioApuNoDisponible = false;
   // Mismo criterio que RubrosTab: cacheado del load inicial, gatea el botón
   // "Nuevo subítem" del AppBar. Fail-safe a false sin usuario logueado.
@@ -166,14 +168,16 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
           : <String>{};
       // Paso 3: precio derivado, solo para los que ya sabemos que tienen
       // composición — no tiene sentido pedirlo para el resto. Aislado en su
-      // propio try/catch: la RPC calcular_precio_apu_subitems (migración
-      // 0029) todavía no está aplicada, y un fallo acá no puede tumbar la
-      // carga de subitems/cantidades, que sí funcionan sin depender de esto.
+      // propio try/catch: calcular_precio_apu_subitems (migración 0034) ya
+      // está aplicada, pero un fallo acá (de red, de RLS, lo que sea) no
+      // puede tumbar la carga de subitems/cantidades, que funcionan sin
+      // depender de esto -- ver ApuComposicionesRepository para el
+      // cortocircuito autocorrectivo si la función alguna vez faltara.
       var precios = <String, ApuPrecioSubitem>{};
       var precioApuNoDisponible = false;
       if (conComposicion.isNotEmpty) {
         try {
-          precios = await _apuComposicionesRepository.calcularPreciosSubitems(conComposicion.toList());
+          precios = await _apuComposicionesRepository.calcularPreciosSubitems(widget.obraId, conComposicion.toList());
         } catch (e) {
           precioApuNoDisponible = true;
         }

@@ -12,19 +12,21 @@ class ApuComposicionesRepository {
   final SupabaseClient _client = Supabase.instance.client;
 
   /// Descubre sola, en vivo, si `calcular_precio_apu_subitems` (migración
-  /// 0029) ya está aplicada -- no una bandera fija que alguien tendría que
-  /// acordarse de sacar. `null` = todavía no se intentó en esta sesión de
-  /// la app; se prueba normalmente. `false` = ya se confirmó con el código
-  /// de error específico de Postgrest para "función no encontrada"
-  /// (PGRST202) que la RPC no existe -- se saltea la llamada mientras dure
-  /// la sesión, sin gastar red en algo que sabemos que va a fallar. `true`
-  /// = ya se confirmó que funciona.
+  /// 0034, reemplaza a la 0029 original que nunca se aplicó) ya está
+  /// aplicada -- no una bandera fija que alguien tendría que acordarse de
+  /// sacar. `null` = todavía no se intentó en esta sesión de la app; se
+  /// prueba normalmente. `false` = ya se confirmó con el código de error
+  /// específico de Postgrest para "función no encontrada" (PGRST202) que
+  /// la RPC no existe -- se saltea la llamada mientras dure la sesión, sin
+  /// gastar red en algo que sabemos que va a fallar. `true` = ya se
+  /// confirmó que funciona.
   ///
   /// static, no de instancia: SubitemsScreen crea un repositorio nuevo por
   /// cada rubro que se abre, así que una bandera de instancia se perdería
   /// entre pantallas. Arranca en `null` en cada arranque en frío de la
-  /// app -- el primer intento después de aplicar 0029 la va a encontrar
-  /// funcionando solo, sin que nadie edite este archivo.
+  /// app -- con 0034 ya aplicada, el primer intento de cada sesión la
+  /// encuentra funcionando y queda en `true`, sin que nadie edite este
+  /// archivo.
   static bool? _rpcCalcularPreciosDisponible;
 
   /// Paso 1: de la lista de subitemIds dada, cuáles ya tienen al menos una
@@ -45,10 +47,16 @@ class ApuComposicionesRepository {
   /// Paso 3: precio derivado de la composición, batch (una sola llamada
   /// para todos los subitemIds de la pantalla, ver
   /// `calcular_precio_apu_subitems` en
-  /// 0029_calcular_precio_apu_subitem.sql). Solo tiene sentido llamarlo con
+  /// 0034_calcular_precio_apu_subitem.sql). Solo tiene sentido llamarlo con
   /// subitemIds que ya se sabe que tienen composición (ver
   /// getSubitemIdsConComposicion) — para el resto, sin filas en el
   /// resultado, no se muestra nada.
+  ///
+  /// `obraId` (agregado en 0034): la función usa el precio cargado a mano
+  /// para esa obra en `obra_insumo_precios` antes que el promedio de
+  /// corralón -- sin esto no tiene forma de saber qué obra está pidiendo el
+  /// cálculo, y siempre caería al promedio (siempre null para mano de obra,
+  /// ver el comentario de la migración).
   ///
   /// Mismo contrato de siempre para quien llama (SubitemsScreen no cambia
   /// nada de su try/catch): mientras la RPC no exista, esto sigue tirando
@@ -57,7 +65,7 @@ class ApuComposicionesRepository {
   /// llamadas siguientes de la sesión tiran esa misma excepción sin gastar
   /// el viaje de red que ya sabemos que va a fallar. Ver
   /// _rpcCalcularPreciosDisponible.
-  Future<Map<String, ApuPrecioSubitem>> calcularPreciosSubitems(List<String> subitemIds) async {
+  Future<Map<String, ApuPrecioSubitem>> calcularPreciosSubitems(String obraId, List<String> subitemIds) async {
     if (subitemIds.isEmpty) return {};
     if (_rpcCalcularPreciosDisponible == false) {
       throw const PostgrestException(
@@ -66,7 +74,10 @@ class ApuComposicionesRepository {
       );
     }
     try {
-      final data = await _client.rpc('calcular_precio_apu_subitems', params: {'p_subitem_ids': subitemIds});
+      final data = await _client.rpc('calcular_precio_apu_subitems', params: {
+        'p_obra_id': obraId,
+        'p_subitem_ids': subitemIds,
+      });
       _rpcCalcularPreciosDisponible = true;
       final resultado = <String, ApuPrecioSubitem>{};
       for (final row in data as List) {
