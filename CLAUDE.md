@@ -251,11 +251,12 @@ flutter run --dart-define-from-file=env.json   # run with Supabase credentials (
 flutter analyze              # static analysis (uses analysis_options.yaml -> flutter_lints)
 flutter test                 # run all tests
 flutter test test/widget_test.dart   # run a single test file
+flutter test test/core/utils/parser_numero_ar_test.dart   # unit tests, no widget/Supabase setup needed
 ```
 
 **Supabase credentials**: `lib/main.dart` calls `Supabase.initialize()` reading `SUPABASE_URL`/`SUPABASE_ANON_KEY` via `String.fromEnvironment` — a plain `flutter run` (no `--dart-define-from-file`) will initialize with empty values and fail. Copy `env.example.json` to `env.json` (gitignored, never commit it) at the repo root, fill in the real values from the Supabase dashboard (Project Settings → API), and always run/build with `--dart-define-from-file=env.json`.
 
-There is currently only one test (`test/widget_test.dart`), a smoke test that pumps `MiAppApu` and checks a `MaterialApp` is found. No test infrastructure (mocks, golden tests) exists yet.
+Two tests exist. `test/widget_test.dart` is a smoke test that pumps `MiAppApu` and checks a `MaterialApp` is found — needs the Supabase/shared_preferences mocking boilerplate at the top of that file because the app boots through `AuthGate`. `test/core/utils/parser_numero_ar_test.dart` (2026-09-01) is the first **pure unit test** in the project — no widget pump, no mocking, just `ParserNumeroAr.parsear` against a table of input strings. It exists because that function decides how a number typed by hand (Argentine convention: comma decimal, dot thousands, max 2 decimals — see `lib/core/utils/parser_numero_ar.dart`'s doc comment for the exact rule) gets interpreted before being saved as money or a quantity in four different screens at once; a wrong interpretation there corrupts data silently, which is exactly what a table-driven test catches cheaply. Run it on its own with the command above — it's instant, no device/emulator needed. No test infrastructure beyond this (still no mocks-for-Supabase-repositories pattern, no golden tests) exists yet.
 
 `flutter analyze` currently reports ~20 pre-existing lint infos (deprecated `withOpacity`, missing `super.key`, an undeclared `intl` dependency used transitively). These are known and not regressions to fix incidentally — only fix lints in files you're already substantially editing.
 

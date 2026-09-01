@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../core/utils/currency_formatter.dart';
+import '../../../core/utils/parser_numero_ar.dart';
 import '../../../data/models/rubro_catalogo.dart';
 import '../../../data/models/subitem_catalogo.dart';
 import '../../../data/models/obra_subitem.dart';
@@ -558,12 +559,10 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
     }
   }
 
-  /// Acepta coma o punto como separador decimal (el teclado numérico de un
-  /// dispositivo en es-AR pone coma) y rechaza vacío, no numérico o negativo.
+  /// Interpreta coma/punto con la convención argentina completa (ver
+  /// ParserNumeroAr) y rechaza vacío, no numérico o negativo.
   double? _parsearCantidad(String texto) {
-    final normalizado = texto.trim().replaceAll(',', '.');
-    if (normalizado.isEmpty) return null;
-    final valor = double.tryParse(normalizado);
+    final valor = ParserNumeroAr.parsear(texto);
     if (valor == null || valor < 0) return null;
     return valor;
   }
@@ -625,14 +624,12 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
     }
   }
 
-  /// Igual que _parsearCantidad (coma o punto, rechaza vacío/no-numérico/
+  /// Igual que _parsearCantidad (ParserNumeroAr, rechaza vacío/no-numérico/
   /// negativo) — método propio en vez de reusar aquel para no tocar una
   /// función existente que no hace falta modificar (misma lógica, sin
   /// dependencia cruzada entre cantidad y precio).
   double? _parsearPrecio(String texto) {
-    final normalizado = texto.trim().replaceAll(',', '.');
-    if (normalizado.isEmpty) return null;
-    final valor = double.tryParse(normalizado);
+    final valor = ParserNumeroAr.parsear(texto);
     if (valor == null || valor < 0) return null;
     return valor;
   }
@@ -645,7 +642,7 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
   /// "vacío" ya no pasa por acá — _guardarPrecio lo maneja aparte, vaciar
   /// un precio cargado es una acción válida, no un error.
   String _mensajeErrorPrecio(String texto) {
-    final valor = double.tryParse(texto.replaceAll(',', '.'));
+    final valor = ParserNumeroAr.parsear(texto);
     if (valor == null) return 'Precio inválido. Ingresá solo números.';
     return 'El precio no puede ser negativo.';
   }
@@ -1155,8 +1152,9 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
   /// convivir con _buildCampoPrecio dentro del Column condicional de
   /// arriba, sin duplicar el TextFormField de cantidad.
   Widget _buildCampoCantidad(SubitemCatalogo subitem, bool aplicable, bool puedeEditar) {
+    final controller = _controllerPara(subitem);
     return TextFormField(
-      controller: _controllerPara(subitem),
+      controller: controller,
       focusNode: _focusNodePara(subitem),
       enabled: aplicable && puedeEditar,
       textAlign: TextAlign.right,
@@ -1164,6 +1162,7 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
       // Es el dato que el usuario está cargando: más peso visual que el
       // texto descriptivo de la fila (título 13, subtítulo 11).
       style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+      onChanged: puedeEditar ? (_) => setState(() {}) : null,
       decoration: InputDecoration(
         isDense: true,
         contentPadding: const EdgeInsets.symmetric(vertical: 6),
@@ -1178,6 +1177,14 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
             style: const TextStyle(fontSize: 12, color: Colors.black45),
           ),
         ),
+        // helperText no nulo desde el arranque (string vacío, no null): con
+        // null el campo no reserva la línea y salta de alto al aparecer el
+        // primer preview.
+        helperText: () {
+          final valor = ParserNumeroAr.parsear(controller.text);
+          return valor != null ? 'Se guardará: ${_formatearCantidad(valor)}' : '';
+        }(),
+        helperStyle: const TextStyle(fontSize: 10),
       ),
     );
   }
@@ -1196,8 +1203,9 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
     bool puedeEditar, {
     String hint = 'Precio',
   }) {
+    final controller = _controllerPrecioPara(subitem);
     return TextFormField(
-      controller: _controllerPrecioPara(subitem),
+      controller: controller,
       focusNode: _focusNodePrecioPara(subitem),
       enabled: aplicable && puedeEditar,
       // Sin textAlign.right: con prefixText el valor se separaba del "$ "
@@ -1206,6 +1214,7 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
       // como si el "$" fuera parte del campo de cantidad de al lado).
       keyboardType: const TextInputType.numberWithOptions(decimal: true),
       style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+      onChanged: puedeEditar ? (_) => setState(() {}) : null,
       decoration: InputDecoration(
         isDense: true,
         contentPadding: const EdgeInsets.symmetric(vertical: 4),
@@ -1217,6 +1226,13 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
         // taparlo con el número.
         labelText: hint,
         labelStyle: const TextStyle(fontSize: 11, color: Colors.black38),
+        // helperText no nulo desde el arranque, mismo motivo que en
+        // _buildCampoCantidad: evitar el salto de alto al primer preview.
+        helperText: () {
+          final valor = ParserNumeroAr.parsear(controller.text);
+          return valor != null ? 'Se guardará: ${CurrencyFormatter.formatARS(valor)}' : '';
+        }(),
+        helperStyle: const TextStyle(fontSize: 10),
       ),
     );
   }

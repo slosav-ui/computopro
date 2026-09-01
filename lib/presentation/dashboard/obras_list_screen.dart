@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/utils/parser_numero_ar.dart';
 import '../obra_detalle/screens/presupuestos_screen.dart';
 import '../../services/obras_repository.dart';
 import '../../services/auth_service.dart';
@@ -97,9 +98,7 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
   /// (podía pisar la superficie real de una obra en curso sin que nadie se
   /// enterara).
   double? _parsearSuperficie(String texto) {
-    final normalizado = texto.trim().replaceAll(',', '.');
-    if (normalizado.isEmpty) return null;
-    final valor = double.tryParse(normalizado);
+    final valor = ParserNumeroAr.parsear(texto);
     if (valor == null || valor <= 0) return null;
     return valor;
   }
@@ -308,11 +307,23 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                           controller: superficieCtrl,
                           keyboardType: TextInputType.number,
                           style: const TextStyle(fontSize: 12),
-                          decoration: const InputDecoration(
+                          onChanged: (_) => setModalState(() {}),
+                          decoration: InputDecoration(
                             labelText: 'Superficie (m²)',
-                            labelStyle: TextStyle(fontSize: 12),
-                            border: OutlineInputBorder(),
+                            labelStyle: const TextStyle(fontSize: 12),
+                            border: const OutlineInputBorder(),
                             isDense: true,
+                            // helperText no nulo desde el arranque (string
+                            // vacío, no null): con null el campo no reserva
+                            // la línea y salta de alto al aparecer el primer
+                            // preview.
+                            helperText: () {
+                              final valor = ParserNumeroAr.parsear(superficieCtrl.text);
+                              return valor != null
+                                  ? 'Se guardará: ${_formatearCantidadSuperficie(valor)} m²'
+                                  : '';
+                            }(),
+                            helperStyle: const TextStyle(fontSize: 10),
                           ),
                         ),
                       ),
@@ -577,11 +588,22 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                           controller: superficieCtrl,
                           keyboardType: const TextInputType.numberWithOptions(decimal: true),
                           style: const TextStyle(fontSize: 12),
-                          decoration: const InputDecoration(
+                          onChanged: (_) => setModalState(() {}),
+                          decoration: InputDecoration(
                             labelText: 'Superficie (m²)',
-                            labelStyle: TextStyle(fontSize: 12),
-                            border: OutlineInputBorder(),
+                            labelStyle: const TextStyle(fontSize: 12),
+                            border: const OutlineInputBorder(),
                             isDense: true,
+                            // helperText no nulo desde el arranque, mismo
+                            // motivo que en el diálogo de alta: evitar el
+                            // salto de alto al primer preview.
+                            helperText: () {
+                              final valor = ParserNumeroAr.parsear(superficieCtrl.text);
+                              return valor != null
+                                  ? 'Se guardará: ${_formatearCantidadSuperficie(valor)} m²'
+                                  : '';
+                            }(),
+                            helperStyle: const TextStyle(fontSize: 10),
                           ),
                         ),
                       ),

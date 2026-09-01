@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../core/utils/parser_numero_ar.dart';
 import '../../../data/models/insumo_consolidado_obra.dart';
 import '../../../services/auth_service.dart';
 import '../../../services/obra_insumos_repository.dart';
@@ -79,6 +80,18 @@ class _MatYMoTabState extends State<MatYMoTab> {
     final reg = RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))');
     final formateado = str.replaceAllMapped(reg, (Match m) => '${m[1]}.');
     return '\$ $formateado';
+  }
+
+  /// A diferencia de _fmtPrecio (redondea al peso, para la card), acá se
+  /// necesitan los 2 decimales visibles: es el preview de "se va a guardar
+  /// esto" en el diálogo de editar precio, y su propósito es justamente
+  /// mostrar el redondeo a 2 decimales que aplica ParserNumeroAr cuando se
+  /// tipea un tercer decimal.
+  String _fmtPrecioConDecimales(double monto) {
+    final partes = monto.toStringAsFixed(2).split('.');
+    final reg = RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))');
+    final entero = partes[0].replaceAllMapped(reg, (Match m) => '${m[1]}.');
+    return '\$ $entero,${partes[1]}';
   }
 
   IconData _iconoTipo(String tipo) {
@@ -310,7 +323,19 @@ class _MatYMoTabState extends State<MatYMoTab> {
                 controller: controller,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
                 autofocus: true,
-                decoration: InputDecoration(prefixText: '\$ ', isDense: true, errorText: error),
+                onChanged: (_) => setDialogState(() {}),
+                decoration: InputDecoration(
+                  prefixText: '\$ ',
+                  isDense: true,
+                  errorText: error,
+                  // Helper no nulo desde el arranque (string vacío, no null) a
+                  // propósito: con null, InputDecoration no reserva la línea y
+                  // el diálogo salta de alto apenas aparece el primer preview.
+                  helperText: () {
+                    final valor = ParserNumeroAr.parsear(controller.text);
+                    return valor != null ? 'Se guardará: ${_fmtPrecioConDecimales(valor)}' : '';
+                  }(),
+                ),
               ),
               const SizedBox(height: 12),
               Text(
@@ -324,7 +349,7 @@ class _MatYMoTabState extends State<MatYMoTab> {
             TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
             TextButton(
               onPressed: () {
-                final valor = double.tryParse(controller.text.trim().replaceAll(',', '.'));
+                final valor = ParserNumeroAr.parsear(controller.text);
                 if (valor == null || valor < 0) {
                   setDialogState(() => error = 'Precio inválido');
                   return;
