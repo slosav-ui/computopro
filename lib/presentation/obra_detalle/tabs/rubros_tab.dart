@@ -108,14 +108,27 @@ class _RubrosTabState extends State<RubrosTab> {
       _error = null;
     });
     try {
+      // Las 5 llamadas son independientes entre sí (se combinan recién en
+      // _mezclarOrden, más abajo) -- se disparan todas acá antes de
+      // awaitear ninguna (una función async ya arranca a ejecutarse al
+      // llamarla, el await solo espera el resultado) para que corran en
+      // paralelo. El tiempo total pasa a ser el de la más lenta, no la suma
+      // de las 5 -- medido con Stopwatch antes de este cambio: ~1.2-5s en
+      // serie según cold start, vs. lo que tarde la más lenta en paralelo.
       final usuarioId = _authService.usuarioActual?.id;
-      final rubros = usuarioId != null
-          ? await _rubrosRepository.getCatalogoCompleto(usuarioId)
-          : await _rubrosRepository.getCatalogoOficial();
-      final esPro = usuarioId != null ? await _perfilRepository.esPro(usuarioId) : false;
-      final totales = await _subitemsRepository.getConteoOficialPorRubro();
-      final tildados = await _obraSubitemsRepository.getConteoTildadosPorObra(widget.obraId);
-      final overrides = await _obraRubrosOrdenRepository.getOverridesDeObra(widget.obraId);
+      final rubrosFuture = usuarioId != null
+          ? _rubrosRepository.getCatalogoCompleto(usuarioId)
+          : _rubrosRepository.getCatalogoOficial();
+      final esProFuture = usuarioId != null ? _perfilRepository.esPro(usuarioId) : Future.value(false);
+      final totalesFuture = _subitemsRepository.getConteoOficialPorRubro();
+      final tildadosFuture = _obraSubitemsRepository.getConteoTildadosPorObra(widget.obraId);
+      final overridesFuture = _obraRubrosOrdenRepository.getOverridesDeObra(widget.obraId);
+
+      final rubros = await rubrosFuture;
+      final esPro = await esProFuture;
+      final totales = await totalesFuture;
+      final tildados = await tildadosFuture;
+      final overrides = await overridesFuture;
       if (!mounted) return;
       final (catalogoOrdenado, posiciones) = _mezclarOrden(rubros, overrides);
       setState(() {
