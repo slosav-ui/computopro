@@ -2,7 +2,7 @@
 /// supabase/migrations/0032_consolidado_lee_precio_manual.sql) — un insumo real consumido por una
 /// obra, agregado desde las composiciones de APU de sus subítems tildados.
 ///
-/// Deliberadamente NO colapsa "sin precio" a 0: `precio`/`valorReferencial` son nulos cuando
+/// Deliberadamente NO colapsa "sin precio" a 0: `precio`/`costoTotal` son nulos cuando
 /// `tienePrecio` es `false`, mismo criterio que `ApuPrecioSubitem`.
 ///
 /// `precio` puede venir de una carga manual (`origen == 'manual'`, ver `obra_insumo_precios`,
@@ -29,7 +29,7 @@ class InsumoConsolidadoObra {
     required this.origen,
   });
 
-  double? get valorReferencial => tienePrecio ? cantidadTotal * precio! : null;
+  double? get costoTotal => tienePrecio ? cantidadTotal * precio! : null;
 
   factory InsumoConsolidadoObra.fromMap(Map<String, dynamic> map) {
     return InsumoConsolidadoObra(

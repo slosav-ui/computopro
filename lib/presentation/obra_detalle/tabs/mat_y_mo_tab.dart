@@ -148,17 +148,37 @@ class _MatYMoTabState extends State<MatYMoTab> {
   }
 
   Widget _buildInsumoCard(InsumoConsolidadoObra insumo) {
+    // Sin ListTile a propósito: su alto se calcula solo a partir de título/subtítulo (reglas fijas
+    // de Material para tiles dense de 2 líneas) e ignora cuánto mide el trailing -- con la línea de
+    // la cuenta sumada al badge "Cargado a mano", el trailing pasó a medir más que ese alto fijo y
+    // desbordaba. Row/Column a mano miden lo que su contenido necesite, sin número fijo en ningún
+    // lado. Mismo patrón que la card de certificados (gestion_obra_tab.dart).
     return Card(
       margin: const EdgeInsets.only(bottom: 6),
-      child: ListTile(
-        dense: true,
-        leading: Icon(_iconoTipo(insumo.tipo), color: const Color(0xFF1B365D), size: 20),
-        title: Text(insumo.nombre, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-        subtitle: Text(
-          'Cantidad necesaria: ${_fmtCantidad(insumo.cantidadTotal)} ${insumo.unidad}',
-          style: const TextStyle(fontSize: 10),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Icon(_iconoTipo(insumo.tipo), color: const Color(0xFF1B365D), size: 20),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(insumo.nombre, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                  Text(
+                    'Cantidad necesaria: ${_fmtCantidad(insumo.cantidadTotal)} ${insumo.unidad}',
+                    style: const TextStyle(fontSize: 10),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 16),
+            _buildTrailing(insumo),
+          ],
         ),
-        trailing: _buildTrailing(insumo),
       ),
     );
   }
@@ -200,7 +220,7 @@ class _MatYMoTabState extends State<MatYMoTab> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                _fmtPrecio(insumo.valorReferencial!),
+                '${_fmtPrecio(insumo.precio!)} /${insumo.unidad}',
                 style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF2E7D32)),
               ),
               if (insumo.origen == 'manual') ...[
