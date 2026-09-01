@@ -581,6 +581,22 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
     final controller = _controllers[subitem.id];
     if (controller == null) return;
 
+    // Vacío no es lo mismo que inválido: es el estado normal de un subítem
+    // recién tildado (ver _controllerPara, ya no prellena "0" real) o de uno
+    // al que todavía no se le cargó cantidad -- tildar varios y completar
+    // después no puede disparar un aviso en cada uno. Solo se trata como
+    // error si había una cantidad real cargada y alguien la borró: ahí sí
+    // hace falta parar y avisar, para no perder un dato real en silencio.
+    if (controller.text.trim().isEmpty) {
+      if (existente.cantidad == 0) return; // nada cargado antes, nada que hacer
+      controller.text = _formatearCantidad(existente.cantidad);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No se puede dejar vacío: ya tenía una cantidad cargada.')),
+      );
+      return;
+    }
+
     final nuevaCantidad = _parsearCantidad(controller.text);
     if (nuevaCantidad == null) {
       // Nada de fallback silencioso a 0: acá el dato es plata real de la
@@ -742,10 +758,25 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
     });
   }
 
+  // Vacío (no "0" real) cuando no hay cantidad cargada -- antes prellenaba
+  // "0" como texto real, y en un campo textAlign: right casi vacío, tocarlo
+  // ponía el cursor antes de ese dígito visible: escribir "21" encima daba
+  // "210" en vez de reemplazarlo. El "0" que se ve ahora es el hintText de
+  // _buildCampoCantidad, no texto del controller -- no hay nada que pisar
+  // mal.
+  //
+  // Decisión explícita, no efecto secundario: si alguien tipea "0" a
+  // propósito y sale del campo, se guarda igual (ver _guardarCantidad) y al
+  // volver a entrar se va a ver como el hint, igual que un subítem nunca
+  // tocado. Es coherente con que la base no distingue hoy "cero cargado a
+  // propósito" de "cero sin cargar" (`obra_subitems.cantidad numeric not
+  // null default 0`, sin columna aparte para eso) -- cerrar esa distinción
+  // de verdad requiere un cambio de schema, no de esta pantalla (ver memoria
+  // "obra_subitems_cantidad_nullable").
   TextEditingController _controllerPara(SubitemCatalogo subitem) {
     return _controllers.putIfAbsent(subitem.id, () {
-      final existente = _obraSubitemsPorSubitemId[subitem.id];
-      return TextEditingController(text: _formatearCantidad(existente?.cantidad ?? 0));
+      final cantidad = _obraSubitemsPorSubitemId[subitem.id]?.cantidad;
+      return TextEditingController(text: (cantidad != null && cantidad != 0) ? _formatearCantidad(cantidad) : '');
     });
   }
 
@@ -1199,6 +1230,11 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
       decoration: InputDecoration(
         isDense: true,
         contentPadding: const EdgeInsets.symmetric(vertical: 6),
+        // Indica qué va acá sin ser texto real que se pueda pisar mal (ver
+        // _controllerPara) -- gris claro para no confundirse con un valor
+        // cargado.
+        hintText: '0',
+        hintStyle: TextStyle(color: Colors.grey[350], fontSize: 18, fontWeight: FontWeight.w600),
         // Normalización solo visual (mayúsculas parejas) — la columna
         // subitems.unidad queda tal cual vino de la planilla original, sin
         // tocar la base. Un `suffix` con padding en vez de `suffixText` para
