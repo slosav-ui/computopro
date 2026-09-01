@@ -23,30 +23,64 @@
 /// rango (positivo, `>= 0`, etc.) -- eso queda a cargo de cada campo que lo
 /// use, igual que antes de esta función.
 class ParserNumeroAr {
-  static double? parsear(String texto) {
-    final t = texto.trim();
-    if (t.isEmpty) return null;
-
-    final String normalizado;
+  /// Único lugar con la lógica de decisión -- parsear() y
+  /// esInterpretacionDeMiles() la consumen desde acá en vez de repetirla.
+  static ({String normalizado, bool esMilesAmbiguo}) _interpretar(String t) {
     if (t.contains(',')) {
-      normalizado = t.replaceAll('.', '').replaceAll(',', '.');
-    } else {
-      final cantidadPuntos = '.'.allMatches(t).length;
-      if (cantidadPuntos >= 2) {
-        normalizado = t.replaceAll('.', '');
-      } else if (cantidadPuntos == 1) {
-        final partes = t.split('.');
-        final digitosIzquierda = partes[0].replaceAll('-', '').length;
-        final digitosDerecha = partes[1].length;
-        final esMiles = digitosDerecha == 3 && digitosIzquierda <= 3;
-        normalizado = esMiles ? t.replaceAll('.', '') : t;
-      } else {
-        normalizado = t;
-      }
+      return (normalizado: t.replaceAll('.', '').replaceAll(',', '.'), esMilesAmbiguo: false);
     }
+    final cantidadPuntos = '.'.allMatches(t).length;
+    if (cantidadPuntos >= 2) {
+      // Miles sin ambigüedad real (nadie escribe dos puntos pensando en un
+      // decimal) -- esMilesAmbiguo queda false a propósito, ver
+      // esInterpretacionDeMiles.
+      return (normalizado: t.replaceAll('.', ''), esMilesAmbiguo: false);
+    }
+    if (cantidadPuntos == 1) {
+      final partes = t.split('.');
+      final digitosIzquierda = partes[0].replaceAll('-', '').length;
+      final digitosDerecha = partes[1].length;
+      final esMiles = digitosDerecha == 3 && digitosIzquierda <= 3;
+      return (
+        normalizado: esMiles ? t.replaceAll('.', '') : t,
+        esMilesAmbiguo: esMiles,
+      );
+    }
+    return (normalizado: t, esMilesAmbiguo: false);
+  }
 
+  static double? _redondear(String normalizado) {
     final valor = double.tryParse(normalizado);
     if (valor == null) return null;
     return (valor * 100).roundToDouble() / 100;
+  }
+
+  static double? parsear(String texto) {
+    final t = texto.trim();
+    if (t.isEmpty) return null;
+    return _redondear(_interpretar(t).normalizado);
+  }
+
+  /// true solo para el caso genuinamente ambiguo: un único punto, exactamente
+  /// 3 dígitos a la derecha, grupo de 1 a 3 a la izquierda -- alguien pudo
+  /// haber querido escribir un decimal con el punto "al revés" (p. ej.
+  /// "1.500" por "1,50"). El caso de doble punto es miles sin ambigüedad real
+  /// y no se marca a propósito: si el aviso apareciera siempre, dejaría de
+  /// notarse. Usar para decidir si reforzar visualmente el preview de un
+  /// campo -- nunca cambia qué se guarda, solo qué tan visible es el aviso.
+  static bool esInterpretacionDeMiles(String texto) {
+    final t = texto.trim();
+    if (t.isEmpty) return false;
+    final interpretacion = _interpretar(t);
+    if (double.tryParse(interpretacion.normalizado) == null) return false;
+    return interpretacion.esMilesAmbiguo;
+  }
+
+  /// Lectura alternativa para el caso ambiguo: el mismo texto leído con el
+  /// punto como decimal en vez de miles ("1.500" -> 1.5). Solo tiene sentido
+  /// llamarla cuando esInterpretacionDeMiles ya dio true -- en cualquier otro
+  /// caso el resultado no representa una lectura real distinta.
+  static double? lecturaAlternativaSiEsMiles(String texto) {
+    return _redondear(texto.trim());
   }
 }

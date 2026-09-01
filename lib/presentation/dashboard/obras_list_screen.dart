@@ -109,6 +109,24 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
     return valor == valor.roundToDouble() ? valor.toInt().toString() : valor.toString();
   }
 
+  /// Texto y estilo del helper de superficie. Normal (fontSize 10, sin más)
+  /// o reforzado en naranja + negrita con la lectura alternativa entre
+  /// paréntesis, solo cuando el punto se interpretó como separador de miles
+  /// (ver ParserNumeroAr.esInterpretacionDeMiles) -- el de doble punto queda
+  /// discreto a propósito, si el aviso apareciera siempre dejaría de
+  /// notarse. Usado en los dos diálogos (alta y edición).
+  (String, TextStyle) _previewSuperficie(String texto) {
+    const estiloNormal = TextStyle(fontSize: 10);
+    final valor = ParserNumeroAr.parsear(texto);
+    if (valor == null) return ('', estiloNormal);
+    final normal = 'Se guardará: ${_formatearCantidadSuperficie(valor)} m²';
+    if (!ParserNumeroAr.esInterpretacionDeMiles(texto)) return (normal, estiloNormal);
+    final alterno = ParserNumeroAr.lecturaAlternativaSiEsMiles(texto);
+    final reforzado =
+        alterno != null ? '$normal (no ${_formatearCantidadSuperficie(alterno)} m²)' : normal;
+    return (reforzado, TextStyle(fontSize: 10, color: Colors.orange[800], fontWeight: FontWeight.bold));
+  }
+
   // --- Navegación a la Solapa de Presupuesto ---
   void _abrirPresupuesto(Map<String, dynamic> obra) {
     Navigator.push(
@@ -220,6 +238,7 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
       barrierDismissible: false,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setModalState) {
+          final previewSuperficie = _previewSuperficie(superficieCtrl.text);
           return AlertDialog(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
             title: const Row(
@@ -300,57 +319,51 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                     ),
                   ),
                   const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: superficieCtrl,
-                          keyboardType: TextInputType.number,
-                          style: const TextStyle(fontSize: 12),
-                          onChanged: (_) => setModalState(() {}),
-                          decoration: InputDecoration(
-                            labelText: 'Superficie (m²)',
-                            labelStyle: const TextStyle(fontSize: 12),
-                            border: const OutlineInputBorder(),
-                            isDense: true,
-                            // helperText no nulo desde el arranque (string
-                            // vacío, no null): con null el campo no reserva
-                            // la línea y salta de alto al aparecer el primer
-                            // preview.
-                            helperText: () {
-                              final valor = ParserNumeroAr.parsear(superficieCtrl.text);
-                              return valor != null
-                                  ? 'Se guardará: ${_formatearCantidadSuperficie(valor)} m²'
-                                  : '';
-                            }(),
-                            helperStyle: const TextStyle(fontSize: 10),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: DropdownButtonFormField<String>(
-                          initialValue: tipoSeleccionado,
-                          isExpanded: true,
-                          decoration: const InputDecoration(
-                            labelText: 'Tipo',
-                            labelStyle: TextStyle(fontSize: 11),
-                            border: OutlineInputBorder(),
-                            isDense: true,
-                          ),
-                          style: const TextStyle(fontSize: 11, color: Colors.black87),
-                          items: ['Residencial', 'Comercial/Residencial', 'Industrial', 'Infraestructura']
-                              .map((t) => DropdownMenuItem(
-                                    value: t,
-                                    child: Text(t, style: const TextStyle(fontSize: 11), overflow: TextOverflow.ellipsis),
-                                  ))
-                              .toList(),
-                          onChanged: (val) {
-                            if (val != null) setModalState(() => tipoSeleccionado = val);
-                          },
-                        ),
-                      ),
-                    ],
+                  TextField(
+                    controller: superficieCtrl,
+                    keyboardType: TextInputType.number,
+                    style: const TextStyle(fontSize: 12),
+                    onChanged: (_) => setModalState(() {}),
+                    decoration: InputDecoration(
+                      labelText: 'Superficie (m²)',
+                      labelStyle: const TextStyle(fontSize: 12),
+                      border: const OutlineInputBorder(),
+                      isDense: true,
+                      // helperText no nulo desde el arranque (string
+                      // vacío, no null): con null el campo no reserva
+                      // la línea y salta de alto al aparecer el primer
+                      // preview.
+                      helperText: previewSuperficie.$1,
+                      helperStyle: previewSuperficie.$2,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  // Fuera de la fila de Superficie a propósito (antes
+                  // compartía Row 50/50 con este campo): con el preview
+                  // reforzado de miles ("Se guardará: X (no Y)") el campo de
+                  // superficie no entraba en la mitad del ancho del diálogo
+                  // y el texto se cortaba (ver diagnóstico de esta pieza).
+                  // Cada uno en su propia fila le da a los dos el ancho
+                  // completo, sin negociar con el largo del mensaje.
+                  DropdownButtonFormField<String>(
+                    initialValue: tipoSeleccionado,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Tipo',
+                      labelStyle: TextStyle(fontSize: 11),
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    style: const TextStyle(fontSize: 11, color: Colors.black87),
+                    items: ['Residencial', 'Comercial/Residencial', 'Industrial', 'Infraestructura']
+                        .map((t) => DropdownMenuItem(
+                              value: t,
+                              child: Text(t, style: const TextStyle(fontSize: 11), overflow: TextOverflow.ellipsis),
+                            ))
+                        .toList(),
+                    onChanged: (val) {
+                      if (val != null) setModalState(() => tipoSeleccionado = val);
+                    },
                   ),
                   const SizedBox(height: 10),
                   // Wrap en vez de Row: acá no hay ningún widget con texto
@@ -507,6 +520,7 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
       barrierDismissible: false,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setModalState) {
+          final previewSuperficie = _previewSuperficie(superficieCtrl.text);
           return AlertDialog(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
             title: const Row(
@@ -581,56 +595,47 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                     ),
                   ),
                   const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: superficieCtrl,
-                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                          style: const TextStyle(fontSize: 12),
-                          onChanged: (_) => setModalState(() {}),
-                          decoration: InputDecoration(
-                            labelText: 'Superficie (m²)',
-                            labelStyle: const TextStyle(fontSize: 12),
-                            border: const OutlineInputBorder(),
-                            isDense: true,
-                            // helperText no nulo desde el arranque, mismo
-                            // motivo que en el diálogo de alta: evitar el
-                            // salto de alto al primer preview.
-                            helperText: () {
-                              final valor = ParserNumeroAr.parsear(superficieCtrl.text);
-                              return valor != null
-                                  ? 'Se guardará: ${_formatearCantidadSuperficie(valor)} m²'
-                                  : '';
-                            }(),
-                            helperStyle: const TextStyle(fontSize: 10),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: DropdownButtonFormField<String>(
-                          initialValue: tipoSeleccionado,
-                          isExpanded: true,
-                          decoration: const InputDecoration(
-                            labelText: 'Tipo',
-                            labelStyle: TextStyle(fontSize: 11),
-                            border: OutlineInputBorder(),
-                            isDense: true,
-                          ),
-                          style: const TextStyle(fontSize: 11, color: Colors.black87),
-                          items: ['Residencial', 'Comercial/Residencial', 'Industrial', 'Infraestructura']
-                              .map((t) => DropdownMenuItem(
-                                    value: t,
-                                    child: Text(t, style: const TextStyle(fontSize: 11), overflow: TextOverflow.ellipsis),
-                                  ))
-                              .toList(),
-                          onChanged: (val) {
-                            if (val != null) setModalState(() => tipoSeleccionado = val);
-                          },
-                        ),
-                      ),
-                    ],
+                  TextField(
+                    controller: superficieCtrl,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    style: const TextStyle(fontSize: 12),
+                    onChanged: (_) => setModalState(() {}),
+                    decoration: InputDecoration(
+                      labelText: 'Superficie (m²)',
+                      labelStyle: const TextStyle(fontSize: 12),
+                      border: const OutlineInputBorder(),
+                      isDense: true,
+                      // helperText no nulo desde el arranque, mismo
+                      // motivo que en el diálogo de alta: evitar el
+                      // salto de alto al primer preview.
+                      helperText: previewSuperficie.$1,
+                      helperStyle: previewSuperficie.$2,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  // Fuera de la fila de Superficie a propósito, mismo motivo
+                  // que en el diálogo de alta: con el preview reforzado de
+                  // miles el campo no entraba en la mitad del ancho del
+                  // diálogo y el texto se cortaba.
+                  DropdownButtonFormField<String>(
+                    initialValue: tipoSeleccionado,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Tipo',
+                      labelStyle: TextStyle(fontSize: 11),
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    style: const TextStyle(fontSize: 11, color: Colors.black87),
+                    items: ['Residencial', 'Comercial/Residencial', 'Industrial', 'Infraestructura']
+                        .map((t) => DropdownMenuItem(
+                              value: t,
+                              child: Text(t, style: const TextStyle(fontSize: 11), overflow: TextOverflow.ellipsis),
+                            ))
+                        .toList(),
+                    onChanged: (val) {
+                      if (val != null) setModalState(() => tipoSeleccionado = val);
+                    },
                   ),
                 ],
               ),

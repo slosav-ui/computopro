@@ -94,6 +94,23 @@ class _MatYMoTabState extends State<MatYMoTab> {
     return '\$ $entero,${partes[1]}';
   }
 
+  /// Texto y estilo del helper de precio del diálogo de editar. Normal
+  /// (estilo null, no cambia el look ya verificado) o reforzado en naranja +
+  /// negrita con la lectura alternativa entre paréntesis, solo cuando el
+  /// punto se interpretó como separador de miles (ver
+  /// ParserNumeroAr.esInterpretacionDeMiles) -- es el único caso con
+  /// ambigüedad real; el de doble punto queda discreto a propósito, si el
+  /// aviso apareciera siempre dejaría de notarse.
+  (String, TextStyle?) _previewPrecio(String texto) {
+    final valor = ParserNumeroAr.parsear(texto);
+    if (valor == null) return ('', null);
+    final normal = 'Se guardará: ${_fmtPrecioConDecimales(valor)}';
+    if (!ParserNumeroAr.esInterpretacionDeMiles(texto)) return (normal, null);
+    final alterno = ParserNumeroAr.lecturaAlternativaSiEsMiles(texto);
+    final reforzado = alterno != null ? '$normal (no ${_fmtPrecioConDecimales(alterno)})' : normal;
+    return (reforzado, TextStyle(color: Colors.orange[800], fontWeight: FontWeight.bold));
+  }
+
   IconData _iconoTipo(String tipo) {
     switch (tipo) {
       case 'mano_obra':
@@ -311,7 +328,9 @@ class _MatYMoTabState extends State<MatYMoTab> {
     final nuevoPrecio = await showDialog<double>(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
+        builder: (ctx, setDialogState) {
+          final preview = _previewPrecio(controller.text);
+          return AlertDialog(
           title: Text(insumo.nombre, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -331,10 +350,8 @@ class _MatYMoTabState extends State<MatYMoTab> {
                   // Helper no nulo desde el arranque (string vacío, no null) a
                   // propósito: con null, InputDecoration no reserva la línea y
                   // el diálogo salta de alto apenas aparece el primer preview.
-                  helperText: () {
-                    final valor = ParserNumeroAr.parsear(controller.text);
-                    return valor != null ? 'Se guardará: ${_fmtPrecioConDecimales(valor)}' : '';
-                  }(),
+                  helperText: preview.$1,
+                  helperStyle: preview.$2,
                 ),
               ),
               const SizedBox(height: 12),
@@ -359,7 +376,8 @@ class _MatYMoTabState extends State<MatYMoTab> {
               child: const Text('Guardar'),
             ),
           ],
-        ),
+          );
+        },
       ),
     );
 

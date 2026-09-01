@@ -74,4 +74,43 @@ void main() {
       expect(ParserNumeroAr.parsear('500.000'), 500000);
     });
   });
+
+  group('ParserNumeroAr.esInterpretacionDeMiles', () {
+    final casos = <String, bool>{
+      '1.500': true,
+      '79.318': true,
+      '9.66': false,
+      '1.234.567': false,
+      '1.500,50': false,
+      '8210.567': false,
+    };
+
+    casos.forEach((entrada, esperado) {
+      test('"$entrada" -> $esperado', () {
+        expect(ParserNumeroAr.esInterpretacionDeMiles(entrada), esperado);
+      });
+    });
+
+    test('caso borde: negativo ambiguo "-1.500" -> true', () {
+      expect(ParserNumeroAr.esInterpretacionDeMiles('-1.500'), true);
+    });
+
+    test('caso borde: vacío -> false', () {
+      expect(ParserNumeroAr.esInterpretacionDeMiles(''), false);
+    });
+
+    test('caso borde: no numérico -> false', () {
+      expect(ParserNumeroAr.esInterpretacionDeMiles('abc'), false);
+    });
+  });
+
+  group('ParserNumeroAr.lecturaAlternativaSiEsMiles', () {
+    test('"1.500" -> 1.5 (la lectura que se perdió)', () {
+      expect(ParserNumeroAr.lecturaAlternativaSiEsMiles('1.500'), 1.5);
+    });
+
+    test('"79.318" -> 79.32 (redondeada a 2 decimales, igual que parsear)', () {
+      expect(ParserNumeroAr.lecturaAlternativaSiEsMiles('79.318'), 79.32);
+    });
+  });
 }

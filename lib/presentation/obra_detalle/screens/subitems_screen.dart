@@ -1148,11 +1148,44 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
     );
   }
 
+  /// Texto y estilo del helper de cantidad. Normal (fontSize 10, sin más) o
+  /// reforzado en naranja + negrita con la lectura alternativa entre
+  /// paréntesis, solo cuando el punto se interpretó como separador de miles
+  /// (ver ParserNumeroAr.esInterpretacionDeMiles) -- el de doble punto queda
+  /// discreto a propósito, si el aviso apareciera siempre dejaría de
+  /// notarse.
+  (String, TextStyle) _previewCantidad(String texto) {
+    const estiloNormal = TextStyle(fontSize: 10);
+    final valor = ParserNumeroAr.parsear(texto);
+    if (valor == null) return ('', estiloNormal);
+    final normal = 'Se guardará: ${_formatearCantidad(valor)}';
+    if (!ParserNumeroAr.esInterpretacionDeMiles(texto)) return (normal, estiloNormal);
+    final alterno = ParserNumeroAr.lecturaAlternativaSiEsMiles(texto);
+    final reforzado = alterno != null ? '$normal (no ${_formatearCantidad(alterno)})' : normal;
+    return (reforzado, TextStyle(fontSize: 10, color: Colors.orange[800], fontWeight: FontWeight.bold));
+  }
+
+  /// Igual que _previewCantidad, para el precio manual -- método propio en
+  /// vez de reusar aquel por el mismo motivo que _parsearPrecio/
+  /// _parsearCantidad (misma lógica, sin dependencia cruzada).
+  (String, TextStyle) _previewPrecioManual(String texto) {
+    const estiloNormal = TextStyle(fontSize: 10);
+    final valor = ParserNumeroAr.parsear(texto);
+    if (valor == null) return ('', estiloNormal);
+    final normal = 'Se guardará: ${CurrencyFormatter.formatARS(valor)}';
+    if (!ParserNumeroAr.esInterpretacionDeMiles(texto)) return (normal, estiloNormal);
+    final alterno = ParserNumeroAr.lecturaAlternativaSiEsMiles(texto);
+    final reforzado =
+        alterno != null ? '$normal (no ${CurrencyFormatter.formatARS(alterno)})' : normal;
+    return (reforzado, TextStyle(fontSize: 10, color: Colors.orange[800], fontWeight: FontWeight.bold));
+  }
+
   /// Extraído tal cual estaba antes (mismo comportamiento) para poder
   /// convivir con _buildCampoPrecio dentro del Column condicional de
   /// arriba, sin duplicar el TextFormField de cantidad.
   Widget _buildCampoCantidad(SubitemCatalogo subitem, bool aplicable, bool puedeEditar) {
     final controller = _controllerPara(subitem);
+    final preview = _previewCantidad(controller.text);
     return TextFormField(
       controller: controller,
       focusNode: _focusNodePara(subitem),
@@ -1180,11 +1213,8 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
         // helperText no nulo desde el arranque (string vacío, no null): con
         // null el campo no reserva la línea y salta de alto al aparecer el
         // primer preview.
-        helperText: () {
-          final valor = ParserNumeroAr.parsear(controller.text);
-          return valor != null ? 'Se guardará: ${_formatearCantidad(valor)}' : '';
-        }(),
-        helperStyle: const TextStyle(fontSize: 10),
+        helperText: preview.$1,
+        helperStyle: preview.$2,
       ),
     );
   }
@@ -1204,6 +1234,7 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
     String hint = 'Precio',
   }) {
     final controller = _controllerPrecioPara(subitem);
+    final preview = _previewPrecioManual(controller.text);
     return TextFormField(
       controller: controller,
       focusNode: _focusNodePrecioPara(subitem),
@@ -1228,11 +1259,8 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
         labelStyle: const TextStyle(fontSize: 11, color: Colors.black38),
         // helperText no nulo desde el arranque, mismo motivo que en
         // _buildCampoCantidad: evitar el salto de alto al primer preview.
-        helperText: () {
-          final valor = ParserNumeroAr.parsear(controller.text);
-          return valor != null ? 'Se guardará: ${CurrencyFormatter.formatARS(valor)}' : '';
-        }(),
-        helperStyle: const TextStyle(fontSize: 10),
+        helperText: preview.$1,
+        helperStyle: preview.$2,
       ),
     );
   }
