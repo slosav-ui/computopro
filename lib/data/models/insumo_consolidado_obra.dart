@@ -1,18 +1,22 @@
 /// Resultado de `consolidado_insumos_obra` (ver
-/// supabase/migrations/0031_consolidado_insumos_obra.sql) — un insumo real consumido por una obra,
-/// agregado desde las composiciones de APU de sus subítems tildados.
+/// supabase/migrations/0032_consolidado_lee_precio_manual.sql) — un insumo real consumido por una
+/// obra, agregado desde las composiciones de APU de sus subítems tildados.
 ///
-/// Deliberadamente NO colapsa "sin precio" a 0: `precioPromedio`/`valorReferencial` son nulos
-/// cuando `tienePrecio` es `false`, mismo criterio que `ApuPrecioSubitem`. Con casi ningún insumo
-/// con precio real cargado hoy, "sin precio" es el caso normal, no la excepción.
+/// Deliberadamente NO colapsa "sin precio" a 0: `precio`/`valorReferencial` son nulos cuando
+/// `tienePrecio` es `false`, mismo criterio que `ApuPrecioSubitem`.
+///
+/// `precio` puede venir de una carga manual (`origen == 'manual'`, ver `obra_insumo_precios`,
+/// 0030) o del promedio automático de corralones (`origen == 'automatico'`) — no siempre es un
+/// promedio, por eso el campo ya no se llama `precioPromedio`.
 class InsumoConsolidadoObra {
   final String insumoId;
   final String nombre;
   final String unidad;
   final String tipo;
   final double cantidadTotal;
-  final double? precioPromedio;
+  final double? precio;
   final bool tienePrecio;
+  final String origen;
 
   const InsumoConsolidadoObra({
     required this.insumoId,
@@ -20,11 +24,12 @@ class InsumoConsolidadoObra {
     required this.unidad,
     required this.tipo,
     required this.cantidadTotal,
-    required this.precioPromedio,
+    required this.precio,
     required this.tienePrecio,
+    required this.origen,
   });
 
-  double? get valorReferencial => tienePrecio ? cantidadTotal * precioPromedio! : null;
+  double? get valorReferencial => tienePrecio ? cantidadTotal * precio! : null;
 
   factory InsumoConsolidadoObra.fromMap(Map<String, dynamic> map) {
     return InsumoConsolidadoObra(
@@ -33,8 +38,9 @@ class InsumoConsolidadoObra {
       unidad: map['unidad'] as String,
       tipo: map['tipo'] as String,
       cantidadTotal: (map['cantidad_total'] as num).toDouble(),
-      precioPromedio: (map['precio_promedio'] as num?)?.toDouble(),
+      precio: (map['precio'] as num?)?.toDouble(),
       tienePrecio: map['tiene_precio'] as bool,
+      origen: map['origen'] as String,
     );
   }
 }
