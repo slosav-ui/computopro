@@ -38,13 +38,14 @@ class ObraRubrosOrdenRepository {
     required double posicion,
     required String usuarioId,
   }) async {
+    // updated_at lo mantiene un trigger de la base (0035_updated_at_trigger.sql),
+    // no se manda desde acá.
     await _client.from('obra_rubros_orden').upsert(
       {
         'obra_id': obraId,
         'rubro_id': rubroId,
         'posicion': posicion,
         'updated_by_usuario_id': usuarioId,
-        'updated_at': DateTime.now().toIso8601String(),
       },
       onConflict: 'obra_id,rubro_id',
     );

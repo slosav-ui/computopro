@@ -36,7 +36,8 @@ class ObrasRepository {
 
   Future<void> actualizarObra(String id, Map<String, dynamic> cambios) async {
     final row = _toRow(cambios);
-    row['updated_at'] = DateTime.now().toIso8601String();
+    // updated_at lo mantiene un trigger de la base (0035_updated_at_trigger.sql),
+    // no se manda desde acá.
     await _client.from('obras').update(row).eq('id', id);
   }
 

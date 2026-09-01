@@ -149,12 +149,13 @@ class ObraSubitemsRepository {
     required bool esAplicable,
     required String usuarioId,
   }) async {
+    // updated_at lo mantiene un trigger de la base (0035_updated_at_trigger.sql),
+    // no se manda desde acá.
     final updated = await _client
         .from('obra_subitems')
         .update({
           'es_aplicable': esAplicable,
           'ultima_modificacion_usuario_id': usuarioId,
-          'updated_at': DateTime.now().toIso8601String(),
         })
         .eq('id', id)
         .select()
@@ -171,12 +172,13 @@ class ObraSubitemsRepository {
     required double cantidad,
     required String usuarioId,
   }) async {
+    // updated_at lo mantiene un trigger de la base (0035_updated_at_trigger.sql),
+    // no se manda desde acá.
     final updated = await _client
         .from('obra_subitems')
         .update({
           'cantidad': cantidad,
           'ultima_modificacion_usuario_id': usuarioId,
-          'updated_at': DateTime.now().toIso8601String(),
         })
         .eq('id', id)
         .select()
@@ -199,12 +201,13 @@ class ObraSubitemsRepository {
     required double? precio,
     required String usuarioId,
   }) async {
+    // updated_at lo mantiene un trigger de la base (0035_updated_at_trigger.sql),
+    // no se manda desde acá.
     final updated = await _client
         .from('obra_subitems')
         .update({
           'precio_unitario_manual': precio,
           'ultima_modificacion_usuario_id': usuarioId,
-          'updated_at': DateTime.now().toIso8601String(),
         })
         .eq('id', id)
         .select()
