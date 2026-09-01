@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'config/app_theme.dart';
+import 'core/network/timeout_http_client.dart';
 import 'presentation/auth/auth_gate.dart';
 import 'presentation/obra_detalle/screens/presupuestos_screen.dart';
 
@@ -12,7 +14,11 @@ const _supabaseAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Supabase.initialize(url: _supabaseUrl, publishableKey: _supabaseAnonKey);
+  await Supabase.initialize(
+    url: _supabaseUrl,
+    publishableKey: _supabaseAnonKey,
+    httpClient: TimeoutHttpClient(http.Client()),
+  );
   runApp(const MiAppApu());
 }
 
