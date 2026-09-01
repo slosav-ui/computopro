@@ -1,5 +1,5 @@
 /// Resultado de `calcular_precio_apu_subitems` (ver
-/// supabase/migrations/0029_calcular_precio_apu_subitem.sql) — precio derivado de la composición
+/// supabase/migrations/0034_calcular_precio_apu_subitem.sql) — precio derivado de la composición
 /// de APU de un subítem.
 ///
 /// Deliberadamente NO es un `double` pelado: `insumosConPrecio`/`insumosTotal` distinguen
