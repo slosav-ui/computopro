@@ -6,6 +6,7 @@ import '../../../services/obra_members_repository.dart';
 import '../tabs/rubros_tab.dart';
 import '../tabs/gestion_obra_tab.dart';
 import '../tabs/mat_y_mo_tab.dart';
+import '../tabs/selector_tipo_presupuesto.dart';
 
 class PresupuestosScreen extends StatefulWidget {
   final dynamic obra;
@@ -214,6 +215,7 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> with SingleTick
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (_obraId != null) SelectorTipoPresupuesto(obraId: _obraId!),
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.black12)),
