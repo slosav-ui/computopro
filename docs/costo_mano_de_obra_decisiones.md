@@ -197,6 +197,87 @@ aplica (que es lo que se hizo en §1).
   Tiene que seguir mostrando el multiplicador **con cargas** (≈1,72×), con un texto tipo "con
   cargas sería 1,72×" — lo que el usuario quiere saber al destildar es cuánto se está ahorrando,
   no el ratio recalculado sobre la base más chica.
+- **El control de `zona_uocra` tiene que ofrecer solo las zonas que existen en
+  `escala_salarial_uocra`, nunca texto libre.** `zona_uocra` es `text` sin `check` ni FK a propósito
+  (migración `0038`) — nada a nivel de base impide que una obra apunte a una zona sin escala
+  cargada, y eso hace que `calcular_valor_hora_mano_obra` frene con `RAISE EXCEPTION` (ver §12, "RAISE
+  EXCEPTION de zona faltante"). El control de UI es lo que
+  vuelve esa excepción inalcanzable en uso normal — sin este requisito, la restricción de más abajo
+  queda solo en el papel.
+- **El panel de detalle de "Ayuda de Gremio" tiene que aclarar que se costea al valor hora del
+  Ayudante.** Va a mostrar el mismo número que la fila "Ayudante" en dos cards separadas del
+  consolidado (§2, §12) — sin esa aclaración, un usuario puede leerlo como un error de la app en vez
+  de una decisión de diseño.
 - Bloque plegable como primer elemento de la solapa APU (mismo patrón que el Factor K, ver
   `CLAUDE.md` § "Bloque Factor K en Solapa APU"), con el desglose línea por línea de este documento
   disponible para quien quiera verlo, no solo el número final.
+
+**Pregunta abierta, no un requisito cerrado** (surgió al verificar el Paso 4 con datos reales de
+prueba: un precio manual viejo de `AYUDANTE` daba $8.211 contra $13.562 calculado, ~40% abajo —
+subcotizaría cualquier presupuesto real de esa obra). Hoy la marca "Cargado a mano" avisa que el
+precio no se actualiza solo, pero no dice nada sobre si ese precio quedó desactualizado respecto al
+cálculo automático. ¿Vale la pena señalar cuando un precio fijado a mano se aleja mucho del
+calculado/automático (un `%` de diferencia, un ícono aparte, algo en el panel de detalle)? Evaluar
+en el Paso 5, no diseñar ni implementar todavía.
+
+## 12. Conexión al consolidado de Mat y MO (Paso 4) — CERRADO 2026-09-02
+
+`consolidado_insumos_obra` (`0032`) extendida en `0041` — mismo `COALESCE` que ya resolvía
+`obra_insumo_precios` vs. automático de corralones, con `calcular_valor_hora_mano_obra` sumada en
+el medio de la cadena:
+
+```
+precio = coalesce(oip.precio, vh.valor_hora, p.promedio)
+```
+
+**Sin rama propia para mano de obra**: para materiales, `vh.valor_hora` nunca matchea (`insumos.categoria_uocra`
+es `NULL`) y el `COALESCE` cae en `p.promedio` de siempre; para mano de obra, `p.promedio`
+(`avg(precios.valor)`) siempre da `NULL` — un corralón no cotiza horas de oficial, ver `0034` — y el
+`COALESCE` cae en `vh.valor_hora`. La
+función de valor hora se llama **una sola vez** por consolidado (5 filas, no una por insumo) y se
+hace `LEFT JOIN` por `categoria_uocra` — no hace falta consultar `obra_valor_hora_override` aparte,
+`calcular_valor_hora_mano_obra` ya resuelve esa precedencia internamente.
+
+**`AYUDA DE GREMIO` no se colapsa con `AYUDANTE`**: el `GROUP BY` agrupa por `insumo_id`, no por
+`categoria_uocra` — son dos filas del consolidado, cada una con su propia cantidad, ambas con el
+mismo `valor_hora` porque comparten categoría (§2). Verificado por construcción del `GROUP BY` y
+verificado en el emulador (2026-09-02, obra de prueba): `OFICIAL ESPECIALIZADO` pasó de "Falta
+cargar precio" a $18.424/hs sin marca (`origen='calculado'`), `AYUDANTE` y `OFICIAL` mostraron
+precio con la marca "Cargado a mano" (tenían fila en `obra_insumo_precios`, gana sobre el
+calculado), materiales sin ninguna alteración.
+
+**`AYUDA DE GREMIO` no aparece hoy en el consolidado de ninguna obra — verificado contra el
+catálogo sembrado, no es una obra puntual.** Grep sobre las 770 filas de `0023
+_seed_apu_composiciones_rubros_2_17.sql`: 92 referencias a `AYUDANTE`, 90 a `OFICIAL`, 19 a
+`OFICIAL ESPECIALIZADO`, 2 a `MEDIO OFICIAL` (partidas 16.3 y 16.4, único uso en todo el catálogo),
+**0 a `AYUDA DE GREMIO`**. Ninguna de las 97 partidas oficiales la usa — no puede aparecer en el
+consolidado de ninguna obra hasta que un PRO cree una composición propia que la referencie, tildes
+lo que tildes en el catálogo oficial. Coherente con el diseño de §2 (concepto de composición propia,
+no del catálogo oficial).
+
+### Mapeo exhaustivo de `origen` — los 5 valores posibles, no solo la lista blanca del código
+
+La UI colapsa `origen` a dos estados visuales (`InsumoConsolidadoObra.fijadoAMano`,
+`lib/data/models/insumo_consolidado_obra.dart`) por lista blanca — **un valor nuevo que no se
+agregue acá cae del lado "automático" por default**, así que si algún día se suma un origen que
+representa algo puesto por el usuario, hay que sumarlo a la lista o va a quedar sin su marca sin
+que nadie se entere. Tabla completa, para revisar de un vistazo el día que se agregue uno nuevo:
+
+| `origen` | De dónde sale | Estado visual | ¿En la lista blanca (`fijadoAMano`)? |
+|---|---|---|---|
+| `'automatico'` | `avg(precios.valor)`, corralones — solo materiales | Automático, sin marca | No |
+| `'calculado'` | `calcular_valor_hora_mano_obra`, sin override — solo mano de obra | Automático, sin marca | No |
+| `'manual'` | `obra_insumo_precios.origen`, precio tipeado por el PRO para ese insumo puntual | Fijado a mano, badge "Cargado a mano" | Sí |
+| `'presupuesto_firme'` | `obra_insumo_precios.origen`, precio real de un corralón — mecanismo todavía sin construir (roadmap "Mandar a Presupuestar"), el valor no puede existir hoy en ninguna fila | Fijado a mano, badge "Cargado a mano" | Sí |
+| `'override'` | `obra_valor_hora_override`, el PRO fijó a mano el valor hora de una categoría | Fijado a mano, badge "Cargado a mano" | Sí |
+
+### `RAISE EXCEPTION` de zona faltante — propaga a todo el consolidado a propósito
+
+Si `escala_salarial_uocra` no tiene fila para la `zona_uocra`/fecha de una obra,
+`calcular_valor_hora_mano_obra` frena con `RAISE EXCEPTION` (`0039`). Llamada desde adentro de
+`consolidado_insumos_obra`, esa excepción frena **todo** el consolidado — también las filas de
+materiales, que no tienen nada que ver con UOCRA. Es a propósito, no un descuido de este paso: el
+consolidado no atrapa la excepción ni la aísla. **Lo que la vuelve inalcanzable en uso normal es la
+restricción del control de zona en el Paso 5 (§11)** — ofrecer solo zonas que existen en la escala,
+nunca texto libre — no un `catch` acá. Hoy no puede pasar en la práctica (`zona_uocra` default
+`'B'`, única zona cargada).

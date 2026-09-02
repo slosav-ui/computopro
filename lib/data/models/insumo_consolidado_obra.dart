@@ -31,6 +31,14 @@ class InsumoConsolidadoObra {
 
   double? get costoTotal => tienePrecio ? cantidadTotal * precio! : null;
 
+  /// Colapsa los 5 valores posibles de `origen` a los 2 estados visuales de la grilla — el usuario
+  /// no necesita saber de qué tabla sale el número, solo si se actualiza solo o quedó fijado por
+  /// alguien. Lista blanca a propósito (ver docs/costo_mano_de_obra_decisiones.md §12 para el
+  /// mapeo exhaustivo de los 5 valores): un `origen` nuevo que no se sume acá cae del lado
+  /// "automático" por default, así que agregar uno sin revisar esta lista puede dejar un precio
+  /// puesto por el usuario sin su marca.
+  bool get fijadoAMano => origen == 'manual' || origen == 'presupuesto_firme' || origen == 'override';
+
   factory InsumoConsolidadoObra.fromMap(Map<String, dynamic> map) {
     return InsumoConsolidadoObra(
       insumoId: map['insumo_id'].toString(),

@@ -253,7 +253,7 @@ class _MatYMoTabState extends State<MatYMoTab> {
                 '${_fmtPrecio(insumo.precio!)} /${insumo.unidad}',
                 style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF2E7D32)),
               ),
-              if (insumo.origen == 'manual') ...[
+              if (insumo.fijadoAMano) ...[
                 const SizedBox(height: 4),
                 _buildBadgeManual(),
               ],
