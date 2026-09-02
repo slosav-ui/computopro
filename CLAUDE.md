@@ -754,6 +754,29 @@ una columna `orden` nueva ni migración. Verificado en el teléfono con un rubro
 `apu_composiciones`/`apu_composicion_items` (ver la composición real de una partida) — ninguno de
 los dos tocado todavía.
 
+### Costo de mano de obra: escala UOCRA y cargas sociales (Solapa 3) — schema y función completos, sin UI
+
+Migraciones `0036` a `0040` (`supabase/migrations/`), aplicadas y verificadas en producción
+(2026-09-02): tabla `escala_salarial_uocra` (catálogo compartido, seed Zona B septiembre 2026),
+`insumos.categoria_uocra` (vínculo por código, no por nombre — Ayuda de Gremio se costea al valor
+de Ayudante, Sereno no tiene insumo porque no participa de APU), columnas de cargas sociales +
+`zona_uocra` + `vacaciones_jornales_mes` en `obra_presupuesto_config`, tabla
+`obra_valor_hora_override` (el PRO fija a mano el valor hora de una categoría puntual, con
+precedencia sobre el cálculo automático), y la función `calcular_valor_hora_mano_obra(obra_id,
+fecha)` — verificada al centavo contra `docs/seed/costo_laboral_uocra.xlsx` en ambos extremos de la
+escala (Ayudante, Oficial Especializado) y en la rama de liquidación mensual (Sereno).
+
+**Todas las decisiones de esta pieza** (fundamento normativo de cada alícuota, por qué se descartó
+el 28% de seguridad social del PDF de la liquidadora, categorías, adicional de hormigón, constantes
+hardcodeadas, diseño del override, los dos multiplicadores distintos, diferencias deliberadas
+contra el PDF de la liquidadora, y los pendientes abiertos con dueño) están en
+`docs/costo_mano_de_obra_decisiones.md` — leer ahí antes de retomar este tema, no reabrir preguntas
+ya cerradas.
+
+**Sin construir todavía**: el consolidado de Mat y MO no lee esta función (paso 4, siguiente pieza),
+y no hay ninguna UI — ni el bloque plegable del cartel, ni el selector "con/sin certificado MiPyME"
+para `suss_pct`, ni la edición de `obra_valor_hora_override` (paso 5).
+
 ### Importador de Excel/PDF: diseño de datos cerrado en dos capas, sin implementar (2026-08-22)
 
 Puerta de entrada para que un profesional suba su propio cómputo/presupuesto (Excel/PDF/foto) sin
