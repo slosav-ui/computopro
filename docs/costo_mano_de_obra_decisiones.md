@@ -189,6 +189,20 @@ aplica (que es lo que se hizo en §1).
 
 ## 11. Requisitos para el Paso 5 (UI — nada de esto implementado todavía)
 
+- **BLOQUEANTE para repartir el APK — "volver al calculado" (borrar un `obra_valor_hora_override`)
+  tiene que existir en la UI, no solo por SQL.** Desde que el lapicito de mano de obra escribe en
+  `obra_valor_hora_override` (§13), fijar un valor a mano es un camino sin retorno para cualquiera
+  sin acceso directo a la base: el diálogo de edición solo guarda, no hay ningún botón ni acción que
+  borre el override y vuelva al valor calculado de la escala. Esto era una comodidad cuando la única
+  vía de "fijar a mano" era `obra_insumo_precios` (que tampoco tiene "volver a automático" en la UI,
+  pero un usuario podía cargar el mismo valor calculado a mano como workaround); para mano de obra,
+  después de §13, no hay ningún workaround — la única salida real es un `DELETE` que solo Seba puede
+  correr. No lo confundas con una mejora deseable: es la contraparte obligatoria de haber creado un
+  mecanismo de escritura sin su mecanismo de borrado.
+- **En el panel de edición del valor hora, lo primero y lo único visible tiene que ser el número
+  editable — los parámetros de cargas van detrás de un link discreto tipo "¿de dónde sale este
+  número?".** El usuario que solo quiere cambiar un número no tiene que entender ART ni Fondo de
+  Cese para poder hacerlo. Decisión de layout, sin construir.
 - **`suss_pct` no puede ser un número libre en la UI.** Un campo que dice "SUSS" no le dice nada a
   nadie. Tiene que ser una elección con nombre: *"Con certificado MiPyME — 18%"* / *"Sin certificado
   MiPyME — 20,4%"* — convierte una pregunta técnica en una que el usuario sabe contestar.
@@ -267,9 +281,9 @@ que nadie se entere. Tabla completa, para revisar de un vistazo el día que se a
 |---|---|---|---|
 | `'automatico'` | `avg(precios.valor)`, corralones — solo materiales | Automático, sin marca | No |
 | `'calculado'` | `calcular_valor_hora_mano_obra`, sin override — solo mano de obra | Automático, sin marca | No |
-| `'manual'` | `obra_insumo_precios.origen`, precio tipeado por el PRO para ese insumo puntual | Fijado a mano, badge "Cargado a mano" | Sí |
-| `'presupuesto_firme'` | `obra_insumo_precios.origen`, precio real de un corralón — mecanismo todavía sin construir (roadmap "Mandar a Presupuestar"), el valor no puede existir hoy en ninguna fila | Fijado a mano, badge "Cargado a mano" | Sí |
-| `'override'` | `obra_valor_hora_override`, el PRO fijó a mano el valor hora de una categoría | Fijado a mano, badge "Cargado a mano" | Sí |
+| `'manual'` | `obra_insumo_precios.origen`, precio tipeado por el PRO para ese insumo puntual — **solo materiales desde `0042`**, ver §13 | Fijado a mano, badge "Cargado a mano" | Sí |
+| `'presupuesto_firme'` | `obra_insumo_precios.origen`, precio real de un corralón — mecanismo todavía sin construir (roadmap "Mandar a Presupuestar"), el valor no puede existir hoy en ninguna fila — **solo materiales, nunca mano de obra por diseño (§13)** | Fijado a mano, badge "Cargado a mano" | Sí |
+| `'override'` | `obra_valor_hora_override`, el PRO fijó a mano el valor hora de una categoría — único origen "fijado a mano" posible para mano de obra desde `0042` (§13) | Fijado a mano, badge "Cargado a mano" | Sí |
 
 ### `RAISE EXCEPTION` de zona faltante — propaga a todo el consolidado a propósito
 
@@ -281,3 +295,90 @@ consolidado no atrapa la excepción ni la aísla. **Lo que la vuelve inalcanzabl
 restricción del control de zona en el Paso 5 (§11)** — ofrecer solo zonas que existen en la escala,
 nunca texto libre — no un `catch` acá. Hoy no puede pasar en la práctica (`zona_uocra` default
 `'B'`, única zona cargada).
+
+## 13. El lapicito de mano de obra escribe en `obra_valor_hora_override`, no en `obra_insumo_precios` — CERRADO 2026-09-02 (`0042`)
+
+Encontrado al probar el Paso 4 en el emulador: coexistían dos mecanismos vivos para fijar a mano el
+valor hora de un insumo de mano de obra, y no eran equivalentes.
+
+- **`obra_insumo_precios`** (el mecanismo genérico, el que ya usa el lapicito para cualquier
+  insumo) es **por insumo suelto**. Con dos insumos que comparten categoría (`AYUDANTE`/`AYUDA DE
+  GREMIO`, §2), permitía dejar uno fijado y el otro en el calculado — dos números distintos para lo
+  que es, por diseño, la misma categoría del convenio. No registra quién lo cargó ni cuándo.
+- **`obra_valor_hora_override`** (`0036`) es **por categoría UOCRA**, construida específicamente
+  para esto, con `usuario_id`/`created_at`/`updated_at`. La precedencia del `COALESCE` original
+  (`oip.precio` antes que `vh.valor_hora`) hacía que el mecanismo genérico le ganara siempre al
+  específico — la tabla construida para este propósito exacto quedaba tapada.
+
+**Decisión: para los 5 insumos de mano de obra, el lapicito escribe en `obra_valor_hora_override`.
+Un solo camino, por categoría, con trazabilidad. Para materiales, sin cambios.**
+
+### El agujero no se cierra solo escribiendo distinto — hay que cerrarlo también donde se lee
+
+Nada a nivel de base impedía (ni impide sin la constraint de más abajo) una fila de
+`obra_insumo_precios` para un insumo de tipo `mano_obra` por otra vía — SQL directo, una fila
+vieja sin limpiar. Si la única corrección hubiera sido "la UI ya no escribe ahí", esas filas
+seguirían ganando. `0042` filtra el `JOIN` en `consolidado_insumos_obra`:
+
+```sql
+left join obra_insumo_precios oip
+  on oip.obra_id = p_obra_id and oip.insumo_id = ins.id and ins.tipo != 'mano_obra'
+```
+
+Con esto, `oip` siempre es `NULL` para mano de obra — no hay ninguna vía, ni de UI ni de SQL
+directo, por la que `obra_insumo_precios` vuelva a aplicar a un insumo de mano de obra. El
+`COALESCE` queda efectivamente `coalesce(vh.valor_hora, p.promedio)` para esos insumos (y
+`p.promedio` ya daba `NULL` siempre — §9, `0034`).
+
+### Constraint nueva: todo insumo de mano de obra tiene que tener categoría
+
+Sin esto, un insumo `mano_obra` con `categoria_uocra` en `NULL` (columna nullable, sin ninguna
+restricción previa) hacía que el diálogo de edición no tuviera dónde escribir el override — y sin
+un guard explícito en Dart, el código caía en el `else` genérico y escribía en
+`obra_insumo_precios`, que este mismo cambio deja de leer para mano de obra. El usuario guardaría
+sin ningún error visible y el número nunca cambiaría — exactamente el tipo de falla silenciosa que
+esta pieza viene evitando en cada paso.
+
+```sql
+alter table insumos
+  add constraint insumos_mano_obra_requiere_categoria check (
+    tipo != 'mano_obra' or categoria_uocra is not null
+  );
+```
+
+No se identificó ningún caso legítimo de un insumo de mano de obra sin categoría — conceptualmente
+todo insumo de mano de obra representa una categoría UOCRA real, es la razón de ser de la columna.
+Hoy no hay ningún código Dart que escriba en `insumos` (grep sin resultados, confirmado), así que
+el estado inválido era teórico, no observado — la constraint lo vuelve imposible en vez de
+"improbable". Si en algún momento aparece un caso real de mano de obra fuera de las 5 categorías
+del convenio, esta constraint es lo primero que hay que revisar, no lo que hay que esquivar.
+
+**En Dart, el mismo caso imposible falla visible en vez de escribir en el lugar equivocado**
+(`mat_y_mo_tab.dart._mostrarDialogoEditarPrecio`): si un insumo de mano de obra llegara sin
+`categoriaUocra`, se corta antes del `try` con un `SnackBar` de error — nunca cae en el `else` que
+guarda en `obra_insumo_precios`.
+
+### Texto del diálogo — corregido para no mentir
+
+El texto original decía "este precio se usa en... que llevan `${insumo.nombre}`" — falso para mano
+de obra desde que el valor es por categoría, no por insumo. El texto nuevo busca en la lista ya
+cargada de insumos (`_insumos`, sin consulta extra) otros insumos que compartan `categoriaUocra`, y
+si hay alguno los nombra explícitamente ("también corresponde a AYUDA DE GREMIO"), no dice
+genéricamente "la categoría" — un nombre concreto es lo que el usuario puede verificar contra lo
+que ve en pantalla.
+
+### Datos existentes al momento del cambio — no migrados, no borrados
+
+Verificado con una consulta cruzando las tres obras del proyecto: 3 filas de
+`obra_insumo_precios` para insumos de mano de obra, las 3 en obras de prueba (`Obra de Prueba`:
+`OFICIAL` $11.235 y `AYUDANTE` $8.210,57; `OBRA PRUEBA 3`: `AYUDANTE` $8.125) — ningún dato real en
+juego. **Decisión: quedan tal cual, sin migrar a `obra_valor_hora_override` ni borrar.** Con el
+filtro de más arriba ya quedan inertes — las tres obras vuelven a mostrar el valor calculado de la
+escala (~$13.562 Ayudante, ~$15.822 Oficial), que es además lo que conviene ver mientras se sigue
+probando el Paso 5.
+
+### Consecuencia directa: "volver al calculado" pasa a bloqueante
+
+Ver §11 — desde que el lapicito escribe en `obra_valor_hora_override`, fijar un valor a mano
+es un camino sin retorno sin acceso directo a SQL. Ya no es una comodidad del Paso 5, es requisito
+para repartir el APK.

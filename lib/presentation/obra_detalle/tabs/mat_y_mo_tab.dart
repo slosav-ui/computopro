@@ -320,6 +320,28 @@ class _MatYMoTabState extends State<MatYMoTab> {
     final usuarioId = _authService.usuarioActual?.id;
     if (usuarioId == null) return;
 
+    // Bifurcación del lapicito (ver docs/costo_mano_de_obra_decisiones.md §13): mano de obra
+    // escribe en obra_valor_hora_override, por categoría, no en obra_insumo_precios. Otros
+    // insumos de mano de obra que comparten la misma categoría (hoy solo AYUDANTE/AYUDA DE
+    // GREMIO) salen de _insumos ya cargado, sin consulta nueva ni nombre hardcodeado.
+    final otrosDeLaMismaCategoria = insumo.tipo == 'mano_obra'
+        ? _insumos
+            .where((i) =>
+                i.tipo == 'mano_obra' &&
+                i.categoriaUocra == insumo.categoriaUocra &&
+                i.insumoId != insumo.insumoId)
+            .toList()
+        : <InsumoConsolidadoObra>[];
+    final textoExplicativo = insumo.tipo != 'mano_obra'
+        ? 'Este precio se usa en el cálculo de todas las partidas de esta obra que llevan '
+            '${insumo.nombre}. Al guardarlo se actualiza el costo de esas partidas.'
+        : otrosDeLaMismaCategoria.isEmpty
+            ? 'Este valor hora corresponde a la categoría UOCRA de ${insumo.nombre} — se usa en '
+                'el cálculo de todas las partidas de esta obra que usan esa categoría.'
+            : 'Este valor hora es compartido: también corresponde a '
+                '${otrosDeLaMismaCategoria.map((o) => o.nombre).join(', ')}. Al guardarlo '
+                'cambian las dos filas y todas las partidas que usan esa categoría.';
+
     final controller = TextEditingController(
       text: insumo.precio != null ? insumo.precio!.toStringAsFixed(2) : '',
     );
@@ -356,8 +378,7 @@ class _MatYMoTabState extends State<MatYMoTab> {
               ),
               const SizedBox(height: 12),
               Text(
-                'Este precio se usa en el cálculo de todas las partidas de esta obra que llevan '
-                '${insumo.nombre}. Al guardarlo se actualiza el costo de esas partidas.',
+                textoExplicativo,
                 style: TextStyle(fontSize: 10, color: Colors.grey[700]),
               ),
             ],
@@ -383,13 +404,39 @@ class _MatYMoTabState extends State<MatYMoTab> {
 
     if (nuevoPrecio == null) return;
 
-    try {
-      await _obraInsumosRepository.guardarPrecioManual(
-        obraId: widget.obraId,
-        insumoId: insumo.insumoId,
-        precio: nuevoPrecio,
-        usuarioId: usuarioId,
+    // Caso imposible en la práctica (constraint insumos_mano_obra_requiere_categoria, 0042) pero
+    // sin garantía absoluta desde Dart -- si igual llegara a pasar, tiene que fallar visible acá,
+    // nunca caer en el "else" y escribir en obra_insumo_precios: esa tabla ya no se lee para mano
+    // de obra (0042), así que el guardado "funcionaría" sin error y el número nunca cambiaría.
+    if (insumo.tipo == 'mano_obra' && insumo.categoriaUocra == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Este insumo de mano de obra no tiene categoría UOCRA asignada — no se puede '
+            'guardar. Es un dato inconsistente, avisá al soporte.',
+          ),
+        ),
       );
+      return;
+    }
+
+    try {
+      if (insumo.tipo == 'mano_obra') {
+        await _obraInsumosRepository.guardarValorHoraOverride(
+          obraId: widget.obraId,
+          categoriaUocra: insumo.categoriaUocra!,
+          valorHora: nuevoPrecio,
+          usuarioId: usuarioId,
+        );
+      } else {
+        await _obraInsumosRepository.guardarPrecioManual(
+          obraId: widget.obraId,
+          insumoId: insumo.insumoId,
+          precio: nuevoPrecio,
+          usuarioId: usuarioId,
+        );
+      }
       await _cargarConsolidado();
     } catch (e) {
       if (!mounted) return;

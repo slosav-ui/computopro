@@ -773,15 +773,19 @@ contra el PDF de la liquidadora, y los pendientes abiertos con dueño) están en
 `docs/costo_mano_de_obra_decisiones.md` — leer ahí antes de retomar este tema, no reabrir preguntas
 ya cerradas.
 
-**Paso 4 cerrado (2026-09-02, migración `0041`)**: el consolidado de Mat y MO
+**Paso 4 cerrado (2026-09-02, migraciones `0041`/`0042`)**: el consolidado de Mat y MO
 (`consolidado_insumos_obra`) ya lee `calcular_valor_hora_mano_obra` — los 5 insumos de mano de obra
 muestran su valor hora real en vez de "Falta cargar precio" en cuanto tienen composición cargada.
-Mismo `COALESCE`/mismo badge de origen que ya usaban los materiales, sin rama de código propia.
+El lapicito de edición ya escribe en `obra_valor_hora_override` para mano de obra (por categoría,
+nunca en `obra_insumo_precios` — filtrado con `ins.tipo != 'mano_obra'` en el propio `JOIN`, ver
+`docs/costo_mano_de_obra_decisiones.md` §13), y en `obra_insumo_precios` sin cambios para
+materiales.
 
-**Sin construir todavía**: ninguna UI — ni el bloque plegable del cartel, ni el selector "con/sin
-certificado MiPyME" para `suss_pct`, ni el control de `zona_uocra` (tiene que restringir a las
-zonas que existen en `escala_salarial_uocra`, no aceptar texto libre), ni la edición de
-`obra_valor_hora_override` (paso 5).
+**Sin construir todavía**: ninguna UI de parámetros — ni el bloque plegable del cartel, ni el
+selector "con/sin certificado MiPyME" para `suss_pct`, ni el control de `zona_uocra` (tiene que
+restringir a las zonas que existen en `escala_salarial_uocra`, no aceptar texto libre). **Bloqueante
+para repartir el APK**: no hay ninguna forma de borrar un `obra_valor_hora_override` desde la app
+(§13) — hoy fijar un valor hora a mano es un camino sin retorno sin acceso directo a SQL.
 
 ### Importador de Excel/PDF: diseño de datos cerrado en dos capas, sin implementar (2026-08-22)
 

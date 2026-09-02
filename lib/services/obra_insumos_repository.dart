@@ -43,4 +43,26 @@ class ObraInsumosRepository {
       onConflict: 'obra_id,insumo_id',
     );
   }
+
+  /// Bifurcación del lapicito para mano de obra (ver docs/costo_mano_de_obra_decisiones.md §13):
+  /// guarda el valor hora fijado a mano para una categoría UOCRA completa, en
+  /// obra_valor_hora_override (0036) — no en obra_insumo_precios. El override es por categoría, no
+  /// por insumo suelto, para que AYUDANTE/AYUDA DE GREMIO (misma categoría) no queden con valores
+  /// distintos. updated_at lo mantiene el trigger de la base (0036), no se manda desde acá.
+  Future<void> guardarValorHoraOverride({
+    required String obraId,
+    required String categoriaUocra,
+    required double valorHora,
+    required String usuarioId,
+  }) async {
+    await _client.from('obra_valor_hora_override').upsert(
+      {
+        'obra_id': obraId,
+        'categoria_uocra': categoriaUocra,
+        'valor_hora': valorHora,
+        'usuario_id': usuarioId,
+      },
+      onConflict: 'obra_id,categoria_uocra',
+    );
+  }
 }

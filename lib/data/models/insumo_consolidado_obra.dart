@@ -13,6 +13,7 @@ class InsumoConsolidadoObra {
   final String nombre;
   final String unidad;
   final String tipo;
+  final String? categoriaUocra;
   final double cantidadTotal;
   final double? precio;
   final bool tienePrecio;
@@ -23,6 +24,7 @@ class InsumoConsolidadoObra {
     required this.nombre,
     required this.unidad,
     required this.tipo,
+    required this.categoriaUocra,
     required this.cantidadTotal,
     required this.precio,
     required this.tienePrecio,
@@ -45,6 +47,7 @@ class InsumoConsolidadoObra {
       nombre: map['nombre'] as String,
       unidad: map['unidad'] as String,
       tipo: map['tipo'] as String,
+      categoriaUocra: map['categoria_uocra'] as String?,
       cantidadTotal: (map['cantidad_total'] as num).toDouble(),
       precio: (map['precio'] as num?)?.toDouble(),
       tienePrecio: map['tiene_precio'] as bool,
