@@ -50,6 +50,21 @@ class ObraPresupuestoConfigRepository {
     return _fromRow(updated);
   }
 
+  /// Tilde de cargas sociales del cartel de mano de obra (ver
+  /// docs/costo_mano_de_obra_decisiones.md §6/§14) — de obra entera, Free y PRO por igual.
+  Future<ObraPresupuestoConfig> actualizarAplicaCargasSociales({
+    required String obraId,
+    required bool aplicaCargasSociales,
+  }) async {
+    final updated = await _client
+        .from('obra_presupuesto_config')
+        .update({'aplica_cargas_sociales': aplicaCargasSociales})
+        .eq('obra_id', obraId)
+        .select()
+        .single();
+    return _fromRow(updated);
+  }
+
   ObraPresupuestoConfig _fromRow(Map<String, dynamic> row) {
     return ObraPresupuestoConfig(
       obraId: row['obra_id'].toString(),
@@ -62,6 +77,15 @@ class ObraPresupuestoConfigRepository {
       beneficioPct: (row['beneficio_pct'] as num).toDouble(),
       gestionMaterialesTercerosPct:
           (row['gestion_materiales_terceros_pct'] as num).toDouble(),
+      aplicaCargasSociales: row['aplica_cargas_sociales'] == true,
+      artPct: (row['art_pct'] as num).toDouble(),
+      fondoCesePct: (row['fondo_cese_pct'] as num).toDouble(),
+      sussPct: (row['suss_pct'] as num).toDouble(),
+      obraSocialPatronalPct: (row['obra_social_patronal_pct'] as num).toDouble(),
+      ficsPct: (row['fics_pct'] as num).toDouble(),
+      iericPct: (row['ieric_pct'] as num).toDouble(),
+      fodecoPct: (row['fodeco_pct'] as num).toDouble(),
+      uocraEmpleadorPct: (row['uocra_empleador_pct'] as num).toDouble(),
     );
   }
 

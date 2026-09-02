@@ -6,7 +6,7 @@ entre comentarios sueltos de migraciones y conversaciones que no dejan rastro es
 archivo antes de retomar el tema, en vez de rediscutir algo que ya está resuelto.
 
 Resumen ejecutivo en `CLAUDE.md`, sección "Costo de mano de obra: escala UOCRA y cargas sociales".
-Schema real: `supabase/migrations/0036` a `0040`. Función: `calcular_valor_hora_mano_obra(obra_id,
+Schema real: `supabase/migrations/0036` a `0043`. Función: `calcular_valor_hora_mano_obra(obra_id,
 fecha)`. Planilla de verificación propia: `docs/seed/costo_laboral_uocra.xlsx` (4 hojas: Parametros,
 Escala UOCRA, Calculo, Resumen — fórmulas vivas, reproduce la liquidación real al centavo).
 
@@ -382,3 +382,177 @@ probando el Paso 5.
 Ver §11 — desde que el lapicito escribe en `obra_valor_hora_override`, fijar un valor a mano
 es un camino sin retorno sin acceso directo a SQL. Ya no es una comodidad del Paso 5, es requisito
 para repartir el APK.
+
+## 14. Cartel de costo de mano de obra + tilde de cargas sociales (Paso 5, tanda 1) — CERRADO 2026-09-02 (`0043`)
+
+Primera pieza de UI real de esta pieza — hasta acá todo era schema/función, sin ninguna pantalla.
+Dos niveles decididos, solo el primero en esta tanda:
+
+- **Nivel 1** (esta tanda): en la solapa Mat y MO, arriba de la sección "Mano de obra". Solo dos
+  elementos — el cartel informativo y el tilde `aplica_cargas_sociales`. Nada de los 7 parámetros
+  ahí: si van todos arriba de la solapa, el usuario abre Mat y MO y se encuentra con una pantalla
+  de configuración contable en vez de con sus precios.
+- **Nivel 2** (tanda siguiente, sin construir): los 7 parámetros, detrás del lapicito de cada fila
+  de mano de obra — panel de edición del valor hora, no del cartel.
+
+El tilde de impuestos y el selector de tipo de presupuesto **no se tocaron ni se mudan** — siguen
+en el header de la Solapa APU (`selector_tipo_presupuesto.dart`). IVA/IIBB/tasas se aplican al
+total del presupuesto (materiales + mano de obra por igual), no son parámetros del costo laboral.
+
+### `valor_hora_con_cargas` / `multiplicador_con_cargas` — un tercer par de campos mode-independientes
+
+`0043` (`DROP` + `CREATE`, cambia el `RETURNS TABLE`) agrega dos columnas a
+`calcular_valor_hora_mano_obra`, siempre calculadas sin importar `aplica_cargas_sociales` —
+simétricas a `valor_hora_sin_cargas`, que ya tenía esa propiedad:
+
+- `valor_hora_con_cargas` = `costo_con_cargas / horas_productivas`.
+- `multiplicador_con_cargas` = `costo_con_cargas / remuneracion_mensual`.
+
+**Por qué hacían falta, no eran redundantes con lo que ya existía**: `valor_hora`/`multiplicador`
+(los campos originales) son **dependientes del modo** — cuando `aplica_cargas_sociales = false`,
+`multiplicador` cae de ~1,72 a ~1,13 (§11, ya documentado). El cartel necesita mostrar "1,72×"
+**en los dos modos** (en modo sin cargas es la referencia contra la que se mide cuánto se está
+ahorrando) — sin estos dos campos, Dart no podía reconstruir ese número: `horas_productivas` no se
+expone, y sin ella no hay forma de derivar el "con cargas" a partir de lo demás. `v_costo_con_cargas`
+ya se calculaba siempre dentro de la función desde `0039` (antes de la rama del toggle) — exponerlo
+fue agregar dos asignaciones, no tocar ninguna lógica de cálculo existente.
+
+`consolidado_insumos_obra` (`0041`/`0042`) usa `select *` sobre esta función en su CTE — agregar
+columnas no la rompió, no hizo falta tocarla.
+
+### Por qué `AYUD` es la categoría de referencia del cartel, y no un promedio ni la más usada en la obra
+
+El cartel es uno solo para todo el bloque de mano de obra — no hay un cartel por categoría. El
+multiplicador varía levemente entre categorías (verificado: 1,72 Ayudante/Medio Oficial, 1,71
+Oficial/Oficial Especializado/Sereno, porque los fijos por operario pesan menos sobre una
+remuneración más alta) — hacía falta elegir una.
+
+**`AYUD` (Ayudante), fija, siempre la misma.** Dos alternativas descartadas, con motivo:
+
+- **Promedio de las 5 categorías**: descartada porque es un número que no le corresponde a ninguna
+  categoría real — si alguien pregunta de dónde sale, no hay una respuesta directa ("es Ayudante,
+  la categoría más numerosa" sí la tiene).
+- **La categoría con más `cantidad_total` en esa obra puntual**: descartada porque haría que el
+  multiplicador del cartel se moviera solo cuando cambia el cómputo de la obra, sin que el usuario
+  toque nada del cartel — un número que cambia sin causa visible es peor que uno levemente
+  aproximado. Mismo defecto, aplicado a qué categoría describe el cartel en vez de a su valor, que
+  motivó también descartar rotar la referencia por presencia de override (ver más abajo).
+
+**Si la dispersión entre categorías se ampliara de forma material** (hoy 1,71-1,72, una diferencia
+que no cambia la lectura del cartel), esta decisión hay que revisarla — la aproximación deja de ser
+inocua si alguna categoría se aleja bastante del resto.
+
+### El cartel y el override — aclaración acotada a `AYUD`, no a las 5 categorías
+
+`valor_hora_con_cargas`/`multiplicador_con_cargas` ignoran cualquier `obra_valor_hora_override` a
+propósito — describen el cálculo, no el número fijado a mano. Pero como el cartel toma `AYUD` como
+referencia, si esa categoría específicamente tiene un override, el cartel muestra "aproximadamente
+1,72×" mientras la fila de AYUDANTE en la grilla muestra el valor fijado a mano — dos números
+distintos, uno al lado del otro, sin que nada lo explique.
+
+**Se agrega una aclaración corta, en estilo secundario, solo cuando `AYUD.origen == 'override'`**:
+
+> *El multiplicador corresponde al valor calculado por la escala. El de Ayudante está fijado a
+> mano, así que no surge de este cálculo.*
+
+**Por qué acotada a `AYUD` y no disparada por un override en cualquiera de las 5 categorías**: si
+Oficial tiene un override, su propia fila ya lo dice con la marca "Cargado a mano" — no hay ninguna
+confusión posible ahí, porque el cartel nunca afirmó describir a Oficial. Poner la aclaración
+también en ese caso sería ruido sin información nueva, y el ruido hace que la gente deje de leer el
+cartel cuando sí importa. El problema real es más angosto: es específicamente cuando la fila que el
+cartel sí describe (`AYUD`) tiene un número distinto al que el cartel muestra arriba.
+
+**Se descartó rotar la categoría de referencia a la primera de las 5 sin override** (alternativa
+considerada) por el mismo motivo que ya descartó usar la de más `cantidad_total`: haría que el
+cartel cambie qué categoría describe sin avisar, según un estado (haber cargado un override) que no
+tiene ninguna relación visible con el cartel — reintroduce el mismo defecto en otro punto.
+
+### Desglose del "Ver detalle" — 6 líneas, no 4
+
+Ninguna alícuota va en texto duro — todas se leen de `obra_presupuesto_config` (7 columnas, de solo
+lectura en esta tanda — el panel de edición es la tanda siguiente). Seis líneas, no las 4 que
+agrupaban conceptos al principio del diseño:
+
+1. Contribuciones patronales de seguridad social (`suss_pct`) — art. 19, Ley 27.541.
+2. Obra social patronal (`obra_social_patronal_pct`) — Ley 23.660.
+3. Fondo de Cese Laboral (`fondo_cese_pct`) — art. 15, Ley 22.250.
+4. Seguro de riesgos del trabajo — ART (`art_pct`) — Ley 24.557.
+5. Contribución patronal al sindicato — UOCRA (`uocra_empleador_pct`) — **sin cita legal puntual**,
+   a propósito: solo la existencia del concepto en el convenio está verificada (§1), no un artículo
+   específico. No inventar una cita que no se confirmó.
+6. IERIC, FICS y FODECO — art. 49 del CCT. **Corregido tras verificar en el emulador (2026-09-02)**:
+   mostrar el 4% crudo (`fics_pct + ieric_pct + fodeco_pct`) rompía el criterio de más abajo, porque
+   ese 4% se aplica sobre el Fondo de Cese, no sobre el remunerativo como las otras 5 líneas — no
+   era comparable ni sumable con ellas, aunque el texto dijera "sobre el Fondo de Cese". Se muestra
+   el **impacto real sobre el remunerativo** (`fondo_cese_pct × (fics_pct + ieric_pct + fodeco_pct)
+   / 100` = 12 × 4 / 100 = **0,48%** con los defaults) como número principal — el que sí suma —
+   con el 4% original entre paréntesis para quien lo reconozca de una liquidación real: *"0,48%
+   (equivale al 4% aplicado sobre el Fondo de Cese)"*.
+
+**Criterio permanente, para revisar cada vez que se agregue o cambie una alícuota**: la suma de
+las 6 líneas del desglose tiene que dar el **% total de contribuciones patronales sobre el
+remunerativo** — el 48,71% que ya aparecía en `Parametros!C15` del xlsx propio y en §1 desde el
+diagnóstico original de esta pieza, no un número nuevo. Verificado con los defaults: 18 (SUSS) + 6
+(obra social) + 12 (Fondo de Cese) + 10,23 (ART) + 2 (UOCRA) + 0,48 (IERIC/FICS/FODECO, ya
+convertido a % del remunerativo) = **48,71**. Confirmado también contra los valores reales de
+Ayudante: `contribuciones / remunerativo` = 699.070,33 / 1.435.168 = 48,71%, coincide exacto.
+
+**Corrección a una afirmación del usuario durante esta misma sesión, que no era exacta**: al pedir
+este chequeo se dijo que la suma "tiene que dar el multiplicador que el cartel exhibe arriba"
+(1,72×). **Eso no es correcto** — el multiplicador se calcula sobre la `remuneracion_mensual`
+(el jornal de convenio, una base más chica que el remunerativo) y además suma
+`fijos_operario_mensual`, que no es un porcentaje de nada. `(multiplicador_con_cargas - 1) × 100`
+da ~72%, no 48,71% — son dos números distintos que responden preguntas distintas (ver §8, "Los dos
+multiplicadores"). El chequeo real y verificable es contra el 48,71% de contribuciones sobre
+remunerativo, no contra el multiplicador de la cabecera. **Si algún día la suma de las 6 líneas
+deja de dar ese 48,71% (con los defaults actuales), es la señal de que el desglose quedó
+incompleto o mal convertido de base — no ignorarlo como un redondeo.**
+
+**Por qué SUSS y obra social patronal NO se unifican en una sola línea** (el diseño original las
+agrupaba): tienen fundamento legal distinto, y sobre todo, **distinta editabilidad futura** — la
+tanda 2 va a dejar que el usuario cambie SUSS entre 18% y 20,4% con el selector de MiPyME, mientras
+que obra social patronal no se toca nunca. Si estuvieran fusionadas en un 24%, el día que el
+usuario cambie a "sin MiPyME" y el desglose pase a mostrar 26,4%, no tendría forma de saber cuál de
+los dos componentes se movió.
+
+**"Ver detalle" queda disponible en los dos modos** (con cargas y sin cargas), decisión tomada acá
+y no en el diseño original — en modo sin cargas, ver qué es lo que no se está pagando es
+justamente lo más útil, no menos. El desglose en sí **no cambia entre modos**: siempre describe la
+composición "con cargas", porque es la referencia fija, esté el toggle activo o no.
+
+### "aproximadamente" en el texto de la cabecera
+
+El texto original decía "Multiplicador aplicado: **1,72×**", sin calificarlo. Como el cartel
+describe una sola categoría (`AYUD`) para las 5, un usuario que calcule a mano el multiplicador de
+Oficial Especializado (1,71) y lo compare contra un "1,72×" presentado como cifra exacta podría
+pensar que la app calcula mal. **"Multiplicador aplicado: aproximadamente 1,72×"** deja claro que
+es un valor de referencia, no una afirmación puntual sobre las 5 categorías.
+
+### Implementación
+
+`ObraPresupuestoConfig`/`ObraPresupuestoConfigRepository` extendidos con `aplicaCargasSociales`
+(editable, `actualizarAplicaCargasSociales`) + las 7 alícuotas (solo lectura). Modelo
+`ValorHoraCategoria` + `ValorHoraManoObraRepository.getValorHoraPorCategoria` nuevos — devuelven
+las 5 categorías siempre, no solo `AYUD`, porque la tanda 2 (panel de edición) las va a necesitar
+todas. Widget `CartelCostoManoObra` (`lib/presentation/obra_detalle/tabs/cartel_costo_mano_obra.dart`),
+autocontenido (mismo patrón que `SelectorTipoPresupuesto`), insertado en `mat_y_mo_tab.dart` arriba
+de la sección "Mano de obra", solo cuando esa sección tiene filas. Recibe `onCambio`, llamado
+después de guardar el tilde — el consolidado de `MatYMoTab` tiene que recargarse porque el valor de
+mano de obra cambia con el modo.
+
+### Pendiente anotado, sin acción — `multiplicador` (el campo viejo) miente cuando hay override
+
+Encontrado al verificar en el emulador (2026-09-02), con el override de $7.500 puesto en `AYUD`:
+`multiplicador` (el campo original de `0039`, no `multiplicador_con_cargas`) sigue dando 1,72 —
+el valor calculado — en vez de reflejar el override (`7.500 / 1.271.424 ≈ 0,59`). La función aplica
+el override solo a `valor_hora`, nunca a `multiplicador`.
+
+**No se toca ahora** — el cartel usa `multiplicador_con_cargas` (que ignora el override a
+propósito, es la referencia fija) y `valor_hora`/`origen` (que sí lo reflejan) para todo lo que
+muestra, así que hoy nada consume el `multiplicador` viejo de una forma que este comportamiento
+rompa. Pero es una columna real del contrato público de la función que hoy puede devolver un número
+que no describe el valor efectivo de esa categoría — si algún consumidor futuro (la tanda 2, un
+reporte, otra pantalla) lo usa sin saber esto, va a mostrar un multiplicador incorrecto en silencio
+cuando haya un override activo. Revisar esta columna (¿debería reflejar el override, o
+deprecarse en favor de derivarlo en el consumidor a partir de `valor_hora`/`remuneracion_mensual`?)
+antes de que algo nuevo dependa de ella.

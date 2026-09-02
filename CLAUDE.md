@@ -781,11 +781,23 @@ nunca en `obra_insumo_precios` — filtrado con `ins.tipo != 'mano_obra'` en el 
 `docs/costo_mano_de_obra_decisiones.md` §13), y en `obra_insumo_precios` sin cambios para
 materiales.
 
-**Sin construir todavía**: ninguna UI de parámetros — ni el bloque plegable del cartel, ni el
-selector "con/sin certificado MiPyME" para `suss_pct`, ni el control de `zona_uocra` (tiene que
-restringir a las zonas que existen en `escala_salarial_uocra`, no aceptar texto libre). **Bloqueante
-para repartir el APK**: no hay ninguna forma de borrar un `obra_valor_hora_override` desde la app
-(§13) — hoy fijar un valor hora a mano es un camino sin retorno sin acceso directo a SQL.
+**Paso 5, tanda 1 cerrada (2026-09-02, migración `0043`)**: primera UI real de la pieza.
+`CartelCostoManoObra` (`lib/presentation/obra_detalle/tabs/cartel_costo_mano_obra.dart`), arriba de
+la sección "Mano de obra" en Mat y MO — cartel informativo (multiplicador de referencia, categoría
+Ayudante, siempre "aproximadamente") + tilde `aplica_cargas_sociales` (Free y PRO, de obra
+entera) + desglose plegable de las 6 líneas de cargas sociales con su cita legal, leído en vivo de
+`obra_presupuesto_config`. `calcular_valor_hora_mano_obra` suma `valor_hora_con_cargas`/
+`multiplicador_con_cargas`, independientes del toggle, para que el cartel muestre siempre el mismo
+número de referencia sin importar el modo. Detalle completo de todas las decisiones (por qué
+Ayudante, por qué la aclaración de override es solo para esa categoría, por qué 6 líneas y no 4) en
+`docs/costo_mano_de_obra_decisiones.md` §14.
+
+**Sin construir todavía**: el panel de los 7 parámetros detrás del lapicito (tanda 2 del Paso 5),
+el selector "con/sin certificado MiPyME" editable para `suss_pct`, el control de `zona_uocra`
+(tiene que restringir a las zonas que existen en `escala_salarial_uocra`, no aceptar texto libre).
+**Bloqueante para repartir el APK**: no hay ninguna forma de borrar un `obra_valor_hora_override`
+desde la app (`docs/costo_mano_de_obra_decisiones.md` §11/§13) — hoy fijar un valor hora a mano es
+un camino sin retorno sin acceso directo a SQL.
 
 ### Importador de Excel/PDF: diseño de datos cerrado en dos capas, sin implementar (2026-08-22)
 

@@ -3,6 +3,7 @@ import '../../../core/utils/parser_numero_ar.dart';
 import '../../../data/models/insumo_consolidado_obra.dart';
 import '../../../services/auth_service.dart';
 import '../../../services/obra_insumos_repository.dart';
+import 'cartel_costo_mano_obra.dart';
 
 /// Una sección de la lista de insumos (título, ícono, predicado sobre `InsumoConsolidadoObra.tipo`).
 /// Agregar una sección nueva (ej. "Equipos") es sumar una entrada acá — no reescribir el filtrado.
@@ -171,7 +172,14 @@ class _MatYMoTabState extends State<MatYMoTab> {
               ),
             )
           else
-            for (final seccion in _secciones) ..._buildSeccion(seccion),
+            for (final seccion in _secciones) ...[
+              // Cartel de costo de mano de obra + tilde de cargas sociales (Paso 5, tanda 1) —
+              // arriba de la sección, solo cuando esa sección va a tener filas (mismo criterio
+              // que _buildSeccion: sin banner sobre una lista vacía).
+              if (seccion.titulo == 'Mano de obra' && _insumos.any(seccion.predicado))
+                CartelCostoManoObra(obraId: widget.obraId, onCambio: _cargarConsolidado),
+              ..._buildSeccion(seccion),
+            ],
         ],
       ),
     );
