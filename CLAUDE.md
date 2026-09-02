@@ -818,11 +818,14 @@ propia config al abrirse (no la recibe por constructor) para no quedar desactual
 sin cerrar la Ventana 1 — mismo principio que el gate de PRO en vivo, no confiar en una foto que
 otro widget ya tenía (§16). **Bloqueante resuelto**: "Volver al calculado" — único, como camino
 principal en la propia fila del consolidado (en ninguna de las dos ventanas), borra el
-`obra_valor_hora_override` de la categoría. **Pendiente conocido**: el "por defecto X" de los 7
-campos de la Ventana 2 muestra el valor ACTUAL de la obra, no el default real de la columna —
-etiqueta falsa cuando alguien ya cambió ese campo (§15, corrección post-verificación) — arreglo
-previsto con constantes Dart, siguiente paso después de esta separación.
-`0044` suma un `check`
+`obra_valor_hora_override` de la categoría. El "por defecto X" de los 7 campos de la Ventana 2 sale
+de `CargasSocialesDefaults` (`lib/data/models/cargas_sociales_defaults.dart`), constantes Dart
+copiadas a mano de los defaults reales de columna — no de la config actual de la obra (bug real,
+encontrado en uso: mostraba como "por defecto" lo que el usuario acababa de escribir), ni de una
+función que lea el catálogo de Postgres en vivo (evaluada y descartada por desproporcionada, §17).
+Toda migración futura que cambie un default de `obra_presupuesto_config` tiene que actualizar esa
+clase a mano — se avisa en el comentario de la propia clase y en el de `0046`, la primera que lo
+necesitó. `0044` suma un `check`
 (`horas_mensuales > horas_improductivas_mensuales`) — primera vez que esas columnas son editables
 desde la app, sin el check un valor inválido rompía la división de
 `calcular_valor_hora_mano_obra`. Detalle completo de esta tanda, incluida la desincronización

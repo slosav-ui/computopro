@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../core/utils/parser_numero_ar.dart';
+import '../../../data/models/cargas_sociales_defaults.dart';
 import '../../../data/models/obra_presupuesto_config.dart';
 import '../../../data/models/zona_uocra.dart';
 import '../../../services/auth_service.dart';
@@ -51,9 +52,7 @@ class _PanelParametrosCargasSocialesState extends State<PanelParametrosCargasSoc
   TextEditingController? _horasImproductivasController;
   TextEditingController? _vacacionesController;
   bool _esMiPyme = false;
-  bool _esMiPymeInicial = false;
   String _zonaSeleccionada = '';
-  String _zonaInicial = '';
 
   List<ZonaUocra>? _zonasDisponibles;
   String? _errorParametros;
@@ -89,9 +88,7 @@ class _PanelParametrosCargasSocialesState extends State<PanelParametrosCargasSoc
       // Cualquier valor que no sea exactamente 20,4 se trata como "con MiPyME" (18, el default de
       // 0036) — defensivo ante un valor viejo o manual que no coincida con ninguno de los dos.
       _esMiPyme = config.sussPct != 20.4;
-      _esMiPymeInicial = _esMiPyme;
       _zonaSeleccionada = config.zonaUocra;
-      _zonaInicial = _zonaSeleccionada;
     });
   }
 
@@ -113,10 +110,8 @@ class _PanelParametrosCargasSocialesState extends State<PanelParametrosCargasSoc
 
   String _fmtEntrada(double v) => v == v.roundToDouble() ? v.toInt().toString() : v.toStringAsFixed(2);
 
-  /// Solo para mostrar "por defecto X" en pantalla. Muestra el valor ACTUAL de la obra, no el
-  /// default real de la columna — bug conocido, pendiente de arreglo con constantes Dart en el
-  /// próximo cambio (ver docs/costo_mano_de_obra_decisiones.md §15/§16). No se toca acá: este
-  /// cambio es solo la separación en dos ventanas + que la config no quede vieja.
+  /// Formato de lectura para el usuario (coma decimal) — usado tanto para el valor actual del
+  /// campo como para el "por defecto X" de `CargasSocialesDefaults` en los labels de más abajo.
   String _fmtComa(double v) => _fmtEntrada(v).replaceAll('.', ',');
 
   Map<String, double>? _validarParametros() {
@@ -254,37 +249,38 @@ class _PanelParametrosCargasSocialesState extends State<PanelParametrosCargasSoc
                 groupValue: _esMiPyme,
                 onChanged: (v) => setState(() => _esMiPyme = v!),
               ),
-              // "Por defecto", nunca "correcto" — el valor sale de la columna en la base, no de
-              // ninguna autoridad normativa (a diferencia del "Volver" del valor hora, que sí
-              // tiene un destino con autoridad: la escala UOCRA). Mismo criterio en los 5 campos
-              // de abajo y en la zona — ver docs/costo_mano_de_obra_decisiones.md §15. Muestra el
-              // valor ACTUAL, no el default real — bug conocido, ver _fmtComa.
+              // "Por defecto", nunca "correcto" — el valor sale de CargasSocialesDefaults (copia a
+              // mano del default real de la columna, no de la config actual de esta obra — ver el
+              // comentario de esa clase), no de ninguna autoridad normativa (a diferencia del
+              // "Volver" del valor hora, que sí tiene un destino con autoridad: la escala UOCRA).
+              // Mismo criterio en los 5 campos de abajo y en la zona — ver
+              // docs/costo_mano_de_obra_decisiones.md §15.
               Text(
-                'Por defecto: ${_esMiPymeInicial ? "con certificado MiPyME (18%)" : "sin certificado MiPyME (20,4%)"}',
+                'Por defecto: ${CargasSocialesDefaults.sussPct != 20.4 ? "con certificado MiPyME (18%)" : "sin certificado MiPyME (20,4%)"}',
                 style: const TextStyle(fontSize: 9, color: Colors.black45),
               ),
               const SizedBox(height: 8),
               _buildCampoParametro(
-                label: 'ART (%) — por defecto ${_fmtComa(config.artPct)}',
+                label: 'ART (%) — por defecto ${_fmtComa(CargasSocialesDefaults.artPct)}',
                 helper: 'Sacalo de tu póliza — el valor cargado es un supuesto de la liquidadora, no verificado.',
                 controller: artController,
               ),
               _buildCampoParametro(
-                label: 'Fondo de Cese (%) — por defecto ${_fmtComa(config.fondoCesePct)}',
+                label: 'Fondo de Cese (%) — por defecto ${_fmtComa(CargasSocialesDefaults.fondoCesePct)}',
                 controller: fondoCeseController,
               ),
               _buildCampoParametro(
-                label: 'Horas mensuales — por defecto ${_fmtComa(config.horasMensuales)}',
+                label: 'Horas mensuales — por defecto ${_fmtComa(CargasSocialesDefaults.horasMensuales)}',
                 controller: horasMensualesController,
               ),
               _buildCampoParametro(
                 label: 'Horas improductivas mensuales — por defecto '
-                    '${_fmtComa(config.horasImproductivasMensuales)}',
+                    '${_fmtComa(CargasSocialesDefaults.horasImproductivasMensuales)}',
                 controller: horasImproductivasController,
               ),
               _buildCampoParametro(
                 label: 'Vacaciones (jornales/mes) — por defecto '
-                    '${_fmtComa(config.vacacionesJornalesMes)}',
+                    '${_fmtComa(CargasSocialesDefaults.vacacionesJornalesMes)}',
                 controller: vacacionesController,
               ),
               const SizedBox(height: 4),
@@ -326,13 +322,15 @@ class _PanelParametrosCargasSocialesState extends State<PanelParametrosCargasSoc
     );
   }
 
-  /// Nombre de la zona inicial (para el "por defecto" del selector) — resuelto contra
-  /// `_zonasDisponibles` cuando ya cargó; si no, el código solo, mejor que nada mientras carga.
-  String _nombreZonaInicial(List<ZonaUocra> zonas) {
+  /// Nombre de la zona por defecto (`CargasSocialesDefaults.zonaUocra`, no la seleccionada
+  /// actualmente en esta obra — mismo bug que ya se arregló en los otros 6 campos, ver
+  /// docs/costo_mano_de_obra_decisiones.md §15) — resuelto contra `_zonasDisponibles` cuando ya
+  /// cargó; si no, el código solo, mejor que nada mientras carga.
+  String _nombreZonaPorDefecto(List<ZonaUocra> zonas) {
     for (final z in zonas) {
-      if (z.codigo == _zonaInicial) return z.nombre;
+      if (z.codigo == CargasSocialesDefaults.zonaUocra) return z.nombre;
     }
-    return _zonaInicial;
+    return CargasSocialesDefaults.zonaUocra;
   }
 
   Widget _buildCampoZona() {
@@ -357,7 +355,7 @@ class _PanelParametrosCargasSocialesState extends State<PanelParametrosCargasSoc
             initialValue: zonas.any((z) => z.codigo == _zonaSeleccionada) ? _zonaSeleccionada : zonas.first.codigo,
             isDense: true,
             decoration: InputDecoration(
-              labelText: 'Zona UOCRA — por defecto ${_nombreZonaInicial(zonas)}',
+              labelText: 'Zona UOCRA — por defecto ${_nombreZonaPorDefecto(zonas)}',
               labelStyle: const TextStyle(fontSize: 11),
               isDense: true,
             ),

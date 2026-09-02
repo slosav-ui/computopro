@@ -997,9 +997,57 @@ controllers anteriores antes de crear los nuevos — defensivo: hoy se llama una
 `initState`, pero si en el futuro se agrega una forma de recargar, evita una fuga silenciosa de
 controllers sin `dispose`.
 
-### Verificado en el emulador — pendiente
+### Verificado en el emulador — confirmado
 
-Sin migración este cambio, verificación directa con hot restart. Casos a cubrir: los que ya se
-verificaron para la tanda anterior (ahora repartidos entre las dos ventanas), más el caso puntual
-que motivó el Caso 2 — abrir la ventana 2, guardar, reabrirla sin cerrar la ventana 1, confirmar que
-muestra los valores recién guardados y no los viejos.
+Los 14 casos de la lista de verificación pasaron, incluido el caso puntual que motivó el Caso 2:
+guardar en la ventana 2, reabrirla sin cerrar la ventana 1, confirmar que muestra los valores
+recién guardados. Commiteado en `30915f4` junto con todo el trabajo de la primera etapa de esta
+tanda (panel de 7 parámetros, `0044`, `0045`, "Volver" en la fila) — no había punto de corte limpio
+en git entre las dos etapas (nada se había commiteado en el camino), así que quedaron en un solo
+commit; el porqué completo está en el propio mensaje de ese commit. De ahí sale también la regla
+nueva en `CLAUDE.md` (Reglas de edición, punto 6): cada tanda verificada se commitea antes de
+arrancar la siguiente.
+
+## 17. El "por defecto" real — `CargasSocialesDefaults`, constantes Dart — 2026-09-02
+
+Cierra el bug anotado en §15/§16: el "por defecto X" de los 7 campos leía `config` (la
+configuración ACTUAL de la obra que se está editando), no el default real de la columna. Confirmado
+en uso real por el usuario: después de guardar 191 en horas mensuales, la etiqueta pasó a decir
+"por defecto 191" — le devolvía como default lo que la persona acababa de escribir, y perdía la
+única referencia de a qué volver.
+
+**Fuente elegida: constantes Dart** (`lib/data/models/cargas_sociales_defaults.dart`), no una
+función que lea en vivo el catálogo de Postgres (`pg_attrdef`) — esa opción se diseñó y se descartó
+por desproporcionada: dos funciones nuevas en la base, una `security definer` que evalúa
+expresiones del catálogo con `execute format`, un `revoke`, un modelo Dart, un método de
+repositorio y una carga asíncrona más en el panel, todo para mostrar seis números en una etiqueta.
+Mismo criterio que ya rige otros datos de esta pieza que cambian poco y a mano: la escala salarial
+UOCRA se carga en cada paritaria sin motor automático, FICS/IERIC/FODECO viven como columna
+justamente para poder corregirlas con un `UPDATE` simple.
+
+El riesgo real de las constantes — que se desincronicen del default de la columna el día que una
+migración lo cambie — se maneja por escrito, no por mecanismo: la propia clase lo dice en su
+comentario ("esto NO se actualiza solo"), y `0046` (la primera migración que lo necesitó) dejó el
+mismo aviso en su propio comentario, para que quien escriba la próxima migración sobre esta tabla
+lo vea ahí mismo, no solo acá.
+
+Valores actuales — reflejan el estado de la base **después** de `0046`, no los defaults originales
+de `0036`/`0037`/`0038`:
+
+| campo | columna | default | migración que lo fijó |
+|---|---|---|---|
+| ART | `art_pct` | 10,23 | `0036` |
+| Fondo de Cese | `fondo_cese_pct` | 12 | `0036` |
+| SUSS | `suss_pct` | 18 (con MiPyME) | `0036` |
+| Horas mensuales | `horas_mensuales` | 190,67 | `0036`, cambiado por `0046` |
+| Horas improductivas | `horas_improductivas_mensuales` | 15,62 | `0036`, cambiado por `0046` |
+| Vacaciones | `vacaciones_jornales_mes` | 1 | `0037` |
+| Zona UOCRA | `zona_uocra` | B | `0038` |
+
+Entra en el mismo cambio el arreglo de `_nombreZonaInicial` (renombrado `_nombreZonaPorDefecto`),
+que tenía el mismo bug: resolvía `_zonaInicial` (la zona actual de la obra), no el default. Se
+sacaron del archivo `_esMiPymeInicial` y `_zonaInicial` — quedaron sin ningún uso una vez que el
+"por defecto" dejó de leer la config, la única razón por la que existían.
+
+Verificado: `flutter analyze` sin issues nuevos (28, mismo conteo que antes del cambio), `flutter
+test` 36/36.
