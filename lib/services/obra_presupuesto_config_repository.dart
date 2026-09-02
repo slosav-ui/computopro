@@ -65,6 +65,39 @@ class ObraPresupuestoConfigRepository {
     return _fromRow(updated);
   }
 
+  /// Panel de 7 parámetros del Paso 5, tanda 2 (ver docs/costo_mano_de_obra_decisiones.md §15) —
+  /// a diferencia del resto de los métodos de este repositorio (una columna por llamada), este
+  /// manda las 7 juntas a propósito: se editan y se guardan como un solo formulario detrás de un
+  /// único botón "Guardar", no como controles independientes — separarlo en 7 llamadas no gana
+  /// nada y multiplica el round-trip sin ninguna ganancia de consistencia (las 7 se validan juntas
+  /// en el panel antes de llegar acá).
+  Future<ObraPresupuestoConfig> actualizarCargasSociales({
+    required String obraId,
+    required double sussPct,
+    required double artPct,
+    required double fondoCesePct,
+    required double horasMensuales,
+    required double horasImproductivasMensuales,
+    required double vacacionesJornalesMes,
+    required String zonaUocra,
+  }) async {
+    final updated = await _client
+        .from('obra_presupuesto_config')
+        .update({
+          'suss_pct': sussPct,
+          'art_pct': artPct,
+          'fondo_cese_pct': fondoCesePct,
+          'horas_mensuales': horasMensuales,
+          'horas_improductivas_mensuales': horasImproductivasMensuales,
+          'vacaciones_jornales_mes': vacacionesJornalesMes,
+          'zona_uocra': zonaUocra,
+        })
+        .eq('obra_id', obraId)
+        .select()
+        .single();
+    return _fromRow(updated);
+  }
+
   ObraPresupuestoConfig _fromRow(Map<String, dynamic> row) {
     return ObraPresupuestoConfig(
       obraId: row['obra_id'].toString(),
@@ -86,6 +119,10 @@ class ObraPresupuestoConfigRepository {
       iericPct: (row['ieric_pct'] as num).toDouble(),
       fodecoPct: (row['fodeco_pct'] as num).toDouble(),
       uocraEmpleadorPct: (row['uocra_empleador_pct'] as num).toDouble(),
+      horasMensuales: (row['horas_mensuales'] as num).toDouble(),
+      horasImproductivasMensuales: (row['horas_improductivas_mensuales'] as num).toDouble(),
+      vacacionesJornalesMes: (row['vacaciones_jornales_mes'] as num).toDouble(),
+      zonaUocra: row['zona_uocra'] as String,
     );
   }
 

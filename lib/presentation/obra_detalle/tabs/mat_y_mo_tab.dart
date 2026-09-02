@@ -1,9 +1,14 @@
 import 'package:flutter/material.dart';
 import '../../../core/utils/parser_numero_ar.dart';
 import '../../../data/models/insumo_consolidado_obra.dart';
+import '../../../data/models/obra_presupuesto_config.dart';
+import '../../../data/models/valor_hora_categoria.dart';
 import '../../../services/auth_service.dart';
 import '../../../services/obra_insumos_repository.dart';
+import '../../../services/obra_presupuesto_config_repository.dart';
+import '../../../services/valor_hora_mano_obra_repository.dart';
 import 'cartel_costo_mano_obra.dart';
+import 'panel_valor_hora_mano_obra.dart';
 
 /// Una sección de la lista de insumos (título, ícono, predicado sobre `InsumoConsolidadoObra.tipo`).
 /// Agregar una sección nueva (ej. "Equipos") es sumar una entrada acá — no reescribir el filtrado.
@@ -15,9 +20,10 @@ class _SeccionInsumos {
   const _SeccionInsumos(this.titulo, this.icono, this.predicado);
 }
 
-/// Solapa "Mat y MO" — paso 3 de la pieza (ver memoria "mat_y_mo_fuentes_precio"): consolidado
-/// real de insumos de la obra, con edición manual de precio por insumo. Reemplaza el mock que
-/// tenía `presupuestos_screen.dart._buildTabMaterialesYMo()`.
+/// Solapa "Mat y MO" — consolidado real de insumos de la obra, con edición manual de precio por
+/// insumo (materiales) y por categoría UOCRA (mano de obra, ver
+/// docs/costo_mano_de_obra_decisiones.md). Reemplaza el mock que tenía
+/// `presupuestos_screen.dart._buildTabMaterialesYMo()`.
 class MatYMoTab extends StatefulWidget {
   final String obraId;
 
@@ -29,6 +35,8 @@ class MatYMoTab extends StatefulWidget {
 
 class _MatYMoTabState extends State<MatYMoTab> {
   final ObraInsumosRepository _obraInsumosRepository = ObraInsumosRepository();
+  final ObraPresupuestoConfigRepository _configRepository = ObraPresupuestoConfigRepository();
+  final ValorHoraManoObraRepository _valorHoraRepository = ValorHoraManoObraRepository();
   final AuthService _authService = AuthService();
 
   // Sin sección propia de Equipos todavía (mismo criterio que el badge de presupuesto en firme:
@@ -40,6 +48,11 @@ class _MatYMoTabState extends State<MatYMoTab> {
   ];
 
   List<InsumoConsolidadoObra> _insumos = [];
+  ObraPresupuestoConfig? _config;
+  // Paso 5, tanda 2: valor hora por categoría UOCRA, para la línea "Volver" de cada fila con
+  // override — ver docs/costo_mano_de_obra_decisiones.md §15. Independiente de la carga que hace
+  // CartelCostoManoObra (a propósito, no se toca ese widget en esta tanda).
+  Map<String, ValorHoraCategoria> _valorHoraPorCategoria = {};
   bool _cargando = true;
   String? _error;
 
@@ -49,16 +62,35 @@ class _MatYMoTabState extends State<MatYMoTab> {
     _cargarConsolidado();
   }
 
+  /// Carga las tres cosas que la solapa necesita en conjunto — consolidado, config de la obra y
+  /// valor hora por categoría. Se recarga entera tanto al abrir la solapa como después de
+  /// cualquier cambio (editar precio, tildar cargas sociales desde el cartel, guardar o borrar un
+  /// override, guardar los 7 parámetros) para que nada quede desincronizado — ver
+  /// docs/costo_mano_de_obra_decisiones.md §15 sobre por qué las tres fuentes tienen que recargar
+  /// juntas.
+  ///
+  /// El estado PRO NO se carga acá — el panel de mano de obra lo verifica en vivo en el momento
+  /// de guardar (ver panel_valor_hora_mano_obra.dart), no contra una foto vieja: un `esPro`
+  /// cargado acá y pasado por parámetro fue exactamente el bug real que dejaba pasar un guardado
+  /// de Free sin mostrar el diálogo de función PRO.
   Future<void> _cargarConsolidado() async {
     setState(() {
       _cargando = true;
       _error = null;
     });
     try {
-      final insumos = await _obraInsumosRepository.getConsolidado(widget.obraId);
+      final insumosFuture = _obraInsumosRepository.getConsolidado(widget.obraId);
+      final configFuture = _configRepository.getConfig(widget.obraId);
+      final valorHoraFuture = _valorHoraRepository.getValorHoraPorCategoria(widget.obraId);
+
+      final insumos = await insumosFuture;
+      final config = await configFuture;
+      final valorHora = await valorHoraFuture;
       if (!mounted) return;
       setState(() {
         _insumos = insumos;
+        _config = config;
+        _valorHoraPorCategoria = {for (final v in valorHora) v.categoriaUocra: v};
         _cargando = false;
       });
     } catch (e) {
@@ -175,7 +207,9 @@ class _MatYMoTabState extends State<MatYMoTab> {
             for (final seccion in _secciones) ...[
               // Cartel de costo de mano de obra + tilde de cargas sociales (Paso 5, tanda 1) —
               // arriba de la sección, solo cuando esa sección va a tener filas (mismo criterio
-              // que _buildSeccion: sin banner sobre una lista vacía).
+              // que _buildSeccion: sin banner sobre una lista vacía). onCambio sigue apuntando a
+              // _cargarConsolidado, que ahora también recarga config y valor hora por categoría —
+              // el cartel no se tocó, solo lo que ese callback hace por dentro.
               if (seccion.titulo == 'Mano de obra' && _insumos.any(seccion.predicado))
                 CartelCostoManoObra(obraId: widget.obraId, onCambio: _cargarConsolidado),
               ..._buildSeccion(seccion),
@@ -249,6 +283,16 @@ class _MatYMoTabState extends State<MatYMoTab> {
   }
 
   Widget _buildTrailing(InsumoConsolidadoObra insumo) {
+    // "Volver" a la vista, en la propia fila (Paso 5, tanda 2 — ver
+    // docs/costo_mano_de_obra_decisiones.md §15): el camino principal para deshacer un override no
+    // es el panel del lápiz, es esto — el usuario que fijó un valor hace dos meses no va a abrir
+    // el panel para encontrarlo. Solo aparece con datos completos (categoría + config cargados);
+    // si por lo que sea faltara alguno, no se muestra nada en vez de arriesgar un null.
+    final categoria = insumo.categoriaUocra != null ? _valorHoraPorCategoria[insumo.categoriaUocra] : null;
+    final config = _config;
+    final muestraVolver =
+        insumo.tipo == 'mano_obra' && insumo.origen == 'override' && categoria != null && config != null;
+
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -265,12 +309,24 @@ class _MatYMoTabState extends State<MatYMoTab> {
                 const SizedBox(height: 4),
                 _buildBadgeManual(),
               ],
+              if (muestraVolver) ...[
+                const SizedBox(height: 2),
+                InkWell(
+                  onTap: () => _onVolverDesdeFila(insumo),
+                  child: Text(
+                    // El valor al que volvería es el que tomaría hoy sin override: con cargas o
+                    // sin cargas según el tilde actual de la obra — mismo criterio que el panel.
+                    'Valor UOCRA: ${_fmtPrecio(config.aplicaCargasSociales ? categoria.valorHoraConCargas : categoria.valorHoraSinCargas)} — Volver',
+                    style: const TextStyle(fontSize: 9, color: Color(0xFF1B365D), decoration: TextDecoration.underline),
+                  ),
+                ),
+              ],
             ],
           )
         else
           _buildFaltaPrecio(),
         InkWell(
-          onTap: () => _mostrarDialogoEditarPrecio(insumo),
+          onTap: () => _onTocarLapiz(insumo),
           child: const Padding(
             padding: EdgeInsets.all(6),
             child: Icon(Icons.edit, size: 16, color: Color(0xFF1B365D)),
@@ -324,31 +380,63 @@ class _MatYMoTabState extends State<MatYMoTab> {
     );
   }
 
+  /// "Volver" desde la fila (no desde el panel) — borra el override y recarga todo. Sin diálogo de
+  /// confirmación a propósito: el valor de destino ya se muestra en el propio link antes de
+  /// tocarlo, esa es la decisión informada que pedía el diseño — un diálogo encima sería fricción
+  /// redundante.
+  Future<void> _onVolverDesdeFila(InsumoConsolidadoObra insumo) async {
+    final categoria = insumo.categoriaUocra;
+    if (categoria == null) return;
+    try {
+      await _obraInsumosRepository.borrarValorHoraOverride(obraId: widget.obraId, categoriaUocra: categoria);
+      await _cargarConsolidado();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No se pudo volver al valor calculado.')),
+      );
+    }
+  }
+
+  /// Dispatch del lápiz: mano de obra abre el panel dedicado (categoría, no insumo suelto — ver
+  /// docs/costo_mano_de_obra_decisiones.md §13/§15); materiales siguen con el diálogo genérico de
+  /// siempre, sin cambios de comportamiento.
+  Future<void> _onTocarLapiz(InsumoConsolidadoObra insumo) async {
+    if (insumo.tipo == 'mano_obra') {
+      final categoria = insumo.categoriaUocra != null ? _valorHoraPorCategoria[insumo.categoriaUocra] : null;
+      final config = _config;
+      // Caso imposible en la práctica (constraint insumos_mano_obra_requiere_categoria, 0042) pero
+      // sin garantía absoluta desde Dart — si igual llegara a pasar, frena visible acá.
+      if (categoria == null || config == null) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Este insumo de mano de obra no tiene categoría UOCRA asignada — no se puede '
+              'editar. Es un dato inconsistente, avisá al soporte.',
+            ),
+          ),
+        );
+        return;
+      }
+      final cambio = await showDialog<bool>(
+        context: context,
+        builder: (_) => PanelValorHoraManoObra(
+          obraId: widget.obraId,
+          insumo: insumo,
+          todosLosInsumos: _insumos,
+          valorHoraCategoria: categoria,
+        ),
+      );
+      if (cambio == true) await _cargarConsolidado();
+    } else {
+      await _mostrarDialogoEditarPrecio(insumo);
+    }
+  }
+
   Future<void> _mostrarDialogoEditarPrecio(InsumoConsolidadoObra insumo) async {
     final usuarioId = _authService.usuarioActual?.id;
     if (usuarioId == null) return;
-
-    // Bifurcación del lapicito (ver docs/costo_mano_de_obra_decisiones.md §13): mano de obra
-    // escribe en obra_valor_hora_override, por categoría, no en obra_insumo_precios. Otros
-    // insumos de mano de obra que comparten la misma categoría (hoy solo AYUDANTE/AYUDA DE
-    // GREMIO) salen de _insumos ya cargado, sin consulta nueva ni nombre hardcodeado.
-    final otrosDeLaMismaCategoria = insumo.tipo == 'mano_obra'
-        ? _insumos
-            .where((i) =>
-                i.tipo == 'mano_obra' &&
-                i.categoriaUocra == insumo.categoriaUocra &&
-                i.insumoId != insumo.insumoId)
-            .toList()
-        : <InsumoConsolidadoObra>[];
-    final textoExplicativo = insumo.tipo != 'mano_obra'
-        ? 'Este precio se usa en el cálculo de todas las partidas de esta obra que llevan '
-            '${insumo.nombre}. Al guardarlo se actualiza el costo de esas partidas.'
-        : otrosDeLaMismaCategoria.isEmpty
-            ? 'Este valor hora corresponde a la categoría UOCRA de ${insumo.nombre} — se usa en '
-                'el cálculo de todas las partidas de esta obra que usan esa categoría.'
-            : 'Este valor hora es compartido: también corresponde a '
-                '${otrosDeLaMismaCategoria.map((o) => o.nombre).join(', ')}. Al guardarlo '
-                'cambian las dos filas y todas las partidas que usan esa categoría.';
 
     final controller = TextEditingController(
       text: insumo.precio != null ? insumo.precio!.toStringAsFixed(2) : '',
@@ -386,7 +474,8 @@ class _MatYMoTabState extends State<MatYMoTab> {
               ),
               const SizedBox(height: 12),
               Text(
-                textoExplicativo,
+                'Este precio se usa en el cálculo de todas las partidas de esta obra que llevan '
+                '${insumo.nombre}. Al guardarlo se actualiza el costo de esas partidas.',
                 style: TextStyle(fontSize: 10, color: Colors.grey[700]),
               ),
             ],
@@ -412,39 +501,13 @@ class _MatYMoTabState extends State<MatYMoTab> {
 
     if (nuevoPrecio == null) return;
 
-    // Caso imposible en la práctica (constraint insumos_mano_obra_requiere_categoria, 0042) pero
-    // sin garantía absoluta desde Dart -- si igual llegara a pasar, tiene que fallar visible acá,
-    // nunca caer en el "else" y escribir en obra_insumo_precios: esa tabla ya no se lee para mano
-    // de obra (0042), así que el guardado "funcionaría" sin error y el número nunca cambiaría.
-    if (insumo.tipo == 'mano_obra' && insumo.categoriaUocra == null) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Este insumo de mano de obra no tiene categoría UOCRA asignada — no se puede '
-            'guardar. Es un dato inconsistente, avisá al soporte.',
-          ),
-        ),
-      );
-      return;
-    }
-
     try {
-      if (insumo.tipo == 'mano_obra') {
-        await _obraInsumosRepository.guardarValorHoraOverride(
-          obraId: widget.obraId,
-          categoriaUocra: insumo.categoriaUocra!,
-          valorHora: nuevoPrecio,
-          usuarioId: usuarioId,
-        );
-      } else {
-        await _obraInsumosRepository.guardarPrecioManual(
-          obraId: widget.obraId,
-          insumoId: insumo.insumoId,
-          precio: nuevoPrecio,
-          usuarioId: usuarioId,
-        );
-      }
+      await _obraInsumosRepository.guardarPrecioManual(
+        obraId: widget.obraId,
+        insumoId: insumo.insumoId,
+        precio: nuevoPrecio,
+        usuarioId: usuarioId,
+      );
       await _cargarConsolidado();
     } catch (e) {
       if (!mounted) return;

@@ -556,3 +556,450 @@ reporte, otra pantalla) lo usa sin saber esto, va a mostrar un multiplicador inc
 cuando haya un override activo. Revisar esta columna (¿debería reflejar el override, o
 deprecarse en favor de derivarlo en el consumidor a partir de `valor_hora`/`remuneracion_mensual`?)
 antes de que algo nuevo dependa de ella.
+
+## 15. Panel de 7 parámetros + "Volver al calculado" (Paso 5, tanda 2) — CIERRA LA PIEZA — 2026-09-02
+
+Última tanda del Paso 5. Con esto, la pieza completa de costo de mano de obra queda cerrada de
+punta a punta: escala + cargas sociales (schema), función de cálculo, consolidado conectado,
+cartel informativo, y ahora edición completa con salida.
+
+### "Volver al calculado" — la fila es el camino principal, no el panel
+
+Hasta esta tanda, fijar un valor a mano en `obra_valor_hora_override` no tenía salida sin SQL
+directo — bloqueante para repartir el APK (§11, §13). Resuelto con `ObraInsumosRepository.
+borrarValorHoraOverride` (`DELETE` por `obra_id` + `categoria_uocra`) expuesto en **dos lugares**:
+
+1. **La propia fila del consolidado** (`mat_y_mo_tab.dart`, camino principal): cuando una fila de
+   mano de obra tiene `origen == 'override'`, debajo del precio aparece "Valor UOCRA: \$X —
+   Volver", tappable, sin diálogo de confirmación — el valor de destino ya está a la vista antes de
+   tocarlo, esa es la decisión informada; un diálogo encima sería fricción redundante sobre algo
+   que ya se decidió mostrar de antemano.
+2. **El panel del lápiz** (`PanelValorHoraManoObra`), para quien ya abrió a editar y se arrepiente.
+
+**Descartado un botón global "volver todo al calculado"** en el encabezado del bloque: el cartel ya
+vive ahí, el bloque tiene pocas filas, y un botón que no dice de qué fila específica confunde más
+de lo que ahorra — mismo criterio de "sin causa visible es peor que aproximado" que ya se usó para
+descartar rotar la categoría de referencia del cartel (§14).
+
+**El valor de destino es `valor_hora_con_cargas` o `valor_hora_sin_cargas` según el tilde vigente**
+— verificado por la cadena de fórmulas de `0039`/`0043`, no asumido: si se borra el override,
+`vh.valor_hora` cae a `costo_efectivo/horas_productivas`, que es exactamente uno de esos dos campos
+según `aplica_cargas_sociales`. Ninguna columna nueva hacía falta.
+
+### La desincronización encontrada al revisar el diseño — corregida antes de escribir código
+
+Para saber cuál de los dos valores mostrar, la fila necesita el tilde `aplica_cargas_sociales` de
+la obra — dato que hasta esta tanda solo cargaba `CartelCostoManoObra`, de forma independiente y
+sin tocar (decisión explícita de no reabrir la tanda 1). La solución: `MatYMoTab._cargarConsolidado`
+pasa a cargar **cuatro cosas juntas** — el consolidado, la config de la obra, el valor hora por
+categoría (`Map<String, ValorHoraCategoria>`) y el estado PRO — en vez de solo el consolidado. Es
+una copia independiente de la que ya mantiene el cartel (redundante, una lectura de una fila más
+por carga de pantalla), a propósito para no tocar ese widget.
+
+**El motivo de fondo**: `onCambio: _cargarConsolidado` ya era el callback que el cartel llama al
+cambiar el tilde — como ahora ese mismo método recarga las cuatro cosas, destildar cargas sociales
+actualiza la línea "Volver" de cada fila junto con los precios de la grilla, sin ningún código
+nuevo de sincronización. Si `_cargarConsolidado` hubiera seguido recargando solo el consolidado, la
+línea "Valor UOCRA" de una fila con override habría quedado mostrando el número del modo viejo
+mientras el resto de la pantalla ya reflejaba el modo nuevo — exactamente el tipo de número que
+queda mintiendo en un rincón que esta pieza viene evitando en cada paso. Verificado en el emulador
+con el override de \$7.500 en AYUD: destildar cargas sociales actualiza la línea "Volver" junto con
+los precios, no se queda en el número viejo.
+
+### El panel — dos niveles, un solo "Guardar" para los 7 parámetros
+
+`PanelValorHoraManoObra` (nuevo widget) reemplaza, solo para mano de obra, al diálogo genérico que
+`mat_y_mo_tab.dart` sigue usando para materiales sin cambios. Estructura:
+
+- **Arriba, lo único visible al abrir**: el campo de valor hora, mismo control y misma validación
+  de siempre — el 90% de los casos de uso terminan acá.
+- **Debajo, colapsado**: enlace "¿de dónde sale este número?" → despliega los 7 parámetros.
+- **Los 7, con un solo botón "Guardar" al pie de esa sección** (no siete gates de PRO
+  independientes) — Free puede escribir en los campos igual que cualquier otro control de esta app
+  ("Free ve todo, no edita"), pero tocar "Guardar" muestra `mostrarDialogoFuncionPro` en vez de
+  aplicar el cambio. Mismo patrón que `SelectorTipoPresupuesto`.
+- **SUSS se presenta como elección con nombre**, nunca como el campo técnico: *"Con certificado
+  MiPyME — 18%"* / *"Sin certificado MiPyME — 20,4%"* (`RadioListTile`, mapea a `suss_pct`). Los dos
+  valores salen de §1, no están hardcodeados de nuevo — están en el código porque son literales de
+  UI, pero coinciden con lo ya documentado ahí.
+- **ART** tiene helper text explícito: *"Sacalo de tu póliza — el valor cargado es un supuesto de
+  la liquidadora, no verificado"* — mismo pendiente de §1/§10, ahora visible en el momento en que
+  alguien lo va a editar, no solo en un documento.
+- **Fondo de Cese, horas mensuales, horas improductivas, vacaciones**: campos numéricos simples,
+  sin texto de ayuda adicional — no se agregó guía no pedida para no ampliar el alcance de esta
+  tanda.
+
+### Selector de zona — texto fijo con una zona, selector real con más de una
+
+Un solo componente (`_buildCampoZona`) lee `EscalaSalarialUocraRepository.getZonasDisponibles()` y
+decide: si la lista tiene 1 elemento (hoy, `'B'`), se muestra como texto fijo, no como un
+desplegable con una sola opción sin sentido de elegir; si tiene más de uno, se convierte solo en un
+`DropdownButtonFormField` real. **El día que se cargue una segunda zona no hace falta tocar ningún
+código acá** — el mismo componente ya sabe hacer las dos cosas según lo que lea. Sin esto, el
+selector de zona sería el control que vuelve alcanzable el `RAISE EXCEPTION` de zona faltante
+(§12) — con esto, sigue siendo inalcanzable en uso normal tal como estaba diseñado.
+
+### `horas_mensuales > horas_improductivas_mensuales` — check nuevo, doble capa
+
+Hallazgo real durante el diseño de esta tanda, no en la lista original: nada relacionaba
+`horas_mensuales` con `horas_improductivas_mensuales` desde que existen (`0036`) — sin las dos
+columnas nunca fueron editables desde la app, el problema era teórico. `calcular_valor_hora_mano_obra`
+divide por `horas_mensuales - horas_improductivas_mensuales`; si un PRO carga
+`horas_improductivas_mensuales >= horas_mensuales` desde este panel (primera vez que existe un
+camino de escritura), ese divisor cae a cero o negativo — error de división o un valor hora
+absurdo, sin ningún aviso.
+
+**Doble capa, mismo criterio que `insumos_mano_obra_requiere_categoria` (0042)**:
+- Dart valida al guardar (`PanelValorHoraManoObra._onGuardarParametros`), error inmediato e
+  inline, antes de llegar a la base.
+- `0044` agrega `check (horas_mensuales > horas_improductivas_mensuales)` en
+  `obra_presupuesto_config`, como red de seguridad si la validación de Dart se saltea por
+  cualquier motivo. Verificado antes de escribir la migración: ningún archivo de `lib/` leía ni
+  escribía estas dos columnas hasta esta tanda (grep sin resultados) — las 3 obras existentes
+  seguían en los defaults de `0036` (176 / 14,41), que cumplen el check.
+
+### Ayuda de Gremio — mismo mecanismo de datos, reubicado
+
+El panel reutiliza el mecanismo ya construido en la corrección anterior (§13): busca en
+`todosLosInsumos` otro insumo de mano de obra con la misma `categoriaUocra`, y si lo encuentra, lo
+nombra explícitamente en el texto — sin ningún nombre hardcodeado en el código. Con el catálogo
+actual, esto es lo que hace que el panel de AYUDA DE GREMIO diga que comparte valor con AYUDANTE
+(y viceversa), sin que el panel "sepa" que existe una categoría llamada así.
+
+### Refactor: la bifurcación de mano de obra sale de `_mostrarDialogoEditarPrecio`
+
+La rama de mano de obra que se agregó a ese diálogo genérico en la pieza anterior (§13) se retiró
+por completo — ese diálogo vuelve a ser exclusivamente para materiales, tal como era antes de esa
+pieza. Toda la lógica de mano de obra (guard de categoría nula, escritura del override, texto de
+categoría compartida) se mudó a `PanelValorHoraManoObra`. Es refactor, no cambio de comportamiento
+— verificado explícitamente en el emulador que el override sigue escribiendo en
+`obra_valor_hora_override` y no en `obra_insumo_precios` después de la mudanza, no se dio por
+bueno solo porque "no cambia el comportamiento".
+
+### Implementación
+
+Nuevos: `EscalaSalarialUocraRepository` (`getZonasDisponibles`), `PanelValorHoraManoObra`.
+Extendidos: `ObraInsumosRepository.borrarValorHoraOverride`,
+`ObraPresupuestoConfigRepository.actualizarCargasSociales` (las 7 columnas juntas, excepción
+deliberada al patrón de una columna por método — se guardan como un solo formulario). `ObraPresupuestoConfig`
+sumó `horasMensuales`/`horasImproductivasMensuales`/`vacacionesJornalesMes`/`zonaUocra` — hasta
+esta tanda el modelo no los tenía, pese a que las columnas existían desde `0036`/`0037`/`0038`.
+
+### Dos correcciones tras verificar en el emulador (`0045`)
+
+**El link no puede llamarse "¿de dónde sale este número?"** — ese texto ya lo usa el "Ver detalle"
+del cartel (§14), que explica sin editar nada. El de este panel edita siete parámetros reales.
+Explicar es leer, editar es tocar — dos verbos distintos, dos nombres distintos, aunque estén a un
+toque de distancia en la misma pantalla. Pasa a llamarse **"Ajustar cargas sociales"**.
+
+**"Zona B" sola no le dice a nadie qué abarca** — se agrega `zonas_uocra`, tabla catálogo nueva
+(`codigo`/`nombre`/`descripcion`), no una columna en `escala_salarial_uocra`. Motivo: la
+descripción es un dato por zona, pero `escala_salarial_uocra` acumula una fila nueva por categoría
+en cada paritaria (5 categorías × N vigencias, ver el diseño de `vigencia_desde`) — una columna ahí
+repetiría el mismo texto 5 veces cada vez que se carga una escala nueva; la tabla aparte lo guarda
+una sola vez por zona, se actualiza en un solo lugar. `escala_salarial_uocra.zona` suma una FK
+hacia `zonas_uocra.codigo` — beneficio de integridad aparte (evita un typo de zona silencioso en
+una futura carga), no lo que resuelve por sí solo la disciplina de "no cargar una zona sin escala"
+(eso sigue siendo manual, `getZonasDisponibles()` sigue derivando la lista de `escala_salarial_uocra`,
+nunca de `zonas_uocra` directamente — el catálogo describe, no habilita).
+
+Solo se sembró **Zona B** (Neuquén, Río Negro y Chubut) — la única con escala cargada. Las otras 3
+zonas reales del CCT 76/75 quedan documentadas en el comentario de `0045` para cuando se carguen,
+no como dato vivo:
+
+- **Zona A**: CABA y Buenos Aires, Santiago del Estero, Santa Fe, Mendoza, San Juan, Catamarca,
+  Córdoba, Entre Ríos, Salta, Tucumán, Chaco, San Luis, Corrientes, La Rioja, Formosa, Jujuy y
+  Misiones.
+- **Zona C**: Santa Cruz.
+- **Zona C Austral**: Tierra del Fuego.
+
+**Pendiente sin resolver, no bloqueante**: La Pampa aparece en Zona A según algunas fuentes y en
+Zona B según otras — no verificado contra el texto del CCT 76/75 en sí, solo contra notas de
+terceros. No bloquea hoy (Zona B es la única cargada, y La Pampa no está en discusión ahí), pero
+**hay que verificarlo contra el convenio real antes de cargar la escala de Zona A**, no antes.
+
+En pantalla, la etiqueta de zona nunca es el código solo — siempre `nombre — descripcion` (ej.
+"Zona B — Neuquén, Río Negro y Chubut"), con un texto de ayuda fijo debajo: **"La zona la determina
+la provincia donde se ejecuta la obra, no dónde está la sede de la empresa"** — la regla real del
+convenio, y el error más común si no se aclara.
+
+### PENDIENTE CRÍTICO — cargar el resto de las zonas es requisito para salir de Neuquén/Río Negro/Chubut, no una mejora
+
+Con una sola zona cargada, `zona_uocra` nace en `'B'` para toda obra nueva (default de la columna,
+`0038`) y el selector se muestra como texto fijo — correcto y deliberado mientras solo exista Zona
+B (§15, más arriba). Pero eso tiene una consecuencia real que no es evidente mirando el código: **un
+usuario de cualquier provincia fuera de Neuquén/Río Negro/Chubut hoy calcularía sus obras con la
+escala de Zona B, sin ningún aviso y sin poder corregirlo** — el selector no aparece mientras haya
+una sola zona, así que no hay ni siquiera un lugar donde notar el error. La diferencia entre Zona A
+y Zona B en la escala UOCRA es del orden de 15-20% — no es un margen de error menor.
+
+**Cargar las escalas de Zona A, Zona C y Zona C Austral es requisito para repartir la app fuera de
+esa región, no una mejora futura opcional.** Lo que hace falta ese día:
+
+1. Básicos reales de las 3 zonas en `escala_salarial_uocra`, con sus filas correspondientes en
+   `zonas_uocra` — fuente: el texto del CCT 76/75 o una circular oficial de UOCRA, **nunca**
+   resúmenes de terceros (se encontraron sitios con zonificaciones publicadas incorrectas al
+   armar esta lista).
+2. Resolver dónde ubica el convenio a **La Pampa** (Zona A según algunas fuentes, Zona B según
+   otras) — sigue sin resolver, ver nota de arriba.
+3. **Revisar el default de `zona_uocra` ('B') una vez que haya más de una zona cargada.** Un
+   default silencioso deja de ser aceptable con varias zonas reales compitiendo — las opciones son
+   preguntar la zona al crear la obra, o derivarla de la provincia si la obra ya la tiene cargada
+   como dato. Sin decidir todavía cuál.
+4. El selector de zona del panel **se activa solo**, sin tocar ningún código — `_buildCampoZona`
+   ya lee la cantidad de zonas disponibles y elige entre texto fijo y `DropdownButtonFormField`
+   automáticamente (§15). Lo único que falta ese día es el dato, no la UI.
+
+Las 4 zonas reales del CCT 76/75, para cuando se retome:
+
+| Zona | Provincias |
+|---|---|
+| A | CABA, Buenos Aires, Santiago del Estero, Santa Fe, Mendoza, San Juan, Catamarca, Córdoba, Entre Ríos, Salta, Tucumán, Chaco, San Luis, Corrientes, La Rioja, Formosa, Jujuy, Misiones |
+| B | Neuquén, Río Negro, Chubut |
+| C | Santa Cruz |
+| C Austral | Tierra del Fuego |
+
+### Bug real encontrado en la verificación — el gate de PRO no mostraba el diálogo
+
+Con `es_pro = false` confirmado por SQL, tocar "Guardar parámetros" no mostraba
+`mostrarDialogoFuncionPro` — el panel se cerraba directamente, como si hubiera guardado. Revisado
+el código línea por línea: la lógica en sí (chequeo antes de cualquier guardado, `return` antes de
+llegar al `Navigator.pop`) era correcta. **La causa real era el dato, no la lógica**: el panel
+recibía `esPro` como parámetro del constructor, una foto tomada por `MatYMoTab` la última vez que
+cargó — si la pestaña no se había recargado entera después del `UPDATE` de `es_pro` en la base
+(por ejemplo, abrir el panel sobre una pantalla que ya estaba abierta de antes), esa foto quedaba
+vieja sin que ningún error de código lo delatara.
+
+**Corregido dejando de confiar en la foto**: `_onGuardarParametros` ahora llama a
+`PerfilRepository.esPro(usuarioId)` **en el momento de tocar "Guardar parámetros"**, no antes —
+verificación en vivo contra la base, no contra un estado cargado quién sabe cuándo. El parámetro
+`esPro` del constructor de `PanelValorHoraManoObra` se sacó por completo (junto con `_esPro`/
+`PerfilRepository` en `MatYMoTab`, que ya no los necesita para nada más) — dejarlo ahí, sin uso,
+habría sido el mismo tipo de trampa: un campo que aparenta ser el gate y ya no lo es, esperando que
+alguien lo reconecte mal en el futuro.
+
+**Los dos comportamientos que pedía la verificación ya quedan cubiertos por esta misma
+corrección, no hacen falta cambios aparte**: el diálogo de función PRO aparece antes de que se
+intente guardar nada (el `return` corta el flujo inmediatamente después de mostrarlo), y el panel
+nunca llega a `Navigator.pop` cuando el guardado no se produjo — los campos tipeados por el usuario
+quedan intactos, visibles, listos para que lea el diálogo y entienda qué pasó.
+
+**CORRECCIÓN, esto de arriba estaba mal diagnosticado — ver la sección siguiente.** El gate de PRO
+nunca tuvo el bug: la verificación en vivo funcionaba desde el principio. El problema real era otro
+por completo, y esta "corrección" no lo tocaba — quedó como registro del camino equivocado, no
+como la explicación real.
+
+### El verdadero problema: el botón de guardar los parámetros vivía debajo del scroll — y, peor, dos botones "Guardar" con alcance distinto
+
+Verificado con una app reiniciada de cero (para eliminar la duda de hot reload) y scrolleando el
+panel hasta el final: **"Guardar parámetros de la obra" estaba ahí, y el gate de PRO funcionaba
+perfecto** cuando se llegaba a tocarlo. El bug real no era el gate — era que el botón quedaba fuera
+de vista sin ninguna señal de que había más contenido abajo, y mientras tanto existía un segundo
+botón "Guardar" (el del valor hora, al pie fijo del diálogo, el lugar donde cualquiera espera
+encontrar el botón de guardar) que **hacía algo completamente distinto y no lo decía**. El usuario
+que editaba ART y tocaba el "Guardar" visible se iba convencido de haber guardado, sin haber
+guardado nada — el mismo síntoma que se atribuyó al gate de PRO en la ronda anterior, pero por una
+causa completamente distinta.
+
+**Decisión: un solo botón "Guardar", al pie del diálogo, que guarda lo que corresponda de cada
+mitad según lo que el usuario haya tocado** — el usuario no tiene por qué saber que por debajo hay
+dos tablas distintas, eso es organización interna, no algo que la pantalla deba exponer.
+
+### Cómo se decide "qué tocó el usuario" — dos criterios distintos, uno para cada mitad
+
+No es el mismo método para las dos partes, porque equivocarse tiene consecuencias distintas en
+cada una:
+
+- **Valor hora**: comparación **numérica** contra el valor precargado, con tolerancia para
+  redondeo. Acá "guardar de más" tiene un costo real — si se guardara sin que el usuario haya
+  cambiado nada, cualquiera que abra el panel solo para mirar los parámetros saldría con un
+  override creado a traición, convirtiendo una categoría `calculado` en `override` sin haberlo
+  pedido. Eso rompería directamente "Volver al calculado" (§15, más arriba). Por eso acá sí importa
+  distinguir "cambió" de "no cambió".
+- **Parámetros (los 7)**: comparación de **texto crudo** de cada `TextEditingController` contra el
+  texto con el que se inicializó (`_artTextoInicial`, etc. — un snapshot guardado en `initState`,
+  no un número recalculado), más el booleano de MiPyME y el código de zona contra sus propios
+  snapshots iniciales. Nunca se comparan números parseados acá — comparar strings esquiva del todo
+  el problema de redondeo (si el usuario no tipeó nada, el string es idéntico byte a byte al que se
+  cargó). Guardar los mismos 7 valores de nuevo no tiene ningún efecto colateral (a diferencia del
+  valor hora), así que acá el sesgo hacia "guardar de más" no cuesta nada.
+
+**Primera versión de este criterio, con un falso positivo real encontrado en la verificación**: la
+condición inicial era solo "la sección se abrió alguna vez" (`_seccionParametrosAbierta`). Un
+usuario Free que abre "Ajustar cargas sociales" únicamente para mirar de dónde sale el número —el
+uso más común de ese link, es literalmente para lo que existe— y toca "Guardar" sin cambiar nada,
+salía con el cartel de función PRO reprochándole algo que no hizo, y el panel quedaba trabado.
+**Corregido**: `_parametrosTocados` exige `_seccionParametrosAbierta && _parametrosCambiaron` — la
+bandera de apertura sigue existiendo (sigue siendo necesaria: sin haber abierto la sección no hay
+nada que comparar), pero ya no alcanza sola.
+
+### El cierre del panel — regla final, con la corrección del caso "abrí para mirar, no toqué nada"
+
+El panel **cierra normal** cuando no había nada que guardar (`huboIntento == false`) — abrir para
+mirar y salir por "Guardar" es un uso legítimo, no un error, y no amerita ningún mensaje. **Queda
+abierto únicamente cuando algo se intentó y no se pudo** — validación inválida en cualquiera de las
+dos mitades, o bloqueado por PRO. El mensaje del cartel de función PRO está gateado por
+`huboGuardadoValorHora` (si esa mitad realmente se guardó), no por `valorHoraCambio` (si solo se
+intentó) — si el valor hora era inválido y no llegó a guardarse, el cartel no puede decir que se
+guardó.
+
+### El campo de valor hora vacío
+
+Si el usuario borra el campo y lo deja vacío, no se interpreta como "volver al calculado" (para eso
+ya existe el link "Volver", visible cuando hay override) — se trata como un intento inválido:
+aviso inline ("Vacío no se guarda — para volver al valor calculado usá 'Volver' arriba") y esa
+mitad no se guarda, sin bloquear que la mitad de parámetros sí se guarde si corresponde.
+
+### El `Scrollbar`
+
+`content` pasa de `SingleChildScrollView` solo a `Scrollbar(thumbVisibility: true, child:
+SingleChildScrollView(...))` — barra de scroll siempre visible, no solo mientras se arrastra. Con
+el botón ya afuera del área que scrollea esto no es indispensable para ese caso puntual, pero el
+problema de fondo (contenido largo sin ninguna señal de que hay más) sigue existiendo para
+cualquier campo de la sección expandida, así que se deja la señal general.
+
+### Verificado en el emulador — los 7 casos, todos correctos
+
+Abrir y cerrar sin tocar nada (cierra limpio), solo valor hora, solo parámetros con Free (cartel,
+panel abierto), los dos juntos con Free (guarda el valor hora, avisa de los parámetros, cierra),
+los dos juntos con PRO (guarda todo sin cartel), vaciar el valor hora (aviso inline, panel
+abierto), y el `Scrollbar` visible sin arrastrar. Confirmado además en la grilla que el valor hora
+del caso 4 quedó realmente guardado, no solo que el panel cerró.
+
+**Los logs ya cumplieron su función y se sacaron** — el flujo unificado quedó verificado con los 7
+casos reales, no hace falta seguir instrumentado.
+
+### Dos correcciones más, encontradas en esa misma verificación
+
+**"Volver" duplicado.** Con una categoría con override, "Valor UOCRA: \$X — Volver" aparecía dos
+veces: en la fila del consolidado (el camino principal, decidido en §15 más arriba) y de nuevo
+adentro del panel, debajo del valor hora. Se sacó del panel — `_onVolverAlCalculado`,
+`_valorSiSeBorraElOverride`, `_fmtMoneda` y el estado `_volviendoAlCalculado` se eliminaron enteros
+del archivo, no solo se ocultó el widget. El panel ya no tiene ningún mecanismo de "volver" propio;
+el único camino es la fila.
+
+**Los 7 parámetros no tenían forma de saber cuál era su valor original.** Mismo problema que ya se
+había resuelto para el valor hora (con "Volver"), sin resolver para los parámetros. La solución acá
+es distinta a propósito: **no un botón que revierta**, sino mostrar el valor por defecto en el
+propio label de cada campo — `"ART (%) — por defecto 10,23"`. Se descartó un botón de "restaurar
+los 7" porque revertiría de golpe ajustes que el usuario sí quería conservar; son campos
+independientes, no una unidad.
+
+**Distinción conceptual deliberada en el texto**: nunca dice "valor correcto", siempre "por
+defecto". El "Volver" del valor hora tiene un destino con autoridad real — la escala UOCRA, una
+fuente normativa. Los parámetros no: el 10,23 de ART es el supuesto que trajo la planilla de la
+liquidadora, marcado como pendiente de reemplazar por la póliza real (§1, §10) — llamarlo "correcto"
+sería mentir sobre su procedencia. Aplicado a los 7: ART, Fondo de Cese, horas mensuales, horas
+improductivas, vacaciones (los 5 campos de texto), el selector de MiPyME ("Por defecto: con/sin
+certificado MiPyME"), y la zona (en el label del selector, solo relevante el día que haya más de una
+zona — con una sola no hay nada que "por defecto" pueda comunicar que el texto fijo no diga ya).
+
+**Corrección post-verificación**: el párrafo anterior decía que el "por defecto" salía "de la
+columna real de la base" — falso. En esta implementación sale de `widget.config`, que es la
+configuración ACTUAL de la obra, no el default de la columna. Para una obra donde alguien ya había
+cambiado el ART a 10,30, la etiqueta decía "por defecto 10,30" en vez de 10,23. Bug real, encontrado
+por el usuario en la verificación en emulador, no por revisión de código. Queda anotado y sin
+arreglar a propósito en §16 (la separación en dos ventanas iba primero, para no reescribir el mismo
+archivo dos veces) — el arreglo real (constantes Dart, no una función de catálogo de Postgres,
+descartada por desproporcionada) es el paso siguiente después de §16.
+
+## 16. Separación en dos ventanas — CIERRA LA TANDA 2 DE VERDAD — 2026-09-02
+
+### El diagnóstico: dos cosas de naturaleza distinta convivían en un solo diálogo
+
+El panel mezclaba fijar el valor hora de una categoría (acción rápida y frecuente) con ajustar los
+7 parámetros de cargas de toda la obra (configuración, se toca una vez). Los rótulos de alcance
+("solo esta categoría" / "toda la obra") separaban el significado, pero no la interacción: el campo
+editable de valor hora —el que crea un `obra_valor_hora_override` si se toca por error— quedaba
+visible arriba todo el tiempo, incluso cuando el usuario solo había venido a cambiar el ART.
+
+Esa convivencia, no cualquiera de sus síntomas puntuales, fue la causa de fondo de las cuatro rondas
+de correcciones de esta tanda: los dos botones "Guardar" ambiguos, el botón de parámetros escondido
+debajo del scroll, el falso positivo de la bandera de "sección abierta" para un Free que solo mira,
+y el botón único que terminó resolviendo todo eso con una máquina de estados no trivial (`_onGuardar`
+único, `_parametrosTocados`, comparación de textos crudos, mensaje combinado de PRO). Todos son
+síntomas de la misma causa, no problemas independientes.
+
+### La decisión: dos ventanas, cada una con un solo alcance
+
+**Ventana 1** (`PanelValorHoraManoObra`, el lapicito) — solo el valor hora de la categoría. Campo,
+link "Ajustar cargas sociales", Cancelar, Guardar. Nada más.
+
+**Ventana 2** (`PanelParametrosCargasSociales`, nuevo archivo) — se abre desde el link, encima de la
+primera. Solo los 7 parámetros. El campo de valor hora no aparece acá. Cancelar y Guardar propios.
+
+Descartado llevar los parámetros a los controles de la obra: mantiene el camino que el usuario ya
+conoce (el lapicito de la fila) y es menos trabajo — la separación en dos ventanas ya resuelve el
+problema de fondo sin necesitar ese cambio de ubicación.
+
+### Lo que esto elimina de raíz — no se migra, se borra
+
+Con cada ventana teniendo un solo Guardar de un solo alcance, toda la máquina de estados armada para
+el botón único dejó de tener trabajo que hacer:
+
+- `_seccionParametrosAbierta` y la comparación de textos crudos contra un snapshot inicial — Guardar
+  en la ventana 2 siempre guarda los 7, no hace falta detectar "qué cambió".
+- El falso positivo del Free que solo mira — desaparece porque Cancelar es la salida natural, nunca
+  dispara el gate de PRO.
+- "Cierro solo si algo se guardó" — cada ventana cierra con su propio Guardar o Cancelar, sin un
+  caso combinado que resolver.
+- El mensaje combinado de PRO ("se guardó el valor hora, los parámetros no") — ya no existe el caso
+  mixto: el gate vive solo en la ventana 2, un único mensaje.
+
+Se mantiene tal cual: el gate de PRO en vivo (verificado recién al guardar, nunca antes), la
+validación de horas improductivas < horas mensuales (mismo check que `0044`), el `Scrollbar` de la
+ventana 2 (sigue teniendo 7 campos), "Volver al calculado" solo en la fila del consolidado (en
+ninguna de las dos ventanas), y el bug del "por defecto" de más arriba — deliberadamente sin tocar
+en este cambio.
+
+### Caso 1 — la ventana 1 se queda abajo cuando se guardan los parámetros
+
+El valor hora que muestra el campo de la ventana 1 puede quedar desactualizado si los parámetros que
+lo calculan cambiaron en la ventana 2. Se evaluaron tres caminos: refrescar el campo automáticamente
+(exige distinguir si el usuario ya lo había tocado, para no pisarle un valor tipeado — reintroduce la
+misma clase de rama condicional que esta separación busca eliminar), cerrar la ventana 1 también
+(tira un valor hora sin guardar si el usuario tenía algo tipeado), o avisar sin tocar nada. Se eligió
+la tercera: `_huboGuardadoDeParametros` se pone en `true` cuando la ventana 2 devuelve `true`, y se
+muestra una nota fija ("Los parámetros de cargas cambiaron. Cerrá y volvé a abrir para ver el valor
+recalculado.") sin recalcular ni cerrar nada. Es la opción honesta — nunca afirma un número como
+vigente cuando puede no serlo — y no agrega ninguna rama nueva de "¿estaba tocado o no?". La bandera
+viaja incluso si el usuario después cancela la ventana 1: si los parámetros se guardaron, el panel
+tiene que devolver `true` para que `MatYMoTab` recargue el consolidado, sin importar qué pasó con el
+valor hora.
+
+Se evaluó además si la nota podía mostrar el valor recalculado en vez de solo avisar — no sale
+gratis: la ventana 1 nunca tuvo el config nuevo (ver Caso 2), y pedirlo solo para esa nota es el
+mismo round-trip que se descartó al elegir la opción "avisar". Queda la nota genérica.
+
+### Caso 2 — la config queda vieja si se reabre la ventana 2 sin cerrar la ventana 1
+
+La ventana 2 recibía `config` por constructor, pasado desde la ventana 1, que a su vez lo recibía de
+`MatYMoTab` en el momento de abrir el lapicito. Si el usuario guardaba parámetros y volvía a abrir
+"Ajustar cargas sociales" sin cerrar la ventana 1, la ventana 2 nueva se construía con el mismo
+`config` de antes de guardar — mostraba los valores viejos, y guardar de nuevo desde ahí pisaba el
+cambio recién hecho (la ventana 2 guarda siempre los 7 sin comparar, a propósito — ver más arriba —
+y ese mismo criterio se vuelve en contra si el dato de partida está desactualizado).
+
+Se resolvió sacando `config` del constructor: `PanelParametrosCargasSociales` ahora recibe solo
+`obraId` y hace su propio `_cargarConfig()` (`ObraPresupuestoConfigRepository.getConfig`) al abrirse.
+Mismo principio que el gate de PRO en vivo — no confiar en una foto que alguien más pasó, pedir el
+dato en el momento en que importa. Elimina la clase de bug entera en vez de exigir que la ventana 1
+se acuerde de refrescar y repasar el dato correcto en cada apertura siguiente.
+
+Consecuencia: la ventana 1 (`PanelValorHoraManoObra`) ya no necesita `config` para nada — solo lo
+reenviaba. Se sacó también de su constructor, y de la llamada en `mat_y_mo_tab.dart`
+(`_onTocarLapiz`) que la construye.
+
+Detalle de implementación: como el config ahora se carga async, los 5 `TextEditingController` de la
+ventana 2 pasan a nullable y se crean recién dentro de `_cargarConfig` cuando llega el dato (antes
+que eso, `build()` muestra un `CircularProgressIndicator`). `_cargarConfig` hace `dispose()` de los
+controllers anteriores antes de crear los nuevos — defensivo: hoy se llama una sola vez desde
+`initState`, pero si en el futuro se agrega una forma de recargar, evita una fuga silenciosa de
+controllers sin `dispose`.
+
+### Verificado en el emulador — pendiente
+
+Sin migración este cambio, verificación directa con hot restart. Casos a cubrir: los que ya se
+verificaron para la tanda anterior (ahora repartidos entre las dos ventanas), más el caso puntual
+que motivó el Caso 2 — abrir la ventana 2, guardar, reabrirla sin cerrar la ventana 1, confirmar que
+muestra los valores recién guardados y no los viejos.

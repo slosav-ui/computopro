@@ -13,6 +13,15 @@ Responder siempre en español al trabajar en este repositorio, sin importar el i
 3. Preferir agregar código nuevo (nuevas funciones, nuevos widgets) en vez de reescribir funciones existentes, salvo que se pida explícitamente una modificación.
 4. Antes de cualquier cambio, explicar en una línea qué se va a tocar y por qué.
 5. Nunca eliminar código existente sin que se solicite explícitamente.
+6. Cada tanda verificada en el emulador se commitea antes de arrancar la siguiente, aunque la
+   siguiente parezca una corrección chica. Motivo real, no hipotético: en el costo de mano de obra
+   (Paso 5, tanda 2) un bug de gate desvió varias rondas de trabajo y el commit del grupo anterior
+   nunca se cerró — cuando por fin se quiso commitear, el archivo del panel ya había sido reescrito
+   por la ronda siguiente (separación en dos ventanas) sin ningún commit intermedio de por medio.
+   No había forma de separar limpio en dos commits sin reconstruir a mano contenido que ya no
+   existía en git, con riesgo de terminar commiteando código nunca verificado — así que las dos
+   etapas quedaron juntas en un solo commit grande, con el historial sin poder contar lo que pasó
+   en el orden real. Commitear apenas se verifica evita que esto se repita.
 
 ## Project
 
@@ -792,12 +801,48 @@ número de referencia sin importar el modo. Detalle completo de todas las decisi
 Ayudante, por qué la aclaración de override es solo para esa categoría, por qué 6 líneas y no 4) en
 `docs/costo_mano_de_obra_decisiones.md` §14.
 
-**Sin construir todavía**: el panel de los 7 parámetros detrás del lapicito (tanda 2 del Paso 5),
-el selector "con/sin certificado MiPyME" editable para `suss_pct`, el control de `zona_uocra`
-(tiene que restringir a las zonas que existen en `escala_salarial_uocra`, no aceptar texto libre).
-**Bloqueante para repartir el APK**: no hay ninguna forma de borrar un `obra_valor_hora_override`
-desde la app (`docs/costo_mano_de_obra_decisiones.md` §11/§13) — hoy fijar un valor hora a mano es
-un camino sin retorno sin acceso directo a SQL.
+**Paso 5, tanda 2 cerrada (2026-09-02, migraciones `0044`/`0045`) — PIEZA COMPLETA DE PUNTA A PUNTA.**
+Dos ventanas separadas, no un solo diálogo (ver `docs/costo_mano_de_obra_decisiones.md` §16 para el
+porqué — cuatro rondas de correcciones sobre el diseño de una sola ventana llevaron a esta
+separación, no repetirlas). **Ventana 1** — `PanelValorHoraManoObra`
+(`lib/presentation/obra_detalle/tabs/panel_valor_hora_mano_obra.dart`), el lapicito: solo el valor
+hora de la categoría ("solo esta categoría"), con un link "Ajustar cargas sociales" que abre la
+**Ventana 2** — `PanelParametrosCargasSociales`
+(`lib/presentation/obra_detalle/tabs/panel_parametros_cargas_sociales.dart`), los 7 parámetros de
+toda la obra (SUSS como selector con/sin certificado MiPyME, ART con aviso de que es un supuesto,
+Fondo de Cese, horas mensuales/improductivas, vacaciones, zona UOCRA — etiqueta con descripción
+completa vía catálogo `zonas_uocra`, texto fijo con una sola zona cargada, selector real si hay más
+de una). Cada ventana tiene su propio Guardar de un solo alcance — la Ventana 2 siempre guarda los
+7 sin comparar, el gate de PRO se verifica en vivo ahí, nunca en la Ventana 1. La Ventana 2 carga su
+propia config al abrirse (no la recibe por constructor) para no quedar desactualizada si se reabre
+sin cerrar la Ventana 1 — mismo principio que el gate de PRO en vivo, no confiar en una foto que
+otro widget ya tenía (§16). **Bloqueante resuelto**: "Volver al calculado" — único, como camino
+principal en la propia fila del consolidado (en ninguna de las dos ventanas), borra el
+`obra_valor_hora_override` de la categoría. **Pendiente conocido**: el "por defecto X" de los 7
+campos de la Ventana 2 muestra el valor ACTUAL de la obra, no el default real de la columna —
+etiqueta falsa cuando alguien ya cambió ese campo (§15, corrección post-verificación) — arreglo
+previsto con constantes Dart, siguiente paso después de esta separación.
+`0044` suma un `check`
+(`horas_mensuales > horas_improductivas_mensuales`) — primera vez que esas columnas son editables
+desde la app, sin el check un valor inválido rompía la división de
+`calcular_valor_hora_mano_obra`. Detalle completo de esta tanda, incluida la desincronización
+encontrada y corregida entre el cartel y la fila (`MatYMoTab` ahora recarga config + valor hora por
+categoría junto con el consolidado), en `docs/costo_mano_de_obra_decisiones.md` §15.
+
+**PENDIENTE CRÍTICO, no una mejora — bloqueante para repartir la app fuera de Neuquén/Río
+Negro/Chubut**: solo `escala_salarial_uocra` tiene Zona B cargada, así que toda obra nueva nace ahí
+por default (`zona_uocra`, `0038`) sin ningún selector visible (aparece solo con 2+ zonas) ni
+ningún aviso al usuario — una obra fuera de esa región calcularía con una escala equivocada (~15-
+20% de diferencia con Zona A) sin forma de notarlo ni corregirlo. Ver
+`docs/costo_mano_de_obra_decisiones.md` §15, "Pendiente crítico", para las 4 zonas reales del CCT
+76/75, la fuente a usar (el convenio, no resúmenes de terceros — ya se encontraron publicados
+incorrectos) y la ambigüedad sin resolver sobre La Pampa.
+
+**Sin construir**: nada pendiente de este Paso 5 — la pieza de costo de mano de obra (escala UOCRA,
+cargas sociales, valor hora por categoría, consolidado, cartel, panel de edición) queda cerrada de
+punta a punta. Roadmap futuro sin fecha: bot de escala UOCRA (ver
+`docs/costo_mano_de_obra_decisiones.md`), conectar el bloque a la solapa APU real (sigue mock) y al
+Factor K.
 
 ### Importador de Excel/PDF: diseño de datos cerrado en dos capas, sin implementar (2026-08-22)
 

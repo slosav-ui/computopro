@@ -65,4 +65,19 @@ class ObraInsumosRepository {
       onConflict: 'obra_id,categoria_uocra',
     );
   }
+
+  /// "Volver al calculado" (Paso 5, tanda 2 — ver docs/costo_mano_de_obra_decisiones.md §15):
+  /// borra el override de una categoría, la fila vuelve a tomar el valor de
+  /// calcular_valor_hora_mano_obra. Disponible tanto desde la propia fila del consolidado como
+  /// desde el panel de edición.
+  Future<void> borrarValorHoraOverride({
+    required String obraId,
+    required String categoriaUocra,
+  }) async {
+    await _client
+        .from('obra_valor_hora_override')
+        .delete()
+        .eq('obra_id', obraId)
+        .eq('categoria_uocra', categoriaUocra);
+  }
 }

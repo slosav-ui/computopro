@@ -41,9 +41,9 @@ class ObraPresupuestoConfig {
   final double gestionMaterialesTercerosPct;
 
   // Costo de mano de obra (ver docs/costo_mano_de_obra_decisiones.md). Con o sin cargas se edita
-  // desde esta tanda del Paso 5 (CartelCostoManoObra); las 7 alícuotas son de solo lectura acá —
-  // el panel de edición detrás del lapicito es la tanda siguiente, pero el cartel ya necesita
-  // mostrarlas en su desglose.
+  // desde la tanda 1 del Paso 5 (CartelCostoManoObra). obraSocialPatronalPct/ficsPct/iericPct/
+  // fodecoPct/uocraEmpleadorPct son de solo lectura (no admiten variación por empresa, ver §1) —
+  // el resto se edita desde el panel de la tanda 2 (PanelValorHoraManoObra).
   final bool aplicaCargasSociales;
   final double artPct;
   final double fondoCesePct;
@@ -53,6 +53,10 @@ class ObraPresupuestoConfig {
   final double iericPct;
   final double fodecoPct;
   final double uocraEmpleadorPct;
+  final double horasMensuales;
+  final double horasImproductivasMensuales;
+  final double vacacionesJornalesMes;
+  final String zonaUocra;
 
   ObraPresupuestoConfig({
     required this.obraId,
@@ -73,5 +77,9 @@ class ObraPresupuestoConfig {
     required this.iericPct,
     required this.fodecoPct,
     required this.uocraEmpleadorPct,
+    required this.horasMensuales,
+    required this.horasImproductivasMensuales,
+    required this.vacacionesJornalesMes,
+    required this.zonaUocra,
   });
 }
