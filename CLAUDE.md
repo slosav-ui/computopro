@@ -713,6 +713,35 @@ mano de obra. Es coherente con el criterio de arriba, pero es un número que cue
 presupuesto de solo mano de obra. Si se revisa algún día, que quien lo mire sepa que fue así a
 propósito.
 
+### Factor K (Solapa APU) — Paso A construido: bloque de cabecera, sin montos
+
+`BloqueFactorK` (`lib/presentation/obra_detalle/tabs/bloque_factor_k.dart`), primer elemento debajo
+de `SelectorTipoPresupuesto` en la Solapa APU: los 6 conceptos (7 en "Comp. Solo MO", con Gestión
+de materiales de terceros) con su % y su base en texto plano ("Imprevistos — 4% sobre Costo-Costo +
+GG"), **sin ningún monto** — no existe un Costo-Costo único de la obra, cada partida tiene el suyo,
+y hoy no hay cómputo métrico conectado para agregarlos. Free ve todo, PRO edita en
+`PanelEditarFactorK` (gate en el botón "Editar", antes de abrir — no al abrir, a diferencia del
+panel de cargas sociales de mano de obra; los dos son consistentes con la misma regla general por
+motivos distintos, ver el doc). Plegable con persistencia por obra en `SharedPreferences`, mismo
+mecanismo que el aviso de orden de `rubros_tab.dart`. Sin migración — las 6 columnas de
+`obra_presupuesto_config` (`0020`) alcanzan.
+
+De paso, se eliminó el ítem mock de la Solapa APU ("02.01 Hormigón armado...", \$320.000 inventado)
+— mismo criterio que la barra falsa de Rubros: mostrar cifras que no reflejan nada real es peor que
+no mostrarlas. Reemplazado por un estado vacío honesto, sin prometer un camino de carga que hoy no
+existe.
+
+Detalle completo de todas las decisiones de esta ronda (por qué sin montos, la base de cada línea,
+el tratamiento en modo sin materiales, el gate de PRO, el séptimo campo que no se pisa) en
+`docs/factor_k_apu_decisiones.md` — leer ahí, no repetir acá.
+
+**Pendiente — Paso B, sin empezar**: el desglose de 15 líneas con montos reales de una partida
+puntual. Necesita cómputo métrico real primero (`obra_subitems` con cantidades — no existe ninguna
+fila hoy, nada en `lib/` escribe ahí todavía), después conectar `calcular_precio_apu_subitems`
+(`0034`, aplicada pero sin usar) para el Costo-Costo, y una función SQL nueva para la cascada
+completa de 6 conceptos — mismo criterio que `calcular_valor_hora_mano_obra`, la cuenta vive en un
+solo lugar.
+
 ### Conexión a Dart/UI: catálogo de rubros y subitems — verificado en producción (2026-08-28)
 
 Conexión real de Rubros/APU parte 2 a `lib/`, en pasos chicos y verificables, mismo criterio que se

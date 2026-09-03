@@ -98,6 +98,37 @@ class ObraPresupuestoConfigRepository {
     return _fromRow(updated);
   }
 
+  /// Factor K de la Solapa APU (ver docs/factor_k_apu_decisiones.md) — mismo criterio que
+  /// `actualizarCargasSociales`: los 6 conceptos se editan y guardan como un solo formulario, no
+  /// como columnas independientes. El panel manda siempre los 6 aunque solo muestre 5 (el 6to,
+  /// Gestión de materiales de terceros, es exclusivo del modo "sin materiales") — evita una lógica
+  /// de actualización parcial acá que tendría que mantenerse sincronizada con qué campos decide
+  /// mostrar la UI en cada momento.
+  Future<ObraPresupuestoConfig> actualizarFactorK({
+    required String obraId,
+    required double ggPct,
+    required double imprevistosPct,
+    required double eppPct,
+    required double costoFinancieroPct,
+    required double beneficioPct,
+    required double gestionMaterialesTercerosPct,
+  }) async {
+    final updated = await _client
+        .from('obra_presupuesto_config')
+        .update({
+          'gg_pct': ggPct,
+          'imprevistos_pct': imprevistosPct,
+          'epp_pct': eppPct,
+          'costo_financiero_pct': costoFinancieroPct,
+          'beneficio_pct': beneficioPct,
+          'gestion_materiales_terceros_pct': gestionMaterialesTercerosPct,
+        })
+        .eq('obra_id', obraId)
+        .select()
+        .single();
+    return _fromRow(updated);
+  }
+
   ObraPresupuestoConfig _fromRow(Map<String, dynamic> row) {
     return ObraPresupuestoConfig(
       obraId: row['obra_id'].toString(),

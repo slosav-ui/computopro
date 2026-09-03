@@ -7,6 +7,7 @@ import '../tabs/rubros_tab.dart';
 import '../tabs/gestion_obra_tab.dart';
 import '../tabs/mat_y_mo_tab.dart';
 import '../tabs/selector_tipo_presupuesto.dart';
+import '../tabs/bloque_factor_k.dart';
 
 class PresupuestosScreen extends StatefulWidget {
   final dynamic obra;
@@ -26,6 +27,11 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> with SingleTick
   double _gastosGeneralesPorcentaje = 15.0;
   double _beneficioPorcentaje = 10.0;
   double _ivaPorcentaje = 21.0;
+
+  // Fuerza el remonte de BloqueFactorK cuando el selector cambia de modo (con/sin materiales) —
+  // el bloque necesita mostrar/ocultar la línea de Gestión de materiales de terceros. Cambiar la
+  // Key es más simple que exponer un método de recarga entre hermanos que no comparten estado.
+  int _factorKReloadTick = 0;
 
   // Etapa 3: permisos reales de la obra (obra_members -> UserContext).
   // null mientras carga o si no se pudo determinar -> fail-closed (sin acceso a APU).
@@ -215,104 +221,28 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> with SingleTick
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (_obraId != null) SelectorTipoPresupuesto(obraId: _obraId!),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.black12)),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                // Expanded: el nombre del subítem es el texto largo y
-                // variable (el que dio el overflow más grande de la
-                // sesión, 128px), el monto a la derecha es corto y fijo.
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('Item APU Seleccionado:', style: TextStyle(fontSize: 10, color: Colors.black54)),
-                      Text(
-                        '02.01 Hormigón armado en fundaciones',
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF1B365D)),
-                        overflow: TextOverflow.ellipsis,
-                        maxLines: 2,
-                      ),
-                    ],
-                  ),
+          if (_obraId != null)
+            SelectorTipoPresupuesto(
+              obraId: _obraId!,
+              onCambio: () => setState(() => _factorKReloadTick++),
+            ),
+          if (_obraId != null) BloqueFactorK(key: ValueKey(_factorKReloadTick), obraId: _obraId!),
+          // Esta obra todavía no tiene cómputo métrico cargado en ningún lado — nada en la app
+          // escribe obra_subitems todavía (ni siquiera la solapa Cómputo, que hoy solo navega el
+          // catálogo). No hay ningún camino real al que mandar al usuario, así que el texto no
+          // inventa uno (ver docs/factor_k_apu_decisiones.md §6).
+          const Expanded(
+            child: Center(
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: Text(
+                  'Esta obra todavía no tiene cómputo métrico cargado — la carga de partidas '
+                  'reales es la próxima pieza, todavía sin construir.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.black54),
                 ),
-                const SizedBox(width: 8),
-                Text(_fmt(320000.0), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF2E7D32))),
-              ],
+              ),
             ),
-          ),
-          const SizedBox(height: 12),
-          Expanded(
-            child: ListView(
-              children: [
-                _buildApuSection('MATERIALES', [
-                  _buildApuDetailRow('Hormigón Elaborado H-21', 'm³', 1.05, 180000.0),
-                  _buildApuDetailRow('Acero ADN 420 en barras', 'kg', 65.0, 1850.0),
-                  _buildApuDetailRow('Alambre negro de atar N°16', 'kg', 1.2, 2400.0),
-                ]),
-                _buildApuSection('MANO DE OBRA', [
-                  _buildApuDetailRow('Oficial Especializado (Estructura)', 'hs', 4.5, 4800.0),
-                  _buildApuDetailRow('Ayudante', 'hs', 6.0, 3900.0),
-                ]),
-                _buildApuSection('EQUIPOS Y HERRAMIENTAS', [
-                  _buildApuDetailRow('Vibrador de Inmersión naftero', 'hs', 0.5, 8500.0),
-                  _buildApuDetailRow('Herramientas menores y encofrado', 'gl', 1.0, 12000.0),
-                ]),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildApuSection(String titulo, List<Widget> filas) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 10),
-      child: Padding(
-        padding: const EdgeInsets.all(10),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(titulo, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Color(0xFF1B365D))),
-            const Divider(),
-            ...filas,
-          ],
-        ),
-      ),
-    );
-  }
-
-  // Nombre en su propia línea, unidad/cantidad/precio/subtotal en la línea
-  // de abajo alineados a la derecha — antes eran 4 columnas en una sola
-  // fila (nombre en Expanded + 3 SizedBox de ancho fijo sin separador
-  // entre sí), y en pantalla angosta el nombre se apretaba contra columnas
-  // que ya no podían ceder, quedando pegado al primer valor sin aire.
-  // Separar en líneas resuelve el problema de raíz en vez de agregar un
-  // gap que en una pantalla todavía más angosta tampoco alcanzaría — mismo
-  // criterio ya usado para los chips m²/CAC y para cantidad+precio de
-  // subítems. Se usa en Materiales, Mano de Obra y Equipos (_buildApuSection).
-  Widget _buildApuDetailRow(String concepto, String unidad, double consumo, double unitario) {
-    final subtotal = consumo * unitario;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(concepto, style: const TextStyle(fontSize: 11)),
-          const SizedBox(height: 2),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              Text('$consumo $unidad', style: const TextStyle(fontSize: 11, color: Colors.black54)),
-              const SizedBox(width: 12),
-              Text(_fmt(unitario), style: const TextStyle(fontSize: 11, color: Colors.black54)),
-              const SizedBox(width: 12),
-              Text(_fmt(subtotal), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-            ],
           ),
         ],
       ),
