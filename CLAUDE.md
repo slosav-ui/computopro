@@ -684,6 +684,35 @@ partida por partida con su propio criterio.
 (curación del usuario, no iniciada) y seguir la conexión a Dart/UI más allá del primer paso — ver
 sección siguiente para el estado exacto.
 
+### Vista "sin materiales" — por qué Gastos Generales/EPP/Costo Financiero no se recalculan
+
+Escrito dentro del propio `docs/seed/PLANILLA_BASE_2_0_v3_CORREGIDA.ods`, hoja
+`APU_SIN_MATERIALES`, fila 2 — no en ningún `.md` del repo, por eso quedó sin encontrar la primera
+vez que hizo falta. Cita textual completa, es todo lo que está escrito sobre este criterio:
+
+> "Gastos Generales, EPP-Seguridad y Costo Financiero se mantienen iguales que en la solapa APU (no
+> dependen de quien compra los materiales). Imprevistos y Beneficio se recalculan sobre la base sin
+> materiales. Se agrega una linea de Gestion de materiales de terceros (celda amarilla = % editable)."
+
+La planilla lo implementa al pie de la letra, confirmándolo: en esa hoja, `GASTOS GENERALES` es
+`=[$APU.G34]-[$APU.G33]` — extrae el monto absoluto ya calculado en la solapa `APU` completa
+(Costo-Costo+GG menos Costo-Costo puro), no lo recalcula sobre la base sin materiales. Mismo
+tratamiento para EPP-Seguridad y Costo Financiero.
+
+**Lo de arriba es todo lo que está documentado.** Lo que sigue es lectura de quien escribe esto, no
+una cita — no está en ningún archivo: GG/EPP/Costo Financiero son gastos de estructura de la
+empresa contratista y no dependen de quién compra los materiales; Imprevistos sigue el riesgo de lo
+que efectivamente se ejecuta y Beneficio es margen sobre lo que efectivamente se cobra, por eso esos
+dos sí se recalculan sobre la base reducida y los otros tres no.
+
+**Consecuencia práctica, decisión vigente con una consecuencia conocida — no un bug ni un
+pendiente**: como GG se arrastra de la APU completa (calculado sobre un Costo-Costo que incluye
+materiales) pero se muestra en una partida que ya no los tiene, GG puede terminar siendo varias
+veces la mano de obra que lo genera. Caso real, partida "Retak 15cm": $12.728 de GG contra $4.734 de
+mano de obra. Es coherente con el criterio de arriba, pero es un número que cuesta explicar en un
+presupuesto de solo mano de obra. Si se revisa algún día, que quien lo mire sepa que fue así a
+propósito.
+
 ### Conexión a Dart/UI: catálogo de rubros y subitems — verificado en producción (2026-08-28)
 
 Conexión real de Rubros/APU parte 2 a `lib/`, en pasos chicos y verificables, mismo criterio que se
