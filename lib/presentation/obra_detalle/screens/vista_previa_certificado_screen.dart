@@ -163,8 +163,8 @@ class _VistaPreviaCertificadoScreenState extends State<VistaPreviaCertificadoScr
       builder: (ctx) => AlertDialog(
         title: const Text('Emitir certificado', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
         content: const Text(
-          '¿Este certificado requiere firma física? Si la requiere, no se va a poder emitir el '
-          'siguiente certificado hasta subir el PDF firmado de este.',
+          '¿Este certificado requiere firma física? Si la requiere, va a quedar en el aviso de '
+          'Gestión de Obra hasta que subas el PDF firmado — no bloquea emitir los siguientes.',
           style: TextStyle(fontSize: 13),
         ),
         actions: [

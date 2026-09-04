@@ -4,6 +4,7 @@ import '../../../data/models/certificado.dart';
 import '../../../services/auth_service.dart';
 import '../../../services/certificados_repository.dart';
 import '../screens/carga_avance_rubros_screen.dart';
+import 'cartel_firma_pendiente.dart';
 import 'panel_config_certificacion.dart';
 
 class GestionObraTab extends StatefulWidget {
@@ -223,6 +224,11 @@ class _GestionObraTabState extends State<GestionObraTab> {
               ],
             ),
             const SizedBox(height: 8),
+            // Solo quien tiene autoridad para subir el PDF (subir_pdf_firmado_certificado, 0011:
+            // admin_maestro/profesional) — mostrárselo al Constructor sería un botón que le falla
+            // siempre, no una información útil para él.
+            if (widget.userContext?.puedeEmitirCertificado == true)
+              CartelFirmaPendiente(obraId: widget.obraId),
             const Text(
               'Historial de Certificados',
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1B365D)),

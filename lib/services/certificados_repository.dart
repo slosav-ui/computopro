@@ -72,6 +72,42 @@ class CertificadosRepository {
     return _fromRow(inserted);
   }
 
+  /// Certificados de la obra con firma física pendiente (`requiere_firma_fisica = true` y
+  /// `pdf_firmado_subido = false`) — para el aviso persistente de `CartelFirmaPendiente`. Ya no
+  /// bloquea la emisión del siguiente (0055), pero sigue siendo dato real a mostrar hasta que se
+  /// resuelva. Cualquier estado del ciclo salvo `borrador` puede aparecer acá (un certificado
+  /// pagado o ya impactado igual puede seguir sin su PDF firmado).
+  Future<List<Certificado>> getConFirmaPendiente(String obraId) async {
+    final data = await _client
+        .from('certificados')
+        .select()
+        .eq('obra_id', obraId)
+        .eq('requiere_firma_fisica', true)
+        .eq('pdf_firmado_subido', false)
+        .order('numero', ascending: true);
+    return (data as List)
+        .map((row) => _fromRow(row as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Sube el/los adjunto(s) del PDF firmado — RPC a `subir_pdf_firmado_certificado`. Mismo patrón
+  /// que el resto de los `*_adjuntos` de este certificado (`comprobante_pago_adjuntos`,
+  /// `factura_final_adjuntos`): una lista de URLs ya hospedadas afuera (Drive, WhatsApp, etc.), la
+  /// app no sube el archivo en sí — no hay ningún mecanismo de carga de binarios en todo el
+  /// proyecto todavía (sin `file_picker`, sin uso de Supabase Storage desde Dart).
+  Future<void> subirPdfFirmado({
+    required String certificadoId,
+    required List<String> adjuntos,
+  }) async {
+    await _client.rpc(
+      'subir_pdf_firmado_certificado',
+      params: {
+        'p_certificado_id': certificadoId,
+        'p_adjuntos': adjuntos,
+      },
+    );
+  }
+
   Certificado _fromRow(Map<String, dynamic> row) {
     return Certificado(
       id: row['id'].toString(),

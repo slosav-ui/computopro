@@ -498,4 +498,43 @@ Orden de implementación, mismo criterio incremental ya usado en Modelos A/B:
   condicionado a `contratista_nombre is null` (ver §9), con el guard también en `UPDATE` (extensión
   propuesta por Claude Code, confirmada por el usuario).
 
+## §11 — Cambio de criterio (2026-09, Gestión de Obra pieza 4): el bloqueo de firma física se saca
+
+**Esto reemplaza lo que dice §7 sobre el bloqueo de firma física — no es un error de esa sección
+en su momento, era el diseño original tal como se pidió (ver la cita textual de §1/§7-bis: "si se
+opta por firma física, el sistema bloquea la emisión del siguiente certificado hasta subir el
+PDF/imagen firmado"). Se cambió a propósito, viendo la pieza ya funcionando, no se perdió.**
+
+**Motivo, textual del usuario**: "el papel firmado depende de terceros y puede tardar días. Frenar
+toda la certificación de una obra porque el comitente no firmó todavía es peor que el problema que
+evita."
+
+**Qué cambió**: `emitir_certificado` (`supabase/migrations/0055_certificados_firma_fisica_no_bloquea.sql`,
+`create or replace` sobre la versión de `0054`) ya no rechaza la emisión de un certificado cuando el
+anterior de la misma obra tiene `requiere_firma_fisica = true` y `pdf_firmado_subido = false`. El
+resto de la función sigue igual.
+
+**Qué NO cambió, a propósito** — nada de esto se tocó:
+- `requiere_firma_fisica` se sigue preguntando y guardando al emitir (`p_requiere_firma_fisica`, el
+  parámetro de la función, sin cambios).
+- `pdf_firmado_subido`/`pdf_firmado_fecha`/`pdf_firmado_adjuntos` y la función
+  `subir_pdf_firmado_certificado` (§7-bis) siguen funcionando exactamente igual — nunca dependieron
+  del bloqueo, dependencia verificada antes de tocar nada (grep sobre las 6 funciones y las 3
+  políticas RLS de `certificados`: ninguna otra referencia estas dos columnas salvo el propio
+  bloqueo que se sacó).
+
+**Reemplazo**: el bloqueo pasa de la base a la UI, y de "candado" a "aviso persistente, no
+bloqueante" — `CartelFirmaPendiente` (`lib/presentation/obra_detalle/tabs/cartel_firma_pendiente.dart`),
+visible en Gestión de Obra para `admin_maestro`/`profesional` mientras haya al menos un certificado
+con `requiere_firma_fisica = true and pdf_firmado_subido = false`, listando cada uno con acción
+directa para cargar el link del PDF (mismo patrón de `*_adjuntos text[]` que ya tenía toda esta
+pieza: un link a algo hospedado afuera, la app no sube el archivo — no hay ningún mecanismo de
+carga de binarios en el proyecto). Deliberadamente no plegable ni con memoria de "cerrado" (a
+diferencia de `BloqueFactorK`): colapsarlo una vez lo silenciaría para siempre, exactamente lo
+contrario de lo que se pidió — "que le avise cada vez que abre... que por cansancio le gane y que
+lo termine subiendo con la firma".
+
+Ver también CLAUDE.md, sección "Ciclo de vida del Certificado de Obra (5 estados, Modelo A) — capa
+de datos completa", que referencia este cambio en la línea de `0011_certificados_funciones_transicion.sql`.
+
 **Los 3 pasos quedaron aplicados y verificados en producción.** Pieza cerrada.
