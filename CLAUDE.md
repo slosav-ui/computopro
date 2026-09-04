@@ -129,6 +129,19 @@ Complementa la "Decisión tomada" de más arriba (el QR no va en el Dashboard) c
 - **Requisito explícito de hardware objetivo**: la app tiene que correr bien en celulares y sistemas operativos de **5+ años de antigüedad** (gama baja), no solo en equipos modernos — condiciona cualquier decisión de rendimiento (evitar rebuilds innecesarios, listas virtualizadas, no cargar los +50 rubros completos en memoria de una vez, cuidado con animaciones/efectos pesados).
 - El catálogo base de rubros debería distribuirse **pre-cargado con la app** (JSON/SQLite estático empaquetado), no vía llamadas de red, para no depender de conectividad para mostrar el catálogo.
 
+**Actualización 2026-09-05 — esta sección quedó desarmada en piezas separadas, ver
+`docs/vinculacion_dispositivos_decisiones.md`.** La sincronización de datos entre dispositivos ya
+está construida y verificada (Realtime, `obra_insumo_precios`, migración `0050`) — no depende de
+esta pieza de QR ni de nada de lo de arriba. El bloqueo de edición que esta sección da por
+necesario **quedó descartado**, no pendiente: la matriz de permisos hace que no haya editores
+simultáneos reales sobre precios/cómputo. Y la vinculación de la PC por QR en sí (modelo WhatsApp
+Web) quedó diagnosticada y sin construir — **Supabase Auth no tiene ningún mecanismo nativo para
+esto**, verificado contra la documentación oficial y dos pedidos sin respuesta en el repo del
+proyecto desde 2021; el diseño con tabla temporal + código de un solo uso + confirmación por
+Realtime queda anotado en el doc, con la transferencia de sesión marcada a propósito como la parte
+que necesita diseño de seguridad propio antes de escribirse. Este párrafo no reemplaza la sección
+de arriba — queda como registro histórico de por dónde arrancó la idea.
+
 ### Solapa 1 (Cómputo y Presupuesto): catálogo de +50 rubros y estrategia de UX
 
 - **6 Macrorrubros** de origen: 1) Trabajos Preliminares y Tierra, 2) Estructura y Albañilería Húmeda, 3) Construcción en Seco y Sistemas Mixtos (Steel Frame / Wood Frame / placas tipo Durlock / estructuras metálicas), 4) Instalaciones y Redes, 5) Terminaciones y Revestimientos, 6) Obras Exteriores y Complementarias.
