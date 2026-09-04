@@ -22,4 +22,15 @@ class EscalaSalarialUocraRepository {
     zonas.sort((a, b) => a.codigo.compareTo(b.codigo));
     return zonas;
   }
+
+  /// Catálogo completo de `zonas_uocra`, SIN filtrar por `escala_salarial_uocra` — a diferencia de
+  /// [getZonasDisponibles], esto no sirve para poblar ningún selector (ofrecer acá una zona sin
+  /// escala reabriría exactamente el bug que [getZonasDisponibles] evita). Uso único: el aviso de
+  /// "hay otras zonas del convenio sin cargar" del cartel de costo de mano de obra
+  /// (`CartelCostoManoObra`), que solo necesita comparar cuántas zonas hay en total contra cuántas
+  /// tienen escala — nunca mostrar cuáles son.
+  Future<int> getCantidadZonasEnCatalogo() async {
+    final zonasData = await _client.from('zonas_uocra').select('codigo');
+    return (zonasData as List).length;
+  }
 }

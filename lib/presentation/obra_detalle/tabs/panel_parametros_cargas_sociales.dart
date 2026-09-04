@@ -9,16 +9,21 @@ import '../../../services/obra_presupuesto_config_repository.dart';
 import '../../../services/perfil_repository.dart';
 import '../../shared/pro_gate_dialog.dart';
 
-/// Los 7 parámetros de cargas sociales de la obra — Paso 5 (ver
+/// Los 6 parámetros de cargas sociales de la obra + la zona UOCRA — Paso 5 (ver
 /// docs/costo_mano_de_obra_decisiones.md §15/§16). Se abre desde el link "Ajustar cargas sociales"
 /// de PanelValorHoraManoObra, como ventana aparte encima de esa — nunca como sección expandible del
 /// mismo diálogo (ese fue el diseño original, con cuatro rondas de parches; ver §16 para el porqué
 /// de la separación). El campo de valor hora de una categoría puntual no aparece acá.
 ///
-/// Sin ambigüedad de "qué tocó el usuario": Guardar siempre guarda los 7, Cancelar nunca guarda
-/// nada. La bandera de "sección abierta", la comparación de textos crudos contra un snapshot
-/// inicial y el mensaje combinado de PRO del diseño de una sola ventana no se migran acá —
+/// Sin ambigüedad de "qué tocó el usuario" para los 6: Guardar siempre guarda los 6, Cancelar
+/// nunca guarda nada. La bandera de "sección abierta", la comparación de textos crudos contra un
+/// snapshot inicial y el mensaje combinado de PRO del diseño de una sola ventana no se migran acá —
 /// resolvían una ambigüedad que esta separación elimina.
+///
+/// La zona UOCRA es la excepción a ese "sin ambigüedad": se guarda sola, al instante, apenas se
+/// elige en el dropdown — sin gate de PRO y sin esperar al botón Guardar (ver §15, "sacar la zona
+/// del gate de PRO"). Por eso Cancelar puede devolver `true` igual sin haber tocado Guardar: si la
+/// zona cambió, algo se guardó de verdad y quien abrió este panel tiene que enterarse.
 ///
 /// La config se carga acá adentro (no se recibe por constructor): así nunca puede quedar vieja si
 /// el usuario guarda, reabre esta ventana sin cerrar la anterior, y vuelve a guardar — mismo
@@ -53,6 +58,12 @@ class _PanelParametrosCargasSocialesState extends State<PanelParametrosCargasSoc
   TextEditingController? _vacacionesController;
   bool _esMiPyme = false;
   String _zonaSeleccionada = '';
+
+  // true apenas _onCambiarZona guarda una zona nueva con éxito — independiente de _guardando/
+  // _verificandoPro (esos son del botón Guardar de los otros 6 parámetros). Hace que Cancelar
+  // devuelva `true` en vez de nada cuando la zona cambió, para que quien abrió este panel sepa que
+  // hay que recargar aunque el usuario nunca haya tocado Guardar.
+  bool _zonaCambioGuardado = false;
 
   List<ZonaUocra>? _zonasDisponibles;
   String? _errorParametros;
@@ -159,8 +170,29 @@ class _PanelParametrosCargasSocialesState extends State<PanelParametrosCargasSoc
     };
   }
 
-  /// Guarda siempre los 7, sin comparar contra nada — Cancelar es la salida para "no guardar". El
-  /// gate de PRO se verifica en vivo, recién acá, nunca antes.
+  /// Instantáneo, sin gate de PRO — ver el comentario de clase sobre por qué la zona es la
+  /// excepción al resto del formulario. Si falla, vuelve a la zona anterior en vez de dejar el
+  /// dropdown mostrando algo que no se guardó.
+  Future<void> _onCambiarZona(String? nuevaZona) async {
+    if (nuevaZona == null || nuevaZona == _zonaSeleccionada) return;
+    final anterior = _zonaSeleccionada;
+    setState(() => _zonaSeleccionada = nuevaZona);
+    try {
+      await _configRepository.actualizarZonaUocra(obraId: widget.obraId, zonaUocra: nuevaZona);
+      if (!mounted) return;
+      setState(() => _zonaCambioGuardado = true);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _zonaSeleccionada = anterior;
+        _errorParametros = 'No se pudo guardar la zona.';
+      });
+    }
+  }
+
+  /// Guarda siempre los 6, sin comparar contra nada — Cancelar es la salida para "no guardar". El
+  /// gate de PRO se verifica en vivo, recién acá, nunca antes. La zona no pasa por acá, ver
+  /// _onCambiarZona.
   Future<void> _onGuardar() async {
     final parametrosValidados = _validarParametros();
     if (parametrosValidados == null) return;
@@ -186,7 +218,6 @@ class _PanelParametrosCargasSocialesState extends State<PanelParametrosCargasSoc
         horasMensuales: parametrosValidados['horasMensuales']!,
         horasImproductivasMensuales: parametrosValidados['horasImproductivasMensuales']!,
         vacacionesJornalesMes: parametrosValidados['vacacionesJornalesMes']!,
-        zonaUocra: _zonaSeleccionada,
       );
       if (!mounted) return;
       Navigator.pop(context, true);
@@ -294,7 +325,10 @@ class _PanelParametrosCargasSocialesState extends State<PanelParametrosCargasSoc
         ),
       ),
       actions: [
-        TextButton(onPressed: guardando ? null : () => Navigator.pop(context), child: const Text('Cancelar')),
+        TextButton(
+          onPressed: guardando ? null : () => Navigator.pop(context, _zonaCambioGuardado ? true : null),
+          child: const Text('Cancelar'),
+        ),
         TextButton(
           onPressed: guardando ? null : _onGuardar,
           child: Text(_guardando ? 'Guardando...' : _verificandoPro ? 'Verificando...' : 'Guardar'),
@@ -362,7 +396,7 @@ class _PanelParametrosCargasSocialesState extends State<PanelParametrosCargasSoc
             items: zonas
                 .map((z) => DropdownMenuItem(value: z.codigo, child: Text(z.etiqueta, style: const TextStyle(fontSize: 12))))
                 .toList(),
-            onChanged: (v) => setState(() => _zonaSeleccionada = v ?? _zonaSeleccionada),
+            onChanged: _onCambiarZona,
           );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

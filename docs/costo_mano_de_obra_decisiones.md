@@ -750,6 +750,12 @@ esa región, no una mejora futura opcional.** Lo que hace falta ese día:
    ya lee la cantidad de zonas disponibles y elige entre texto fijo y `DropdownButtonFormField`
    automáticamente (§15). Lo único que falta ese día es el dato, no la UI.
 
+**Actualización (`0048`) — ver §17.** El punto 3 quedó decidido (gate condicional en el alta de
+obra, sin escribir todavía porque hoy es imposible de verificar en el emulador) y la zona salió del
+gate de PRO. Sigue sin resolver: los básicos reales de las 3 zonas (punto 1) y la verificación de
+La Pampa contra el texto del convenio (punto 2) — §17 solo carga el catálogo descriptivo, no
+escala.
+
 Las 4 zonas reales del CCT 76/75, para cuando se retome:
 
 | Zona | Provincias |
@@ -1051,3 +1057,164 @@ sacaron del archivo `_esMiPymeInicial` y `_zonaInicial` — quedaron sin ningún
 
 Verificado: `flutter analyze` sin issues nuevos (28, mismo conteo que antes del cambio), `flutter
 test` 36/36.
+
+## 17. Catálogo completo de zonas UOCRA + aviso de zona sin verificar (`0048`) — 2026-09-04
+
+Primera mitad del "PENDIENTE CRÍTICO" de §15: carga el catálogo descriptivo de las 4 zonas del CCT
+76/75 (antes solo estaba Zona B) y resuelve el problema real que ese pendiente señalaba — no que el
+selector pudiera fallar (ya no podía, ver más abajo), sino que un usuario fuera de Zona B no tenía
+ninguna forma de enterarse de que su costo estaba mal calculado. La segunda mitad — básicos reales
+de Zona A/C/C Austral, y con ellos el selector real, el gate del alta de obra y la marca de La
+Pampa — queda para cuando existan esos números (ver "Lo que queda documentado sin código" al final
+de esta sección).
+
+### El aviso, no el selector, era el problema
+
+El diagnóstico previo (§15, "PENDIENTE CRÍTICO") ya daba por buena la protección del selector:
+`EscalaSalarialUocraRepository.getZonasDisponibles()` nunca ofrece una zona sin escala, así que
+cargar las 4 zonas en `zonas_uocra` no habilita elegir una que rompería
+`calcular_valor_hora_mano_obra`. Eso sigue intacto y sin tocar en esta tanda.
+
+El problema real es el inverso: con una sola zona cargada, el selector se reduce a un texto fijo
+("Zona B — Neuquén, Río Negro y Chubut") que no le dice a nadie que existen otras tres zonas en el
+convenio. Un usuario de Córdoba lee ese texto sin ningún indicio de que no le corresponde — el
+selector es seguro, pero no es informativo.
+
+### Distinguir "cuántas zonas tienen escala" de "cuántas hay en el catálogo"
+
+El aviso no puede usar `getZonasDisponibles()` (esa lista es, a propósito, siempre la misma que ve
+el selector). Hace falta una segunda pregunta, nueva: cuántas zonas hay en total en `zonas_uocra`,
+sin filtrar por escala. Se agregó `EscalaSalarialUocraRepository.getCantidadZonasEnCatalogo()`
+—devuelve solo un `int`, a propósito, no una lista de `ZonaUocra`: así ese método es inutilizable
+como fuente de opciones de un selector aunque alguien lo intente en el futuro, sin depender de que
+respete un comentario. `CartelCostoManoObra` compara ese conteo contra `getZonasDisponibles().length`
+(`_hayZonasSinCargar`) — la condición es verificable desde que se aplique `0048`: pasa a ser
+`4 > 1`, sin necesitar ninguna escala nueva cargada.
+
+### Dónde vive: el cartel, no el panel
+
+`CartelCostoManoObra` (arriba de la sección "Mano de obra" en Mat y MO) ganó dos líneas nuevas,
+siempre en el mismo lugar donde ya se explica cómo se calcula el costo:
+
+1. **Zona vigente, siempre visible, para todos** (`Calculada con Zona B — Neuquén, Río Negro y
+   Chubut`) — no depende de que haya más de una zona ni de ningún aviso. Antes de esta tanda el
+   cartel no mencionaba la zona en absoluto; un usuario de Zona B tampoco tenía forma de confirmar
+   con qué escala se estaba calculando su obra.
+2. **Aviso descartable**, solo cuando `_hayZonasSinCargar`, con el mismo mecanismo que el aviso de
+   orden de `rubros_tab.dart` (`SharedPreferences`, clave por obra
+   `zona_uocra_aviso_descartado_<obraId>`, default visible, ícono chico para restaurarlo si se
+   descartó). Texto final, dos correcciones sobre el primer borrador:
+   - Sin fecha: no dice "en cuanto estén cargadas" — no hay ninguna fecha comprometida.
+   - Con salida real: menciona el mecanismo que ya existe (fijar el valor hora a mano, por
+     categoría, desde el lápiz de cada fila) en vez de solo informar el problema y dejar al usuario
+     sin caminos.
+
+   > Es la única escala del convenio UOCRA (CCT 76/75) que tenemos cargada por ahora. Si tu obra no
+   > es en esas provincias, este costo no le corresponde: podés fijar el valor hora a mano en cada
+   > categoría hasta que esté disponible tu zona.
+
+No se evaluó ponerlo en `PanelParametrosCargasSociales` — ese panel solo lo abre quien ya fue a
+buscar el lapicito de una categoría, y el problema que este aviso resuelve es que alguien que
+**nunca** toca esa pantalla siga presupuestando con una zona equivocada sin enterarse.
+
+### Zona UOCRA sale del gate de PRO — no es un ajuste fino como los otros seis
+
+Hasta esta tanda, cambiar la zona pasaba por el mismo botón "Guardar" que ART/Fondo de Cese/horas/
+vacaciones, gateado por PRO (`_onGuardar` en `PanelParametrosCargasSociales`). Con una sola zona
+cargada eso no importaba —no había nada para elegir—, pero con el catálogo completo dejarlo así
+bloqueaba a cualquier usuario Free fuera de Zona B: podía *ver* que su obra estaba mal (el aviso
+nuevo se lo dice), pero no podía *corregirlo* sin pagar. Zona UOCRA no es un ajuste fino de
+liquidación como ART o Fondo de Cese — es un dato de corrección básica, de la misma naturaleza que
+`ubicacion` (¿dónde está la obra?), no de la naturaleza de una alícuota que un contador ajusta.
+
+**Se sacó del formulario gateado y se hizo instantánea**, mismo patrón que el tilde
+`aplica_cargas_sociales` del cartel (`_onCambiarCargasSociales`): se guarda sola apenas se elige en
+el dropdown, vía `ObraPresupuestoConfigRepository.actualizarZonaUocra` (columna nueva, separada de
+`actualizarCargasSociales`, que ahora manda 6 campos en vez de 7), sin ningún chequeo de PRO. RLS
+no cambia — seguía y sigue exigiendo `admin_maestro`/`profesional` a nivel de base, el gate que se
+sacó era enteramente de capa de app.
+
+**Consecuencia que hubo que resolver, no solo el guardado**: como la zona ahora se guarda por fuera
+del botón "Guardar" de los otros 6, "Cancelar" ya no es siempre "no se guardó nada" — si el usuario
+cambió la zona y después tocó Cancelar (sin tocar el Guardar de los otros 6), la zona igual quedó
+persistida en la base. `PanelParametrosCargasSociales` suma `_zonaCambioGuardado` (bandera separada
+de `_guardando`/`_verificandoPro`, que son del botón Guardar) y Cancelar ahora devuelve `true` en
+vez de `null` cuando esa bandera está prendida — mismo mecanismo de propagación que ya usaba
+`_huboGuardadoDeParametros` en `PanelValorHoraManoObra` (§16) para que `MatYMoTab` sepa que tiene
+que recargar el consolidado. Sin este ajuste, cambiar la zona y cerrar con Cancelar habría dejado
+la base correcta pero las filas de Mat y MO mostrando valores viejos hasta salir y volver a la
+solapa.
+
+**Límite aceptado, no cerrado**: si el usuario cierra el diálogo tocando afuera (barrier dismiss)
+en vez de un botón, la zona igual quedó guardada pero la señal de recarga no se propaga —
+`MatYMoTab` queda con las filas viejas hasta el próximo refresh (pull-to-refresh, o salir y volver
+a la solapa). Es el mismo comportamiento que ya tenía la cadena de diálogos para los otros 6
+parámetros con barrier dismiss (no es una regresión de esta tanda), y forzar `barrierDismissible:
+false` en dos diálogos anidados para cerrar ese caso puntual se evaluó y se descartó por
+desproporcionado frente a lo angosto del caso.
+
+### La Pampa — dos motivos, no uno, documentados donde corresponde
+
+`0048` inserta Zona A con La Pampa incluida en su lista de provincias, sin ninguna marca especial
+en el dato — la advertencia es capa de presentación, no columna (`zonas_uocra.descripcion` se
+reusa tal cual en la etiqueta compacta del dropdown, y una advertencia larga ahí se repetiría fuera
+de contexto en cada ítem). Los dos motivos por los que entra en Zona A, documentados en el
+comentario de la migración porque pesan igual, no uno como desempate del otro:
+
+1. Es la ubicación que más fuentes consultadas coinciden en darle.
+2. Zona A es la escala más barata de las cuatro — si el usuario no corrige esto a mano, el error
+   queda del lado que no infla el presupuesto (con Zona B pasaría lo contrario).
+
+Sigue sin verificarse contra el texto del convenio (ver §15, "PENDIENTE CRÍTICO", punto 2).
+
+### Lo que queda documentado sin código — mismo criterio que el gate del alta, y por el mismo motivo
+
+Dos piezas de esta tanda se discutieron y se descartaron para escribir ahora, no por alcance sino
+porque **hoy son imposibles de verificar en el emulador**: con una sola zona con escala cargada,
+`getZonasDisponibles().length > 1` da `false` siempre, así que cualquier rama de código que dependa
+de "hay 2 o más zonas para elegir" nunca se ejecuta hasta que se cargue una segunda escala. Ya
+mordimos una vez por commitear código sin verificar (`CLAUDE.md`, Reglas de edición, punto 6) — no
+repetirlo.
+
+1. **Gate de zona en el alta de obra.** Cuando `getZonasDisponibles().length > 1`, el wizard de
+   alta (Paso A, junto a `ubicacion`) tiene que pedir la zona sin ningún default preseleccionado —
+   hoy preguntarla sería ruido, porque la única respuesta posible es Zona B. Mientras haya una sola
+   zona con escala, la fila de `obra_presupuesto_config` se sigue sembrando sola por trigger, sin
+   cambios.
+2. **Marca de "a verificar" en el ítem de Zona A del selector.** Aplica al mismo `_buildCampoZona`
+   de `PanelParametrosCargasSociales` — hoy solo puede mostrar Zona B (texto fijo), así que el
+   branch de 2+ zonas donde viviría esta marca tampoco se ejecuta nunca en el emulador. Texto ya
+   redactado, listo para pegar cuando se cargue la escala de Zona A:
+   - Marca inline junto a "La Pampa" en la lista de provincias de la zona: `La Pampa*` (o el ícono
+     ⚠ chico, a definir en el momento contra el estilo real del dropdown).
+   - Nota al pie, solo cuando el ítem de Zona A está seleccionado/visible: *"El convenio no es
+     unánime sobre La Pampa: las fuentes consultadas no coinciden. La ubicamos en Zona A porque es
+     lo que indica la mayoría. Si tu obra es en La Pampa, confirmalo con tu contador o con la
+     seccional de UOCRA."*
+
+**Además, retroactivo, sin código posible hoy porque depende de que exista una obra real en Zona A
+para revisar:** el día que se cargue la escala de Zona A, todas las obras creadas antes de ese día
+quedan en `zona_uocra = 'B'` sin que nadie la haya elegido — el gate del punto 1 protege obras
+nuevas, no las existentes. Ese día hay que revisar a mano las obras con `zona_uocra = 'B'` y
+confirmar con cada usuario si corresponde.
+
+### Archivos tocados
+
+- `supabase/migrations/0048_zonas_uocra_catalogo_completo.sql` — 3 `insert` en `zonas_uocra` +
+  FK `obra_presupuesto_config.zona_uocra → zonas_uocra(codigo)`. Sin aplicar todavía, sin acceso a
+  la base desde este entorno — lo corre el usuario a mano.
+- `lib/services/escala_salarial_uocra_repository.dart` — `getCantidadZonasEnCatalogo()`.
+- `lib/services/obra_presupuesto_config_repository.dart` — `actualizarZonaUocra()` nuevo,
+  `actualizarCargasSociales()` pierde el parámetro `zonaUocra` (6 campos, no 7).
+- `lib/presentation/obra_detalle/tabs/panel_parametros_cargas_sociales.dart` — `_onCambiarZona`
+  instantáneo sin gate de PRO, `_zonaCambioGuardado` propagado por Cancelar.
+- `lib/presentation/obra_detalle/tabs/cartel_costo_mano_obra.dart` — zona vigente siempre visible,
+  aviso descartable de "hay otras zonas sin cargar".
+
+### Sin verificar en el emulador todavía
+
+Pendiente de que el usuario aplique `0048` en Supabase y corra la app: confirmar que el cartel
+muestra "Calculada con Zona B — Neuquén, Río Negro y Chubut" seguido del aviso nuevo (sin
+descartar), que descartarlo y reabrir la obra lo deja descartado, que el ícono lo restaura, y que
+cambiar de plan (si hubiera más de una zona) ya no queda bloqueado — este último caso en particular
+no se puede probar hasta que exista una segunda zona con escala, ver arriba.

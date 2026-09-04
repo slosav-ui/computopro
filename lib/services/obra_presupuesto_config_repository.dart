@@ -65,12 +65,17 @@ class ObraPresupuestoConfigRepository {
     return _fromRow(updated);
   }
 
-  /// Panel de 7 parámetros del Paso 5, tanda 2 (ver docs/costo_mano_de_obra_decisiones.md §15) —
+  /// Panel de 6 parámetros del Paso 5, tanda 2 (ver docs/costo_mano_de_obra_decisiones.md §15) —
   /// a diferencia del resto de los métodos de este repositorio (una columna por llamada), este
-  /// manda las 7 juntas a propósito: se editan y se guardan como un solo formulario detrás de un
-  /// único botón "Guardar", no como controles independientes — separarlo en 7 llamadas no gana
-  /// nada y multiplica el round-trip sin ninguna ganancia de consistencia (las 7 se validan juntas
+  /// manda las 6 juntas a propósito: se editan y se guardan como un solo formulario detrás de un
+  /// único botón "Guardar", no como controles independientes — separarlo en 6 llamadas no gana
+  /// nada y multiplica el round-trip sin ninguna ganancia de consistencia (las 6 se validan juntas
   /// en el panel antes de llegar acá).
+  ///
+  /// La zona UOCRA se sacó de acá (era el 7mo parámetro) porque no es un ajuste fino como estos
+  /// seis — es un dato de corrección básica ("¿dónde está la obra?"), y dejarla atrás del mismo
+  /// gate de PRO que ART/horas/vacaciones le negaba a un usuario Free cualquier forma de corregir
+  /// una zona mal calculada. Se guarda sola e instantánea vía [actualizarZonaUocra], sin gate.
   Future<ObraPresupuestoConfig> actualizarCargasSociales({
     required String obraId,
     required double sussPct,
@@ -79,7 +84,6 @@ class ObraPresupuestoConfigRepository {
     required double horasMensuales,
     required double horasImproductivasMensuales,
     required double vacacionesJornalesMes,
-    required String zonaUocra,
   }) async {
     final updated = await _client
         .from('obra_presupuesto_config')
@@ -90,8 +94,23 @@ class ObraPresupuestoConfigRepository {
           'horas_mensuales': horasMensuales,
           'horas_improductivas_mensuales': horasImproductivasMensuales,
           'vacaciones_jornales_mes': vacacionesJornalesMes,
-          'zona_uocra': zonaUocra,
         })
+        .eq('obra_id', obraId)
+        .select()
+        .single();
+    return _fromRow(updated);
+  }
+
+  /// Zona UOCRA — instantánea, sin gate de PRO (ver el comentario de [actualizarCargasSociales]
+  /// sobre por qué se separó). Se llama apenas el usuario elige una zona en el dropdown, no detrás
+  /// de ningún botón "Guardar".
+  Future<ObraPresupuestoConfig> actualizarZonaUocra({
+    required String obraId,
+    required String zonaUocra,
+  }) async {
+    final updated = await _client
+        .from('obra_presupuesto_config')
+        .update({'zona_uocra': zonaUocra})
         .eq('obra_id', obraId)
         .select()
         .single();

@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../data/models/obra_presupuesto_config.dart';
 import '../../../data/models/valor_hora_categoria.dart';
+import '../../../data/models/zona_uocra.dart';
+import '../../../services/escala_salarial_uocra_repository.dart';
 import '../../../services/obra_presupuesto_config_repository.dart';
 import '../../../services/valor_hora_mano_obra_repository.dart';
 
@@ -9,9 +12,9 @@ import '../../../services/valor_hora_mano_obra_repository.dart';
 /// `MatYMoTab`, autocontenido (mismo patrón que `SelectorTipoPresupuesto`): carga su propia config
 /// y su propio valor hora, sin depender del estado de la pantalla que lo contiene.
 ///
-/// El panel de los 7 parámetros de cargas sociales (detrás del lapicito de cada fila de mano de
-/// obra) es la tanda siguiente del Paso 5 — acá solo se leen esos 7 valores para el desglose, no
-/// se editan.
+/// El panel de los 6 parámetros de cargas sociales + zona UOCRA (detrás del lapicito de cada fila
+/// de mano de obra) es la tanda siguiente del Paso 5 — acá solo se leen esos valores para el
+/// desglose y la línea de zona, no se editan (ver docs/costo_mano_de_obra_decisiones.md §17).
 class CartelCostoManoObra extends StatefulWidget {
   final String obraId;
 
@@ -28,24 +31,65 @@ class CartelCostoManoObra extends StatefulWidget {
 class _CartelCostoManoObraState extends State<CartelCostoManoObra> {
   final ObraPresupuestoConfigRepository _configRepository = ObraPresupuestoConfigRepository();
   final ValorHoraManoObraRepository _valorHoraRepository = ValorHoraManoObraRepository();
+  final EscalaSalarialUocraRepository _escalaRepository = EscalaSalarialUocraRepository();
 
   bool _cargando = true;
   bool _expandido = false;
   ObraPresupuestoConfig? _config;
   ValorHoraCategoria? _ayud;
+  // Zonas con escala cargada (la misma lista que usa el selector del panel de cargas sociales) y
+  // cantidad total de zonas del catálogo — la diferencia entre las dos es lo que dispara el aviso
+  // de "hay otras zonas sin cargar" más abajo. Ver EscalaSalarialUocraRepository para por qué la
+  // cantidad total nunca se usa para ofrecer una zona, solo para esta comparación.
+  List<ZonaUocra>? _zonasDisponibles;
+  int? _cantidadZonasCatalogo;
+
+  // Default false (aviso visible) hasta que se resuelva la lectura real de SharedPreferences —
+  // mismo criterio "fail-closed hacia lo más seguro" que el aviso de orden de rubros_tab.dart: acá
+  // lo seguro es mostrar el aviso, no ocultarlo.
+  bool _avisoZonaDescartado = false;
+
+  String get _claveAvisoZona => 'zona_uocra_aviso_descartado_${widget.obraId}';
 
   @override
   void initState() {
     super.initState();
     _cargar();
+    _cargarAvisoZonaDescartado();
+  }
+
+  Future<void> _cargarAvisoZonaDescartado() async {
+    final prefs = await SharedPreferences.getInstance();
+    final descartado = prefs.getBool(_claveAvisoZona) ?? false;
+    if (!mounted) return;
+    setState(() => _avisoZonaDescartado = descartado);
+  }
+
+  /// Descarta el aviso solo para esta obra — guardado en SharedPreferences (por dispositivo, no
+  /// sincronizado entre dispositivos ni usuarios), mismo patrón que el aviso de orden de
+  /// rubros_tab.dart. No reaparece solo — para eso está el ícono chico que lo restaura.
+  Future<void> _descartarAvisoZona() async {
+    setState(() => _avisoZonaDescartado = true);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_claveAvisoZona, true);
+  }
+
+  Future<void> _restaurarAvisoZona() async {
+    setState(() => _avisoZonaDescartado = false);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_claveAvisoZona, false);
   }
 
   Future<void> _cargar() async {
     final configFuture = _configRepository.getConfig(widget.obraId);
     final valoresFuture = _valorHoraRepository.getValorHoraPorCategoria(widget.obraId);
+    final zonasFuture = _escalaRepository.getZonasDisponibles();
+    final cantidadZonasFuture = _escalaRepository.getCantidadZonasEnCatalogo();
 
     final config = await configFuture;
     final valores = await valoresFuture;
+    final zonas = await zonasFuture;
+    final cantidadZonas = await cantidadZonasFuture;
     if (!mounted) return;
     // AYUD es la categoría de referencia del cartel (ver docs/costo_mano_de_obra_decisiones.md
     // §14 para el motivo) — siempre presente, calcular_valor_hora_mano_obra devuelve las 5. Sin
@@ -61,8 +105,33 @@ class _CartelCostoManoObraState extends State<CartelCostoManoObra> {
     setState(() {
       _config = config;
       _ayud = ayud;
+      _zonasDisponibles = zonas;
+      _cantidadZonasCatalogo = cantidadZonas;
       _cargando = false;
     });
+  }
+
+  /// Nombre + provincias de la zona vigente de la obra, resuelto contra la lista de zonas con
+  /// escala — siempre debería encontrarla (si la obra apunta a una zona sin escala,
+  /// calcular_valor_hora_mano_obra ya frenó con RAISE EXCEPTION antes de llegar acá). El código
+  /// solo, sin resolver, es el fallback mientras _zonasDisponibles todavía está cargando.
+  String _etiquetaZonaActual(String codigoZona) {
+    final zonas = _zonasDisponibles;
+    if (zonas == null) return codigoZona;
+    for (final z in zonas) {
+      if (z.codigo == codigoZona) return z.etiqueta;
+    }
+    return codigoZona;
+  }
+
+  /// Hay zonas del convenio UOCRA en el catálogo (`zonas_uocra`) que todavía no tienen escala
+  /// cargada — dispara el aviso. `null` mientras alguna de las dos cargas está en vuelo (no avisa
+  /// de más con datos a medio cargar).
+  bool get _hayZonasSinCargar {
+    final cantidad = _cantidadZonasCatalogo;
+    final zonas = _zonasDisponibles;
+    if (cantidad == null || zonas == null) return false;
+    return cantidad > zonas.length;
   }
 
   Future<void> _onCambiarCargasSociales(bool aplica) async {
@@ -134,6 +203,30 @@ class _CartelCostoManoObraState extends State<CartelCostoManoObra> {
                 ),
               ],
             ),
+            const SizedBox(height: 4),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Text(
+                    'Calculada con ${_etiquetaZonaActual(config.zonaUocra)}',
+                    style: const TextStyle(fontSize: 10, color: Colors.black54),
+                  ),
+                ),
+                if (_hayZonasSinCargar && _avisoZonaDescartado)
+                  IconButton(
+                    icon: const Icon(Icons.info_outline, size: 14, color: Colors.black38),
+                    tooltip: 'Sobre las zonas UOCRA',
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    onPressed: _restaurarAvisoZona,
+                  ),
+              ],
+            ),
+            if (_hayZonasSinCargar && !_avisoZonaDescartado) ...[
+              const SizedBox(height: 4),
+              _buildAvisoZona(),
+            ],
             const SizedBox(height: 4),
             if (conCargas) ...[
               const Text(
@@ -262,6 +355,40 @@ class _CartelCostoManoObraState extends State<CartelCostoManoObra> {
             ],
           ],
         ),
+      ),
+    );
+  }
+
+  /// Banner descartable de "hay otras zonas del convenio sin cargar" — solo se llama cuando
+  /// _hayZonasSinCargar es true y no está descartado (ver build()). Sin fecha de cuándo se van a
+  /// cargar las otras zonas (no la tenemos) y con una salida real mientras tanto: fijar el valor
+  /// hora a mano por categoría, mecanismo que ya existe en cada fila (ver
+  /// docs/costo_mano_de_obra_decisiones.md §15).
+  Widget _buildAvisoZona() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(color: Colors.amber[50], borderRadius: BorderRadius.circular(4)),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.warning_amber_rounded, size: 14, color: Color(0xFF8A6D00)),
+          const SizedBox(width: 6),
+          const Expanded(
+            child: Text(
+              'Es la única escala del convenio UOCRA (CCT 76/75) que tenemos cargada por ahora. Si '
+              'tu obra no es en esas provincias, este costo no le corresponde: podés fijar el valor '
+              'hora a mano en cada categoría hasta que esté disponible tu zona.',
+              style: TextStyle(fontSize: 10, color: Color(0xFF6B5300)),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.close, size: 14, color: Color(0xFF8A6D00)),
+            tooltip: 'Cerrar aviso',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+            onPressed: _descartarAvisoZona,
+          ),
+        ],
       ),
     );
   }
