@@ -1,11 +1,22 @@
 import 'package:flutter/material.dart';
 import '../../../data/models/certificado.dart';
 import '../../../services/certificados_repository.dart';
+import 'panel_config_certificacion.dart';
 
 class GestionObraTab extends StatefulWidget {
   final String obraId;
 
-  const GestionObraTab({Key? key, required this.obraId}) : super(key: key);
+  /// Gate de rol para el panel de configuración de certificación — decidido por quien instancia
+  /// este widget (`PresupuestosScreen`, contra `UserContext.puedeEditarConfigCertificacion`), no
+  /// acá adentro. Gestión de Obra no tiene gate de PRO (decisión de negocio: es gratuita para
+  /// todos), así que esto es puramente de rol.
+  final bool puedeEditarConfigCertificacion;
+
+  const GestionObraTab({
+    Key? key,
+    required this.obraId,
+    required this.puedeEditarConfigCertificacion,
+  }) : super(key: key);
 
   @override
   State<GestionObraTab> createState() => _GestionObraTabState();
@@ -43,6 +54,18 @@ class _GestionObraTabState extends State<GestionObraTab> {
         _cargando = false;
       });
     }
+  }
+
+  Future<void> _abrirConfigCertificacion() async {
+    await showDialog<bool>(
+      context: context,
+      builder: (_) => PanelConfigCertificacion(
+        obraId: widget.obraId,
+        puedeEditar: widget.puedeEditarConfigCertificacion,
+      ),
+    );
+    // No hace falta recargar _certificados: la config de certificación (modelo, plazo, anticipo,
+    // fondo de reparo, monto total contratado) no aparece en ninguna tarjeta de esta lista.
   }
 
   String _fmt(double monto) {
@@ -83,6 +106,16 @@ class _GestionObraTabState extends State<GestionObraTab> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            Align(
+              alignment: Alignment.centerRight,
+              child: OutlinedButton.icon(
+                onPressed: _abrirConfigCertificacion,
+                icon: const Icon(Icons.settings_outlined, size: 16),
+                label: const Text('Configuración de certificación', style: TextStyle(fontSize: 11)),
+                style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF1B365D)),
+              ),
+            ),
+            const SizedBox(height: 8),
             const Text(
               'Historial de Certificados',
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1B365D)),

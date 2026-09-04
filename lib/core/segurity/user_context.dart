@@ -67,6 +67,17 @@ class UserContext {
   bool get puedeEditarComputo =>
       _tieneAlgunRol([RolProyecto.adminMaestro, RolProyecto.profesional]);
 
+  // Regla de visibilidad 5: ¿puede editar la configuración de certificación de la obra (Modelo
+  // A/B, plazo de pago, anticipo, fondo de reparo, carga inicial de monto total contratado)?
+  // Solo admin_maestro, a propósito distinto de puedeEditarComputo/puedeVerMontosYAPU (que
+  // incluyen a profesional) — la base sigue mirando obras.id_admin_creador para esto, no un rol
+  // de obra_members (ver ObraConfigCertificacionRepository), así que este getter es la intención,
+  // no la autoridad real: los dos coinciden hoy porque 0033_obra_members_bootstrap.sql sincroniza
+  // al creador como admin_maestro al crear la obra, pero podrían divergir si alguna vez se agrega
+  // un segundo admin_maestro que no sea también el id_admin_creador — ese usuario pasaría este
+  // getter pero el guardado le fallaría igual contra la RLS real.
+  bool get puedeEditarConfigCertificacion => _tieneAlgunRol([RolProyecto.adminMaestro]);
+
   bool _delegacionVigente(ObraMember m) {
     final inicio = m.permisosEspeciales.delegacionTemporalInicio;
     final fin = m.permisosEspeciales.delegacionTemporalFin;
