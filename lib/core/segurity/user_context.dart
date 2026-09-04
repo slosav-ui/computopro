@@ -78,6 +78,30 @@ class UserContext {
   // getter pero el guardado le fallaría igual contra la RLS real.
   bool get puedeEditarConfigCertificacion => _tieneAlgunRol([RolProyecto.adminMaestro]);
 
+  // Regla de visibilidad 6: ¿puede crear/cargar el Borrador de un certificado? Verificado contra
+  // las políticas certificados_insert (0009) y certificados_update (0010, la que rige hoy) tal
+  // como quedaron aplicadas, no asumido: admin_maestro, profesional o constructor — es la posta
+  // de carga de avance ("uno carga, se lo pasa al otro"), no la autoridad de emitir (esa sigue
+  // siendo solo admin_maestro/profesional, verificada en emitir_certificado, 0011 — no hay getter
+  // acá para eso porque la propia función ya la exige del lado del servidor).
+  bool get puedeCargarAvance =>
+      _tieneAlgunRol([RolProyecto.adminMaestro, RolProyecto.profesional, RolProyecto.constructor]);
+
+  // Regla de visibilidad 7: ¿ve montos en Gestión de Obra (certificados, avance en pesos)? A
+  // propósito NO reusa puedeVerMontosYAPU (esa es admin_maestro/profesional únicamente, pensada
+  // para editar APU/Mat y MO — le ocultaría montos al Cliente, que según la matriz sí los ve:
+  // "Caja Negra Comercial... certificados") ni la negación de esVistaOperativa (esa solo cubre al
+  // Constructor puro — un Invitado Veedor sin rol constructor le daría esVistaOperativa = false,
+  // y por matriz el Veedor tampoco ve montos, "Caja Negra Básica"). Lista positiva de quién sí ve,
+  // no negación de quién no — admin_maestro/profesional/cliente_principal siempre,
+  // invitado_apoderado solo con delegación vigente (mismo criterio que puedeAprobarCertificados,
+  // extendido acá a la visibilidad, no solo a la aprobación — el resto de la matriz no distingue
+  // explícitamente este caso, es una lectura razonable, no algo verificado literal en la spec).
+  // Constructor y Veedor quedan afuera de la lista: ven porcentajes de avance, nunca pesos.
+  bool get puedeVerMontosGestionObra =>
+      _tieneAlgunRol([RolProyecto.adminMaestro, RolProyecto.profesional, RolProyecto.clientePrincipal]) ||
+      membresias.any((m) => m.rol == RolProyecto.invitadoApoderado && _delegacionVigente(m));
+
   bool _delegacionVigente(ObraMember m) {
     final inicio = m.permisosEspeciales.delegacionTemporalInicio;
     final fin = m.permisosEspeciales.delegacionTemporalFin;

@@ -39,6 +39,32 @@ class ObraSubitemsRepository {
     return mapa;
   }
 
+  /// Filas de `obra_subitems` tildadas (`es_aplicable = true`) de un rubro puntual — a diferencia
+  /// de `getMapaDeRubro` (pensada para saber qué checkbox mostrar tildado contra el catálogo
+  /// completo, e incluye tildados y no tildados por igual), esta trae solo las tildadas y en un
+  /// solo paso, para la pantalla de carga de avance (que no necesita el catálogo completo, solo
+  /// lo que ya está tildado). Incluye la fila OTRO si está tildada — `getMapaDeRubro` la excluye
+  /// a propósito porque no tiene `subitem_id` con qué ser clave del mapa, acá no hace falta esa
+  /// clave, así que no hay motivo para perderla.
+  ///
+  /// Misma precondición temporal `sector is null` que el resto de este repositorio — ver
+  /// `getMapaDeRubro` para el detalle.
+  Future<List<ObraSubitem>> getTildadosDeRubro({
+    required String obraId,
+    required String rubroId,
+  }) async {
+    final data = await _client
+        .from('obra_subitems')
+        .select()
+        .eq('obra_id', obraId)
+        .eq('rubro_id', rubroId)
+        .eq('es_aplicable', true)
+        .isFilter('sector', null);
+    return (data as List)
+        .map((row) => _fromRow(row as Map<String, dynamic>))
+        .toList();
+  }
+
   /// Cuántos subitems están tildados (`es_aplicable = true`) por rubro, para
   /// una obra puntual — el indicador "N de M" de RubrosTab. Misma consulta
   /// plana agrupada en Dart que `getConteoOficialPorRubro` de
