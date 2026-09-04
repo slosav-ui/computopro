@@ -1,0 +1,40 @@
+-- Sincronización en tiempo real — primer corte: agrega `obra_insumo_precios` a la publicación
+-- `supabase_realtime`, paso de setup obligatorio para que Postgres Changes empiece a mandar
+-- eventos de esta tabla (sin esto, suscribirse desde el cliente no falla, simplemente no llega
+-- nunca ningún evento). Alcance de esta tanda, deliberadamente chico: una sola tabla, una sola
+-- pantalla (Mat y MO) — ver diagnóstico completo de la pieza en la sesión que decidió esto.
+--
+-- Pieza separada del QR de vinculación PC/teléfono: tiempo real no depende del QR ni de la
+-- versión web, sirve igual aunque esas dos nunca se construyan. La versión de PC va a ser la app
+-- compilada a web, sin cliente propio — los dos clientes leen/escriben la misma Supabase, así que
+-- esto es también la sincronización que necesita esa pieza el día que exista, no algo aparte.
+--
+-- Aplicar a mano en el SQL Editor de Supabase (Project → SQL Editor). No ejecutado
+-- automáticamente por Claude Code: sin acceso a la base de datos desde este entorno.
+
+alter publication supabase_realtime add table obra_insumo_precios;
+
+-- =====================================================================
+-- RLS y Postgres Changes — verificado contra la documentación oficial, no asumido
+-- =====================================================================
+--
+-- Postgres Changes SÍ respeta las políticas de RLS por defecto, sin configuración adicional:
+-- "Realtime authorizes every event against each subscriber" — cada evento se evalúa contra las
+-- políticas de quien está suscripto antes de mandárselo. Un usuario que no es miembro de la obra
+-- no recibe sus cambios, mismo mecanismo que ya protege los `select()` puntuales de siempre.
+-- Fuente: https://supabase.com/docs/guides/realtime/postgres-changes
+--
+-- EXCEPCIÓN real, y aplica de lleno a esta tabla: RLS no se evalúa sobre eventos DELETE — Postgres
+-- no puede aplicar una política contra una fila que ya no existe, así que un DELETE se manda a
+-- TODOS los suscriptores de la tabla, sin importar si podían verla. `obra_insumo_precios` tiene
+-- política de DELETE (0030_obra_insumo_precios.sql — es "volver al calculado", borra el override
+-- manual) y es justo la tabla de esta migración, así que la excepción no es teórica acá.
+--
+-- El alcance real de esa fuga es chico hoy, no nulo: sin `REPLICA IDENTITY FULL` (esta tabla NO la
+-- tiene, y esta migración no se la agrega) el evento de DELETE que Postgres manda solo trae la
+-- clave primaria (`id`) — un usuario ajeno a la obra se entera de que algún override se borró y
+-- de su id, no de qué obra/insumo/precio tenía. Si en el futuro se le agrega
+-- `REPLICA IDENTITY FULL` a esta tabla por otro motivo (por ejemplo, para ver el valor anterior en
+-- un UPDATE), ese cambio empieza a filtrar las columnas completas en cada DELETE a cualquier
+-- usuario autenticado suscripto a la tabla, no solo a los miembros de la obra — evaluarlo con este
+-- comentario presente antes de agregarla, no on the go.

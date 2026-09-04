@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/utils/parser_numero_ar.dart';
 import '../../../data/models/insumo_consolidado_obra.dart';
 import '../../../data/models/obra_presupuesto_config.dart';
@@ -56,10 +57,50 @@ class _MatYMoTabState extends State<MatYMoTab> {
   bool _cargando = true;
   String? _error;
 
+  // Sincronización en tiempo real, primer corte — una sola tabla (ver diagnóstico de la pieza).
+  RealtimeChannel? _obraInsumoPreciosChannel;
+
   @override
   void initState() {
     super.initState();
     _cargarConsolidado();
+    _suscribirCambiosPrecios();
+  }
+
+  @override
+  void dispose() {
+    // Preferido, según la propia documentación de Flutter para este caso (cancelar la
+    // suscripción en dispose, no solo confiar en el guard de `mounted` de más abajo): sin esto,
+    // cada entrada/salida de esta solapa deja un canal más abierto, y eso sí puede llegar al
+    // límite de conexiones concurrentes del plan gratuito de Supabase. `removeChannel` devuelve
+    // un Future que a propósito no se espera acá — dispose() de Flutter tiene que ser sincrónico.
+    final channel = _obraInsumoPreciosChannel;
+    if (channel != null) {
+      Supabase.instance.client.removeChannel(channel);
+    }
+    super.dispose();
+  }
+
+  /// Suscribe a cambios de `obra_insumo_precios` de esta obra — dispara `_cargarConsolidado`
+  /// en modo silencioso cuando otro dispositivo edita un precio. Filtrado por obra_id del lado
+  /// del servidor: la RLS de la tabla (0030) ya garantiza que nunca llega un evento de una obra
+  /// ajena aunque este filtro fallara, pero filtrar acá evita procesar de más los eventos de las
+  /// otras obras propias del usuario.
+  void _suscribirCambiosPrecios() {
+    _obraInsumoPreciosChannel = Supabase.instance.client
+        .channel('obra_insumo_precios_${widget.obraId}')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'obra_insumo_precios',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'obra_id',
+            value: widget.obraId,
+          ),
+          callback: (payload) => _cargarConsolidado(silencioso: true),
+        )
+        .subscribe();
   }
 
   /// Carga las tres cosas que la solapa necesita en conjunto — consolidado, config de la obra y
@@ -73,11 +114,19 @@ class _MatYMoTabState extends State<MatYMoTab> {
   /// de guardar (ver panel_valor_hora_mano_obra.dart), no contra una foto vieja: un `esPro`
   /// cargado acá y pasado por parámetro fue exactamente el bug real que dejaba pasar un guardado
   /// de Free sin mostrar el diálogo de función PRO.
-  Future<void> _cargarConsolidado() async {
-    setState(() {
-      _cargando = true;
-      _error = null;
-    });
+  ///
+  /// [silencioso]: true cuando dispara un evento de Realtime en segundo plano (ver
+  /// _suscribirCambiosPrecios) — no pone `_cargando` (no reemplaza la lista por un spinner por un
+  /// cambio ajeno) y, si falla, no toca `_error` (se queda mostrando lo último que cargó bien en
+  /// vez de romper la pantalla por algo que pasó en segundo plano). false para la carga inicial y
+  /// el pull-to-refresh manual, donde sí corresponde mostrar spinner/error.
+  Future<void> _cargarConsolidado({bool silencioso = false}) async {
+    if (!silencioso) {
+      setState(() {
+        _cargando = true;
+        _error = null;
+      });
+    }
     try {
       final insumosFuture = _obraInsumosRepository.getConsolidado(widget.obraId);
       final configFuture = _configRepository.getConfig(widget.obraId);
@@ -95,6 +144,7 @@ class _MatYMoTabState extends State<MatYMoTab> {
       });
     } catch (e) {
       if (!mounted) return;
+      if (silencioso) return;
       setState(() {
         _error = 'No se pudo cargar el consolidado de insumos de esta obra.';
         _cargando = false;
