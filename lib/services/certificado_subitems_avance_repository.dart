@@ -148,6 +148,61 @@ class CertificadoSubitemsAvanceRepository {
     return ResumenCertificadoObra(totalCertificado: totalCertificado, totalPagado: totalPagado);
   }
 
+  /// El desglose completo de un certificado (subtotal, anticipo, fondo de reparo, neto) — RPC a
+  /// `calcular_totales_certificado` (0054). Misma función que `emitir_certificado` usa para
+  /// congelar, llamada acá de solo lectura para la vista previa — nunca recalculada en Dart.
+  Future<TotalesCertificado> getTotalesCertificado(String certificadoId) async {
+    final data = await _client.rpc(
+      'calcular_totales_certificado',
+      params: {'p_certificado_id': certificadoId},
+    );
+    final fila = (data as List).first as Map<String, dynamic>;
+    return TotalesCertificado(
+      monto: (fila['monto'] as num?)?.toDouble() ?? 0,
+      anticipoPct: (fila['anticipo_pct'] as num?)?.toDouble(),
+      fondoReparoPct: (fila['fondo_reparo_pct'] as num?)?.toDouble(),
+      montoAnticipo: (fila['monto_anticipo'] as num?)?.toDouble() ?? 0,
+      montoFondoReparo: (fila['monto_fondo_reparo'] as num?)?.toDouble() ?? 0,
+      montoNeto: (fila['monto_neto'] as num?)?.toDouble() ?? 0,
+      diasPlazoPago: (fila['dias_plazo_pago'] as num?)?.toInt(),
+    );
+  }
+
+  /// Subítems de este borrador que exceden el 100% acumulado — RPC a
+  /// `calcular_excesos_certificado` (0054). Lista vacía si no hay ningún exceso: la vista previa
+  /// habilita "Emitir" solo cuando esto vuelve vacío.
+  Future<List<ExcesoCertificado>> getExcesosCertificado(String certificadoId) async {
+    final data = await _client.rpc(
+      'calcular_excesos_certificado',
+      params: {'p_certificado_id': certificadoId},
+    );
+    return (data as List).map((row) {
+      final fila = row as Map<String, dynamic>;
+      return ExcesoCertificado(
+        obraSubitemId: fila['obra_subitem_id'].toString(),
+        descripcion: fila['descripcion']?.toString() ?? '',
+        acumuladoPrevio: (fila['acumulado_previo'] as num?)?.toDouble() ?? 0,
+        disponible: (fila['disponible'] as num?)?.toDouble() ?? 0,
+        intentado: (fila['intentado'] as num?)?.toDouble() ?? 0,
+      );
+    }).toList();
+  }
+
+  /// Borrador -> Emitido — RPC a `emitir_certificado`. `requiereFirmaFisica` se pregunta recién acá,
+  /// al emitir, nunca antes (es una decisión por certificado, no de la obra).
+  Future<void> emitirCertificado({
+    required String certificadoId,
+    required bool requiereFirmaFisica,
+  }) async {
+    await _client.rpc(
+      'emitir_certificado',
+      params: {
+        'p_certificado_id': certificadoId,
+        'p_requiere_firma_fisica': requiereFirmaFisica,
+      },
+    );
+  }
+
   CertificadoSubitemAvance _fromRow(Map<String, dynamic> row) {
     return CertificadoSubitemAvance(
       id: row['id'].toString(),

@@ -102,6 +102,14 @@ class UserContext {
       _tieneAlgunRol([RolProyecto.adminMaestro, RolProyecto.profesional, RolProyecto.clientePrincipal]) ||
       membresias.any((m) => m.rol == RolProyecto.invitadoApoderado && _delegacionVigente(m));
 
+  // Regla de visibilidad 8: ¿puede emitir un certificado (Borrador -> Emitido)? Verificado contra
+  // el chequeo de autoridad real dentro de `emitir_certificado` (0011/0054), no asumido: solo
+  // `admin_maestro`/`profesional` — a propósito distinto de `puedeCargarAvance` (que suma
+  // `constructor`, porque cargar el borrador sí es tarea de posta entre los 3). Emitir es un paso
+  // más restringido que cargar, con autoridad propia, no una extensión del mismo permiso.
+  bool get puedeEmitirCertificado =>
+      _tieneAlgunRol([RolProyecto.adminMaestro, RolProyecto.profesional]);
+
   bool _delegacionVigente(ObraMember m) {
     final inicio = m.permisosEspeciales.delegacionTemporalInicio;
     final fin = m.permisosEspeciales.delegacionTemporalFin;

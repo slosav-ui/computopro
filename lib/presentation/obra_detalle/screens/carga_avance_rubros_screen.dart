@@ -8,6 +8,7 @@ import '../../../services/certificado_subitems_avance_repository.dart';
 import '../../../services/obra_subitems_repository.dart';
 import '../../../services/rubros_repository.dart';
 import 'carga_avance_subitems_screen.dart';
+import 'vista_previa_certificado_screen.dart';
 
 /// Pantalla de carga de avance por partida (Modelo A) — Gestión de Obra, pieza 3. Lista de
 /// rubros con subítems tildados en esta obra, mismo patrón de navegación que `RubrosTab`: se
@@ -117,12 +118,41 @@ class _CargaAvanceRubrosScreenState extends State<CargaAvanceRubrosScreen> {
         ),
         backgroundColor: const Color(0xFF1B365D),
         foregroundColor: Colors.white,
+        // Vista previa + Emitir viven en su propia pantalla — mismos 2 roles que exige
+        // emitir_certificado (admin_maestro/profesional), no los mismos que pueden cargar avance
+        // (que suma constructor): cargar es de posta entre los 3, emitir es autoridad propia.
+        actions: [
+          if (widget.userContext?.puedeEmitirCertificado == true)
+            TextButton.icon(
+              onPressed: _abrirVistaPrevia,
+              icon: const Icon(Icons.visibility_outlined, size: 18, color: Colors.white),
+              label: const Text('Vista previa', style: TextStyle(fontSize: 12, color: Colors.white)),
+            ),
+        ],
       ),
       body: RefreshIndicator(
         onRefresh: _cargarDatos,
         child: _buildContenido(),
       ),
     );
+  }
+
+  Future<void> _abrirVistaPrevia() async {
+    final emitido = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => VistaPreviaCertificadoScreen(
+          obraId: widget.obraId,
+          certificado: widget.certificado,
+          userContext: widget.userContext,
+        ),
+      ),
+    );
+    // Solo si se emitió de verdad: el certificado pasa de estado y esta pantalla ya no tiene
+    // sentido seguir mostrándola como "Borrador en curso" — se vuelve a Gestión de Obra, que
+    // recarga la lista. Si el usuario solo miró la vista previa y volvió (sin emitir), se queda acá.
+    if (emitido != true || !mounted) return;
+    Navigator.pop(context);
   }
 
   Widget _buildContenido() {

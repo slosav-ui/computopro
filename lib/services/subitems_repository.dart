@@ -91,6 +91,21 @@ class SubitemsRepository {
     return conteo;
   }
 
+  /// Filas de `subitems` por id — para resolver descripciones en la vista previa del certificado
+  /// (subítems de varios rubros a la vez, a diferencia de `getSubitemsDeRubro`). Sin filtro de
+  /// `creador_usuario_id`: la propia RLS de `subitems_select` (0016, extendida en 0019 con
+  /// `tiene_apu_ajena_visible_por_subitem`) decide qué filas puede ver quien llama — un id que
+  /// exista pero no sea visible simplemente no vuelve, y quien llama tiene que resolverlo con un
+  /// fallback (mismo criterio que `coalesce(s.descripcion, ...)` ya usa del lado SQL). Lista vacía
+  /// si `ids` viene vacía, sin ida al servidor.
+  Future<List<SubitemCatalogo>> getPorIds(List<String> ids) async {
+    if (ids.isEmpty) return [];
+    final data = await _client.from('subitems').select().inFilter('id', ids);
+    return (data as List)
+        .map((row) => _fromRow(row as Map<String, dynamic>))
+        .toList();
+  }
+
   int _compararCodigoNatural(String a, String b) {
     final segmentosA = a.split('.');
     final segmentosB = b.split('.');

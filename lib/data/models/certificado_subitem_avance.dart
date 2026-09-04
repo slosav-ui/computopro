@@ -83,3 +83,45 @@ class ResumenCertificadoObra {
     required this.totalPagado,
   });
 }
+
+/// El desglose completo de un certificado — salida de `calcular_totales_certificado` (0054). La
+/// misma cuenta que la vista previa muestra antes de emitir y que `emitir_certificado` congela:
+/// no se recalcula en Dart, se lee de acá en los dos lugares.
+class TotalesCertificado {
+  final double monto;
+  final double? anticipoPct;
+  final double? fondoReparoPct;
+  final double montoAnticipo;
+  final double montoFondoReparo;
+  final double montoNeto;
+  final int? diasPlazoPago;
+
+  const TotalesCertificado({
+    required this.monto,
+    required this.anticipoPct,
+    required this.fondoReparoPct,
+    required this.montoAnticipo,
+    required this.montoFondoReparo,
+    required this.montoNeto,
+    required this.diasPlazoPago,
+  });
+}
+
+/// Un subítem de este borrador que excede el 100% acumulado — salida de
+/// `calcular_excesos_certificado` (0054). Misma cuenta que bloquea `emitir_certificado`, mostrada
+/// antes de intentar emitir en vez de recién al fallar.
+class ExcesoCertificado {
+  final String obraSubitemId;
+  final String descripcion;
+  final double acumuladoPrevio;
+  final double disponible;
+  final double intentado;
+
+  const ExcesoCertificado({
+    required this.obraSubitemId,
+    required this.descripcion,
+    required this.acumuladoPrevio,
+    required this.disponible,
+    required this.intentado,
+  });
+}

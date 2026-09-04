@@ -241,6 +241,18 @@ class ObraSubitemsRepository {
     return _fromRow(updated);
   }
 
+  /// Filas de `obra_subitems` por id — para la vista previa del certificado, que necesita
+  /// resolver nombre/rubro de los subítems que aparecen en `certificado_subitems_avance` sin
+  /// importar a qué rubro pertenezca cada uno (a diferencia de `getTildadosDeRubro`, acotada a un
+  /// solo rubro). Lista vacía si `ids` viene vacía, sin ida al servidor.
+  Future<List<ObraSubitem>> getPorIds(List<String> ids) async {
+    if (ids.isEmpty) return [];
+    final data = await _client.from('obra_subitems').select().inFilter('id', ids);
+    return (data as List)
+        .map((row) => _fromRow(row as Map<String, dynamic>))
+        .toList();
+  }
+
   ObraSubitem _fromRow(Map<String, dynamic> row) {
     return ObraSubitem(
       id: row['id'].toString(),
