@@ -239,6 +239,32 @@ y cuándo" en `docs/proveedores_digitales_bariloche.md`).
 Esto cambia el valor de esa conversación cuando llegue: no se negocia solo acceso a un catálogo,
 se negocia con un dataset propio de precios reales multi-proveedor que XCONS no tiene.
 
+## 11. El catálogo de insumos es regional, no nacional — pendiente abierto
+
+Encontrado al unificar duplicados del catálogo (rubros 2-17, ver `0066_unificacion_duplicados_
+catalogo.sql`): `PIEDRA` (canto rodado de cantera, precio de referencia $70.000/m³ sin IVA, ver
+`0063_corralon_referencia_piedra.sql`) y `CANTO RODADO / PIEDRA PARTIDA` (Felemax, $112.313,89/m³
+con IVA, ver `0058`) se evaluaron como candidatos a unificar y **se decidió mantenerlos separados a
+propósito** — no es el mismo material en todas las zonas. En Bariloche/Río Negro el árido de uso
+corriente es canto rodado de cantera; en otras regiones del país el equivalente es piedra partida
+de otra roca madre, con otra cadena de distribución y otro precio de base. Unificarlos escondería
+esa diferencia regional detrás de un solo promedio.
+
+**Consecuencia para el mecanismo colaborativo (§3)**: el promedio de "tres precios que coincidan
+dentro de un 10%" asume implícitamente que todos los precios que caen sobre un mismo insumo
+describen el mismo material en el mismo mercado. Para un insumo con variación regional real como
+este, esa asunción se rompe — tres precios de tres ciudades distintas para "el árido de uso
+corriente" de cada una podrían promediarse entre sí sin que ninguno de los tres sea representativo
+de ningún lugar concreto. El mecanismo tal como está diseñado (agregación nacional simple) no
+distingue esto.
+
+**Sin diseño todavía**: si el promedio colaborativo debería filtrar por zona geográfica antes de
+promediar (mismo tipo de agrupación que ya prevé el "Motor de precio de referencia por m² por
+zona", §5, radio ~50km) en vez de agregar a nivel nacional — y, más de fondo, si hacen falta
+insumos explícitamente regionales en el catálogo (como ya pasó con piedra/canto rodado) en lugar de
+asumir un catálogo único válido en todo el país. No bloquea nada en curso — el catálogo hoy solo
+tiene datos de Bariloche, así que el problema todavía no se manifestó en la práctica.
+
 ## Para retomar
 
 - **Condiciones de pago (§8)**: sin diseño, afecta schema de precios.
@@ -256,3 +282,6 @@ se negocia con un dataset propio de precios reales multi-proveedor que XCONS no 
   `CLAUDE.md` para esta misma pieza.
 - Nada de esto tiene migración ni código todavía — ninguna de las piezas de este documento está
   bloqueando otro trabajo en curso (Factor K Paso B, zonas UOCRA, QR de vinculación).
+- **Catálogo regional, no nacional (§11)**: si el promedio colaborativo necesita agrupar por zona
+  antes de promediar, y si hacen falta más insumos explícitamente regionales — sin definir, no
+  bloquea nada mientras el catálogo solo tenga datos de Bariloche.
