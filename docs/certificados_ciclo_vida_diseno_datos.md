@@ -538,3 +538,63 @@ Ver también CLAUDE.md, sección "Ciclo de vida del Certificado de Obra (5 estad
 de datos completa", que referencia este cambio en la línea de `0011_certificados_funciones_transicion.sql`.
 
 **Los 3 pasos quedaron aplicados y verificados en producción.** Pieza cerrada.
+
+## §12 — Anulación de un certificado emitido (2026-09, Gestión de Obra pieza 4, tanda 3)
+
+**`supabase/migrations/0056_certificados_anulacion.sql`, aplicada y verificada en producción**: las
+5 columnas nuevas, la unique `(obra_id, numero, version)`, el check de `estado` con `'anulado'`, el
+fix de `calcular_avance_acumulado_subitem` y las 2 funciones, todo confirmado en Supabase. **El
+circuito de propuesta/aprobación en sí (`proponer_anulacion_certificado`/
+`resolver_anulacion_certificado` con dos usuarios reales) todavía NO está verificado** — desde el
+SQL Editor de Supabase corre como `service_role` sin usuario logueado, así que el chequeo de rol de
+`proponer_anulacion_certificado` rechaza con "sin autoridad" (correcto, pero solo prueba la mitad
+del camino: que el guard de autoridad funciona, no que el flujo completo con dos usuarios reales
+funcione de punta a punta). Queda pendiente de la pantalla, con dos usuarios reales (uno propone,
+el otro resuelve).
+
+**Caso real**: se emite un certificado, el cliente detecta un error (el Cliente solo observa, no
+participa del circuito de anulación en sí), se anula — nunca se borra, queda visible en el
+historial con motivo — y el reemplazo lleva el mismo número, con una columna `version` nueva
+(`unique(obra_id, numero, version)` reemplaza a `unique(obra_id, numero)`).
+
+**Estado nuevo `'anulado'`, alcanzable solo desde `'emitido'`/`'leido'`** — no desde `'pagado'`/
+`'impactado_cerrado'` (el ciclo cierra al pagar; una quita vía `modificaciones_obra` es el mecanismo
+para errores posteriores al pago) ni desde `'borrador'` (un borrador se corrige o se descarta
+directamente, no se "anula").
+
+**La dupla que propone/aprueba es Profesional y Constructor — los dos que arman el borrador —,
+nunca el Cliente.** Nunca la misma persona en los dos lados, aunque combine roles: quien propone no
+puede resolver su propia propuesta. Dos funciones, no cuatro — `proponer_anulacion_certificado` y
+`resolver_anulacion_certificado` (aprobar/rechazar en una sola función con un booleano, a diferencia
+del resto de las transiciones del ciclo que son una función por transición — acá se agruparon
+porque comparten toda la validación de autoridad y solo difieren en el efecto final).
+
+**Sub-estado `anulacion_estado` (`'propuesta'`/`'aprobada'`/`'rechazada'`), separado de
+`certificados.estado`**: mientras la propuesta está pendiente, el certificado sigue siendo
+`'emitido'`/`'leido'` para todo lo demás (incluido `calcular_avance_acumulado_subitem`) — solo pasa
+a `'anulado'` cuando se aprueba. Reproponer después de un rechazo está permitido a propósito (el
+guard de `proponer_anulacion_certificado` solo bloquea una propuesta *pendiente*, no una ya
+resuelta); las columnas de propuesta/resolución reflejan el último intento, igual que ya hacen
+`modificaciones_obra`/`hitos_certificacion` — el historial completo de cada intento queda en
+`audit_log`, no en estas columnas.
+
+**El borrador nuevo arranca con una copia de las filas de `certificado_subitems_avance` del
+anulado** (no vacío, para corregir en vez de rehacer) — el trigger de la `0052` recalcula
+`monto_periodo` con el precio vigente al copiarlas, así que no arrastran el monto viejo.
+
+**El índice de "un solo borrador por obra" (`0053`) no se esquiva**: si al aprobar la anulación ya
+hay otro borrador real en curso para la misma obra, el `insert` del borrador de reemplazo choca solo
+con ese índice — se captura el error y se devuelve un mensaje de negocio claro en vez del error
+crudo de Postgres. Como la excepción se relanza, toda la función revierte: el certificado original
+no queda marcado `'anulado'` si no se pudo crear su reemplazo.
+
+**Hallazgo del diagnóstico que resultó ya resuelto, no aplicado en esta migración**: se había
+señalado que `emitir_certificado` buscaba el certificado anterior por `numero = v_numero - 1` sin
+filtrar `version`, lo cual con versiones podría matchear más de una fila. Al escribir `0056` se
+verificó releyendo `0055_certificados_firma_fisica_no_bloquea.sql` (la versión de la función
+realmente vigente hoy) que ese `lookup` ya no existe — `0055` sacó por completo el bloqueo de firma
+física, que era el único lugar que lo usaba, como efecto colateral de la tanda 2. No es un fix
+pendiente que haya quedado afuera de `0056` por descuido.
+
+**Sin conectar a Dart/UI todavía** — la pantalla (proponer con motivo, aprobar o rechazar del otro
+lado) es la tanda siguiente, después de aplicar y verificar esta migración en Supabase.
