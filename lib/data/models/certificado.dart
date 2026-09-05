@@ -1,7 +1,7 @@
-/// Certificado de Obra (Modelo A, Avance Medido) — ciclo de vida de 5 estados.
-/// Ver supabase/migrations/0009_certificados.sql y
-/// docs/certificados_ciclo_vida_diseno_datos.md para el diseño completo.
-enum EstadoCertificado { borrador, emitido, leido, pagado, impactadoCerrado }
+/// Certificado de Obra (Modelo A, Avance Medido) — ciclo de vida de 5 estados + `anulado`.
+/// Ver supabase/migrations/0009_certificados.sql, 0056_certificados_anulacion.sql y
+/// docs/certificados_ciclo_vida_diseno_datos.md (§12 para la anulación) para el diseño completo.
+enum EstadoCertificado { borrador, emitido, leido, pagado, impactadoCerrado, anulado }
 
 extension EstadoCertificadoLabel on EstadoCertificado {
   String get label {
@@ -16,6 +16,8 @@ extension EstadoCertificadoLabel on EstadoCertificado {
         return 'Pagado';
       case EstadoCertificado.impactadoCerrado:
         return 'Impactado y Cerrado';
+      case EstadoCertificado.anulado:
+        return 'Anulado';
     }
   }
 }
@@ -24,6 +26,7 @@ class Certificado {
   final String id;
   final String obraId;
   final int numero;
+  final int version;
   final String periodo;
   final double monto;
   final EstadoCertificado estado;
@@ -64,10 +67,23 @@ class Certificado {
   final DateTime? pdfFirmadoFecha;
   final List<String> pdfFirmadoAdjuntos;
 
+  // Anulación — ver supabase/migrations/0056_certificados_anulacion.sql. anulacionEstado es texto
+  // plano ('propuesta'/'aprobada'/'rechazada'), no un enum, mismo criterio ya usado acá para
+  // medioPago: es un valor que se muestra tal cual, sin lógica propia en Dart más allá de comparar
+  // contra el string.
+  final String? anulacionEstado;
+  final String? anulacionMotivo;
+  final String? anulacionPropuestaPor;
+  final DateTime? anulacionPropuestaFecha;
+  final String? anulacionResueltaPor;
+  final DateTime? anulacionResueltaFecha;
+  final String? anulacionMotivoRechazo;
+
   Certificado({
     required this.id,
     required this.obraId,
     required this.numero,
+    this.version = 1,
     required this.periodo,
     required this.monto,
     required this.estado,
@@ -94,5 +110,12 @@ class Certificado {
     this.pdfFirmadoSubido = false,
     this.pdfFirmadoFecha,
     this.pdfFirmadoAdjuntos = const [],
+    this.anulacionEstado,
+    this.anulacionMotivo,
+    this.anulacionPropuestaPor,
+    this.anulacionPropuestaFecha,
+    this.anulacionResueltaPor,
+    this.anulacionResueltaFecha,
+    this.anulacionMotivoRechazo,
   });
 }

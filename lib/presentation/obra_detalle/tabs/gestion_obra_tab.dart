@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/segurity/user_context.dart';
 import '../../../data/models/certificado.dart';
 import '../../../services/auth_service.dart';
@@ -186,7 +187,180 @@ class _GestionObraTabState extends State<GestionObraTab> {
         return Colors.green.shade700;
       case EstadoCertificado.impactadoCerrado:
         return Colors.grey.shade700;
+      case EstadoCertificado.anulado:
+        return Colors.red.shade700;
     }
+  }
+
+  /// Propone anular un certificado emitido/leído — botón visible solo para profesional/constructor
+  /// (0056: la dupla que arma el borrador, nunca el cliente). El motivo es obligatorio del lado del
+  /// servidor; acá solo se evita el viaje si viene vacío.
+  Future<void> _proponerAnulacion(Certificado cert) async {
+    final controller = TextEditingController();
+    final motivo = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(
+          'Anular Certificado Nº ${cert.numero}',
+          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+        ),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLines: 3,
+          decoration: const InputDecoration(labelText: 'Motivo', isDense: true),
+          style: const TextStyle(fontSize: 13),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+          TextButton(
+            onPressed: () {
+              final texto = controller.text.trim();
+              Navigator.pop(ctx, texto.isEmpty ? null : texto);
+            },
+            child: const Text('Proponer'),
+          ),
+        ],
+      ),
+    );
+    if (motivo == null) return;
+
+    try {
+      await _certificadosRepository.proponerAnulacion(certificadoId: cert.id, motivo: motivo);
+      if (!mounted) return;
+      await _cargarCertificados();
+    } on PostgrestException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No se pudo proponer la anulación.')),
+      );
+    }
+  }
+
+  /// Aprueba o rechaza una anulación propuesta — visible solo para quien puede resolverla (el otro
+  /// lado de la dupla, nunca quien propuso; ese chequeo final lo hace la función del lado del
+  /// servidor, acá solo se oculta el botón para no ofrecer una acción que va a fallar seguro).
+  Future<void> _resolverAnulacion(Certificado cert, bool aprobar) async {
+    String? motivoRechazo;
+    if (!aprobar) {
+      final controller = TextEditingController();
+      final resultado = await showDialog<String>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Rechazar anulación', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            maxLines: 2,
+            decoration: const InputDecoration(labelText: 'Motivo (opcional)', isDense: true),
+            style: const TextStyle(fontSize: 13),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Volver')),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+              child: const Text('Rechazar'),
+            ),
+          ],
+        ),
+      );
+      if (resultado == null) return; // "Volver" — no confundir con motivo vacío
+      motivoRechazo = resultado.isEmpty ? null : resultado;
+    } else {
+      final confirmar = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Aprobar anulación', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+          content: Text(
+            'El Certificado Nº ${cert.numero} pasa a Anulado y se crea un borrador de reemplazo '
+            'con el mismo número para corregirlo. ¿Confirmás?',
+            style: const TextStyle(fontSize: 13),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+            TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Aprobar')),
+          ],
+        ),
+      );
+      if (confirmar != true) return;
+    }
+
+    try {
+      await _certificadosRepository.resolverAnulacion(
+        certificadoId: cert.id,
+        aprobar: aprobar,
+        motivoRechazo: motivoRechazo,
+      );
+      if (!mounted) return;
+      await _cargarCertificados();
+    } on PostgrestException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No se pudo resolver la anulación.')),
+      );
+    }
+  }
+
+  /// Bloque de la anulación propuesta y pendiente — quien propuso ve un aviso de espera, el otro
+  /// lado de la dupla (si tiene el rol y no es quien propuso) ve los botones de Aprobar/Rechazar.
+  /// Un tercero (Cliente, Veedor, Admin Maestro) no ve ninguna acción, solo lo que ya muestra el
+  /// chip de estado — el circuito de anulación es exclusivamente entre profesional y constructor.
+  Widget _buildBloqueAnulacionPendiente(Certificado cert) {
+    final usuarioActualId = _authService.usuarioActual?.id;
+    final esQuienPropuso = cert.anulacionPropuestaPor != null && cert.anulacionPropuestaPor == usuarioActualId;
+    final puedeResolver = widget.userContext?.puedeGestionarAnulacionCertificado == true && !esQuienPropuso;
+
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.red.shade50,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: Colors.red.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Anulación propuesta: ${cert.anulacionMotivo ?? ''}',
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.red.shade900),
+          ),
+          if (esQuienPropuso)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                'Esperando que la otra parte apruebe o rechace.',
+                style: TextStyle(fontSize: 11, color: Colors.red.shade700),
+              ),
+            )
+          else if (puedeResolver)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Row(
+                children: [
+                  TextButton(
+                    onPressed: () => _resolverAnulacion(cert, true),
+                    style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(0, 0)),
+                    child: const Text('Aprobar', style: TextStyle(fontSize: 12)),
+                  ),
+                  const SizedBox(width: 16),
+                  TextButton(
+                    onPressed: () => _resolverAnulacion(cert, false),
+                    style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(0, 0)),
+                    child: Text('Rechazar', style: TextStyle(fontSize: 12, color: Colors.red.shade700)),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -300,7 +474,10 @@ class _GestionObraTabState extends State<GestionObraTab> {
                   children: [
                     Expanded(
                       child: Text(
-                        'Certificado Nº ${cert.numero.toString().padLeft(3, '0')} - ${cert.periodo}',
+                        // (vN) solo a partir de la 2ª versión — un certificado nunca anulado no
+                        // necesita distinguirse de nada, agregarlo siempre sería ruido sin motivo.
+                        'Certificado Nº ${cert.numero.toString().padLeft(3, '0')}'
+                        '${cert.version > 1 ? ' (v${cert.version})' : ''} - ${cert.periodo}',
                         style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF1B365D)),
                       ),
                     ),
@@ -328,6 +505,30 @@ class _GestionObraTabState extends State<GestionObraTab> {
                   'Emisión: ${_fmtFecha(cert.fechaEmision)}${cert.diasPlazoPago != null ? ' | Plazo: ${cert.diasPlazoPago} días' : ''}',
                   style: const TextStyle(fontSize: 11, color: Colors.black45),
                 ),
+                // Visible para cualquiera que ya vea el certificado (no gateado por rol): la
+                // anulación queda en el historial con motivo, nunca se borra (0056) — es
+                // información pública del certificado, no parte del circuito de propuesta/
+                // resolución en sí (eso sí está gateado, ver más abajo).
+                if (cert.estado == EstadoCertificado.anulado && cert.anulacionMotivo != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      'Anulado — ${cert.anulacionMotivo}',
+                      style: TextStyle(fontSize: 11, color: Colors.red.shade700, fontStyle: FontStyle.italic),
+                    ),
+                  ),
+                if (cert.anulacionEstado == 'propuesta') _buildBloqueAnulacionPendiente(cert),
+                if (widget.userContext?.puedeGestionarAnulacionCertificado == true &&
+                    (cert.estado == EstadoCertificado.emitido || cert.estado == EstadoCertificado.leido) &&
+                    cert.anulacionEstado != 'propuesta')
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      onPressed: () => _proponerAnulacion(cert),
+                      style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(0, 0)),
+                      child: Text('Anular', style: TextStyle(fontSize: 12, color: Colors.red.shade700)),
+                    ),
+                  ),
               ],
             ),
           ),

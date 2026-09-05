@@ -15,12 +15,16 @@ import '../data/models/certificado.dart';
 class CertificadosRepository {
   final SupabaseClient _client = Supabase.instance.client;
 
+  /// Orden por número y, dentro del mismo número, por versión — un certificado anulado y su
+  /// reemplazo comparten `numero` (0056), así que sin el segundo `order` podrían aparecer
+  /// intercalados con otros números en vez de mostrar el anulado antes que su reemplazo.
   Future<List<Certificado>> getCertificadosDeObra(String obraId) async {
     final data = await _client
         .from('certificados')
         .select()
         .eq('obra_id', obraId)
-        .order('numero', ascending: true);
+        .order('numero', ascending: true)
+        .order('version', ascending: true);
     return (data as List)
         .map((row) => _fromRow(row as Map<String, dynamic>))
         .toList();
@@ -108,11 +112,47 @@ class CertificadosRepository {
     );
   }
 
+  /// Propone anular un certificado emitido/leído — RPC a `proponer_anulacion_certificado` (0056).
+  /// Autoridad real (profesional o constructor) la verifica la función del lado del servidor; acá
+  /// no se duplica ese chequeo.
+  Future<void> proponerAnulacion({
+    required String certificadoId,
+    required String motivo,
+  }) async {
+    await _client.rpc(
+      'proponer_anulacion_certificado',
+      params: {
+        'p_certificado_id': certificadoId,
+        'p_motivo': motivo,
+      },
+    );
+  }
+
+  /// Aprueba o rechaza una anulación propuesta — RPC a `resolver_anulacion_certificado` (0056). Si
+  /// se aprueba, el certificado pasa a `anulado` y nace un borrador de reemplazo con el mismo
+  /// número y versión siguiente — no hace falta leerlo acá, `getCertificadosDeObra` ya lo trae en
+  /// la próxima recarga de la lista.
+  Future<void> resolverAnulacion({
+    required String certificadoId,
+    required bool aprobar,
+    String? motivoRechazo,
+  }) async {
+    await _client.rpc(
+      'resolver_anulacion_certificado',
+      params: {
+        'p_certificado_id': certificadoId,
+        'p_aprobar': aprobar,
+        'p_motivo_rechazo': motivoRechazo,
+      },
+    );
+  }
+
   Certificado _fromRow(Map<String, dynamic> row) {
     return Certificado(
       id: row['id'].toString(),
       obraId: row['obra_id'].toString(),
       numero: (row['numero'] as num).toInt(),
+      version: (row['version'] as num?)?.toInt() ?? 1,
       periodo: row['periodo'].toString(),
       monto: (row['monto'] as num).toDouble(),
       estado: _estadoDesdeColumna(row['estado']?.toString()),
@@ -139,6 +179,13 @@ class CertificadosRepository {
       pdfFirmadoSubido: row['pdf_firmado_subido'] == true,
       pdfFirmadoFecha: _fecha(row['pdf_firmado_fecha']),
       pdfFirmadoAdjuntos: _lista(row['pdf_firmado_adjuntos']),
+      anulacionEstado: row['anulacion_estado']?.toString(),
+      anulacionMotivo: row['anulacion_motivo']?.toString(),
+      anulacionPropuestaPor: row['anulacion_propuesta_por']?.toString(),
+      anulacionPropuestaFecha: _fecha(row['anulacion_propuesta_fecha']),
+      anulacionResueltaPor: row['anulacion_resuelta_por']?.toString(),
+      anulacionResueltaFecha: _fecha(row['anulacion_resuelta_fecha']),
+      anulacionMotivoRechazo: row['anulacion_motivo_rechazo']?.toString(),
     );
   }
 
@@ -160,6 +207,8 @@ class CertificadosRepository {
         return EstadoCertificado.pagado;
       case 'impactado_cerrado':
         return EstadoCertificado.impactadoCerrado;
+      case 'anulado':
+        return EstadoCertificado.anulado;
       default:
         // Fallback más conservador ante un valor corrupto o desconocido:
         // mostrarlo como el estado menos avanzado, nunca como pagado/cerrado

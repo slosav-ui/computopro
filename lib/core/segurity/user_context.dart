@@ -110,6 +110,17 @@ class UserContext {
   bool get puedeEmitirCertificado =>
       _tieneAlgunRol([RolProyecto.adminMaestro, RolProyecto.profesional]);
 
+  // Regla de visibilidad 9: ¿puede proponer o resolver (aprobar/rechazar) la anulación de un
+  // certificado emitido? Verificado contra proponer_anulacion_certificado/
+  // resolver_anulacion_certificado (0056), no asumido: solo profesional o constructor — la dupla
+  // que arma el borrador —, a propósito SIN admin_maestro (a diferencia de casi todos los demás
+  // getters de acá) y sin cliente_principal (el Cliente observa el error, no participa del
+  // circuito). La regla de "nunca la misma persona en los dos lados" no se puede expresar acá
+  // (depende de quién propuso una anulación puntual, no de los roles del usuario en general) — la
+  // verifica la propia función del lado del servidor.
+  bool get puedeGestionarAnulacionCertificado =>
+      _tieneAlgunRol([RolProyecto.profesional, RolProyecto.constructor]);
+
   bool _delegacionVigente(ObraMember m) {
     final inicio = m.permisosEspeciales.delegacionTemporalInicio;
     final fin = m.permisosEspeciales.delegacionTemporalFin;
