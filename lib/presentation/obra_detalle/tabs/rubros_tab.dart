@@ -15,12 +15,17 @@ class RubrosTab extends StatefulWidget {
   final ObraModel? obra;
   final String obraId;
   final bool puedeEditarComputo;
+  // Regla de visibilidad 1 de UserContext (Caja Blanca) — solo pasa hacia abajo a SubitemsScreen,
+  // que es quien realmente decide qué mostrar (ver el gate ahí). RubrosTab no muestra ningún monto
+  // por sí mismo, así que no lo usa directamente.
+  final bool puedeVerMontosYAPU;
 
   const RubrosTab({
     Key? key,
     this.obra,
     required this.obraId,
     required this.puedeEditarComputo,
+    required this.puedeVerMontosYAPU,
   }) : super(key: key);
 
   @override
@@ -525,6 +530,7 @@ class _RubrosTabState extends State<RubrosTab> {
                     rubro: rubro,
                     obraId: widget.obraId,
                     puedeEditarComputo: widget.puedeEditarComputo,
+                    puedeVerMontosYAPU: widget.puedeVerMontosYAPU,
                     numeroPosicion: numeroMostrado,
                   ),
                 ),

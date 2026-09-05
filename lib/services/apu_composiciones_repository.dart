@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../data/models/apu_precio_subitem.dart';
+import '../data/models/apu_composicion_item_detalle.dart';
 
 /// Acceso a `apu_composiciones`/`apu_composicion_items` de Supabase (receta
 /// de un subítem — materiales/mano de obra/equipos, ver
@@ -99,5 +100,31 @@ class ApuComposicionesRepository {
       }
       rethrow;
     }
+  }
+
+  /// Detalle línea por línea de la composición de un subítem — mano de obra, materiales y equipos
+  /// con rendimiento y precio unitario ya resuelto (ver `calcular_composicion_detalle_subitem`,
+  /// 0060_calcular_composicion_detalle_subitem.sql). Un solo subitemId, no batch: a diferencia de
+  /// `calcularPreciosSubitems` (que arma el chip agregado de toda la lista de SubitemsScreen de
+  /// una sola vez), esto lo pide ComposicionApuScreen para una partida puntual.
+  ///
+  /// Sin el mecanismo de `_rpcCalcularPreciosDisponible`: para cuando esto se llama, 0034/0059 ya
+  /// se probaron al abrir SubitemsScreen (si no existieran, no habría llegado a mostrarse el chip
+  /// "APU" que lleva a esta pantalla) — no hace falta repetir el cortocircuito acá.
+  Future<List<ApuComposicionItemDetalle>> getComposicionDetalle(String obraId, String subitemId) async {
+    final data = await _client.rpc('calcular_composicion_detalle_subitem', params: {
+      'p_obra_id': obraId,
+      'p_subitem_id': subitemId,
+    });
+    return [
+      for (final row in data as List)
+        ApuComposicionItemDetalle(
+          tipoComponente: (row as Map<String, dynamic>)['tipo_componente'] as String,
+          insumoNombre: row['insumo_nombre'] as String,
+          insumoUnidad: row['insumo_unidad'] as String,
+          rendimiento: (row['rendimiento'] as num).toDouble(),
+          precioUnitario: (row['precio_unitario'] as num?)?.toDouble(),
+        ),
+    ];
   }
 }

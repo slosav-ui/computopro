@@ -11,11 +11,18 @@ import '../../../services/apu_composiciones_repository.dart';
 import '../../../services/auth_service.dart';
 import '../../../services/perfil_repository.dart';
 import '../../shared/pro_gate_dialog.dart';
+import 'composicion_apu_screen.dart';
 
 class SubitemsScreen extends StatefulWidget {
   final RubroCatalogo rubro;
   final String obraId;
   final bool puedeEditarComputo;
+  // Regla de visibilidad 1 de UserContext (Caja Blanca: adminMaestro/profesional) — hasta ahora
+  // esta pantalla solo recibía puedeEditarComputo (edición) sin ningún chequeo de visibilidad de
+  // montos, así que un Constructor (vista operativa, sin montos por matriz) veía precio y subtotal
+  // igual, solo deshabilitados. Ver diagnóstico de la pieza "conectar Solapa APU" — gap real, no
+  // hipotético.
+  final bool puedeVerMontosYAPU;
   // Posición del rubro en la lista ya mezclada/ordenada de esa obra (ver
   // RubrosTab._mezclarOrden) — no rubro.codigo, que queda interno desde esta
   // etapa (docs/rubros_orden_diseno_datos.md §3).
@@ -26,6 +33,7 @@ class SubitemsScreen extends StatefulWidget {
     required this.rubro,
     required this.obraId,
     required this.puedeEditarComputo,
+    required this.puedeVerMontosYAPU,
     required this.numeroPosicion,
   }) : super(key: key);
 
@@ -1029,23 +1037,37 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
                 // precio derivado de solo lectura — paso 3 de la
                 // vinculación con APU. El resto (usaApu == true, oficial,
                 // sin composición) sigue mostrando solo cantidad.
+                //
+                // Gate de privacidad primero, antes de cualquiera de esos casos: sin
+                // puedeVerMontosYAPU (Constructor, Veedor, etc. — Caja Negra/Vista Operativa por
+                // matriz) siempre cantidad sola, sin importar tipoPrecioManual ni composición. Antes
+                // de este chequeo, esos roles veían precio/subtotal igual, solo con el campo
+                // deshabilitado -- deshabilitado no es lo mismo que oculto.
                 Padding(
                   padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
-                  child: widget.rubro.tipoPrecioManual == 'unitario'
-                      ? _buildFilaCantidadPrecioConSubtotal(subitem, aplicable, puedeEditar)
-                      : widget.rubro.tipoPrecioManual == 'global'
-                          ? _buildCampoPrecio(subitem, aplicable, puedeEditar, hint: 'Monto total')
-                          : subitem.creadorUsuarioId != null
-                              ? _buildFilaCantidadPrecioConSubtotal(subitem, aplicable, puedeEditar)
-                              : _subitemsConComposicion.contains(subitem.id)
-                                  ? _buildFilaCantidadPrecioApu(subitem, aplicable, puedeEditar)
-                                  : Align(
-                                      alignment: Alignment.centerRight,
-                                      child: SizedBox(
-                                        width: 140,
-                                        child: _buildCampoCantidad(subitem, aplicable, puedeEditar),
-                                      ),
-                                    ),
+                  child: !widget.puedeVerMontosYAPU
+                      ? Align(
+                          alignment: Alignment.centerRight,
+                          child: SizedBox(
+                            width: 140,
+                            child: _buildCampoCantidad(subitem, aplicable, puedeEditar),
+                          ),
+                        )
+                      : widget.rubro.tipoPrecioManual == 'unitario'
+                          ? _buildFilaCantidadPrecioConSubtotal(subitem, aplicable, puedeEditar)
+                          : widget.rubro.tipoPrecioManual == 'global'
+                              ? _buildCampoPrecio(subitem, aplicable, puedeEditar, hint: 'Monto total')
+                              : subitem.creadorUsuarioId != null
+                                  ? _buildFilaCantidadPrecioConSubtotal(subitem, aplicable, puedeEditar)
+                                  : _subitemsConComposicion.contains(subitem.id)
+                                      ? _buildFilaCantidadPrecioApu(subitem, aplicable, puedeEditar)
+                                      : Align(
+                                          alignment: Alignment.centerRight,
+                                          child: SizedBox(
+                                            width: 140,
+                                            child: _buildCampoCantidad(subitem, aplicable, puedeEditar),
+                                          ),
+                                        ),
                 ),
               ],
             ),
@@ -1082,6 +1104,10 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
   /// _buildFilaCantidadPrecioConSubtotal (cantidad+precio en una fila,
   /// subtotal debajo), pero acá el precio nunca se tipea.
   Widget _buildFilaCantidadPrecioApu(SubitemCatalogo subitem, bool aplicable, bool puedeEditar) {
+    // Tocable solo cuando hay un resultado real que mostrar en la pantalla de composición -- ni
+    // con el mecanismo caído (_precioApuNoDisponible) ni antes de que la carga inicial termine.
+    final resultado = _preciosApuPorSubitemId[subitem.id];
+    final tocable = !_precioApuNoDisponible && resultado != null;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -1090,11 +1116,37 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
           children: [
             Expanded(child: _buildCampoCantidad(subitem, aplicable, puedeEditar)),
             const SizedBox(width: 8),
-            Expanded(child: _buildPrecioApuDerivado(subitem.id)),
+            Expanded(
+              child: tocable
+                  ? InkWell(
+                      borderRadius: BorderRadius.circular(6),
+                      onTap: () => _abrirComposicion(subitem, resultado),
+                      child: _buildPrecioApuDerivado(subitem.id),
+                    )
+                  : _buildPrecioApuDerivado(subitem.id),
+            ),
           ],
         ),
         _buildSubtotalApu(subitem, aplicable),
       ],
+    );
+  }
+
+  /// Abre el detalle de composición de esta partida — solo se llega acá con
+  /// puedeVerMontosYAPU == true (ver _buildContenido: la fila entera con precio/subtotal, la única
+  /// que ofrece este tap, no se renderiza sin ese permiso).
+  Future<void> _abrirComposicion(SubitemCatalogo subitem, ApuPrecioSubitem resultado) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ComposicionApuScreen(
+          obraId: widget.obraId,
+          subitemId: subitem.id,
+          subitemCodigo: subitem.codigo,
+          subitemDescripcion: subitem.descripcion,
+          precioAgregado: resultado,
+        ),
+      ),
     );
   }
 

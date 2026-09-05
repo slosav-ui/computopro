@@ -183,6 +183,7 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> with SingleTick
                   obra: obraModelParaTab,
                   obraId: _obraId!,
                   puedeEditarComputo: _userContext?.puedeEditarComputo == true,
+                  puedeVerMontosYAPU: _userContext?.puedeVerMontosYAPU == true,
                 )
               : const Center(child: Text('No se pudo determinar la obra.')),
           _buildTabApu(),
@@ -227,17 +228,19 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> with SingleTick
               onCambio: () => setState(() => _factorKReloadTick++),
             ),
           if (_obraId != null) BloqueFactorK(key: ValueKey(_factorKReloadTick), obraId: _obraId!),
-          // Esta obra todavía no tiene cómputo métrico cargado en ningún lado — nada en la app
-          // escribe obra_subitems todavía (ni siquiera la solapa Cómputo, que hoy solo navega el
-          // catálogo). No hay ningún camino real al que mandar al usuario, así que el texto no
-          // inventa uno (ver docs/factor_k_apu_decisiones.md §6).
+          // ACTUALIZADO — el texto anterior ("esta obra no tiene cómputo cargado, nada en la app
+          // escribe obra_subitems todavía") quedó desactualizado sin que nadie lo tocara: desde
+          // Gestión de Obra pieza 3, SubitemsScreen sí escribe obra_subitems.cantidad en
+          // producción. No se construye un listado de rubros propio para esta solapa (duplicaría
+          // Rubros/Cómputo) — se entra a la composición de una partida desde ahí, reusando esa
+          // navegación (ver diagnóstico de la pieza "conectar Solapa APU").
           const Expanded(
             child: Center(
               child: Padding(
                 padding: EdgeInsets.all(24),
                 child: Text(
-                  'Esta obra todavía no tiene cómputo métrico cargado — la carga de partidas '
-                  'reales es la próxima pieza, todavía sin construir.',
+                  'Para ver la composición y el precio de una partida, andá a la solapa '
+                  'Cómputo y tocá el precio de una partida con receta cargada (chip "APU").',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: Colors.black54),
                 ),
