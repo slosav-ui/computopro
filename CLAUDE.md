@@ -966,6 +966,43 @@ de diseño de datos están cerradas) salvo el detalle fino de la Edge Function (
 respuesta, manejo de errores), que todavía no se diseñó. Capa 2 sigue esperando el listado semilla
 de macrorrubros de la pieza de Rubros/APU.
 
+### Confianza en los precios: frescura, aviso legal y mecanismo colaborativo — diseño cerrado, sin implementar (2026-09-05/06)
+
+Pieza de confianza/frescura del motor de precios de materiales que `docs/monetizacion.md` §5
+("Motor de precios de materiales (APU)") anticipaba sin detallar. Diseño completo en
+`docs/confianza_precios_diseno.md` — leer ahí antes de retomar el motor de precios, no repetir acá.
+Sin ninguna migración escrita ni código tocado.
+
+**Principio central**: no prometer precios frescos (imposible con 234 insumos e inflación
+argentina), prometer que el usuario sabe qué tan frescos son — fecha y origen al lado de cada
+precio, tres capas de aviso según antigüedad, nunca actualizar en silencio (sostiene
+`docs/precio_congelado_vs_recalculado.md`).
+
+**Mecanismo colaborativo, CERRADO**: el precio de un usuario alimenta `obra_insumo_precios` (su
+obra) siempre, sin traba; entra al catálogo compartido de `calcular_precio_promedio_insumo()`
+(`0013_rls_proveedores_precios.sql`) solo con **tres precios que coincidan dentro de un 10%
+entre sí**, ventana de un mes, aviso manual a Seba mientras el volumen es bajo. Privacidad:
+compartir es obligatorio/anónimo/agregado, nunca atribuido, nunca se muestra el precio de una obra
+puntual a otro usuario.
+
+**Corrige `docs/monetizacion.md` §5: el fallback a MercadoLibre queda descartado como validación de
+precio** — verificado con cotizaciones reales de Bariloche (cemento 60-130% arriba, hierro 35-82%
+arriba de precios de MercadoLibre, casi todo publicado en AMBA, no en Patagonia). Sirve como mucho
+para detectar outliers (precio de MercadoLibre + 30% ≈ precio Bariloche, según comparación previa de
+Seba), nunca como banda de mercado fuera del AMBA.
+
+**Amplía el "Motor de precio de referencia por m² por zona"** de la lista de roadmap más abajo:
+mismo problema (valor de mercado que solo existe agregando datos de muchos usuarios) y misma
+solución (publicar recién con volumen suficiente) que el mecanismo colaborativo de insumos. Se
+agrega mostrar el valor separado en Materiales + Mano de obra vs. Mano de obra sola (encaja con
+`SelectorTipoPresupuesto`, sin mecanismo nuevo) y la misma regla de privacidad (monto de una obra
+puntual nunca se muestra, solo entra al promedio anónimo). Abierto: cuántas obras hacen falta por
+zona/categoría antes de publicar — no definido, mismo tipo de umbral que las "tres coincidencias"
+de insumos.
+
+**Abierto, sin diseño**: condiciones de pago (Felemax cotiza lista vs. contado — un promedio que
+mezcla ambas no representa a ninguna); revisión legal del texto de aviso/descargo.
+
 ### Currency and formatting
 
 `core/utils/currency_formatter.dart` (`CurrencyFormatter.formatARS/formatUSD/formatByCurrency`) is the intended shared formatter, but most screens instead define their own local `_formatearMonto`/`_fmt` method (regex-based thousands separator, e.g. in `obras_list_screen.dart`, `presupuestos_screen.dart`, `rubros_tab.dart`) rather than reusing it. Prefer `CurrencyFormatter` in new code rather than adding another local copy.
