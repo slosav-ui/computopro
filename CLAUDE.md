@@ -1000,6 +1000,16 @@ puntual nunca se muestra, solo entra al promedio anónimo). Abierto: cuántas ob
 zona/categoría antes de publicar — no definido, mismo tipo de umbral que las "tres coincidencias"
 de insumos.
 
+**Unidad de compra vs. unidad de uso, CERRADO**: el usuario carga el precio en el formato que le da
+el corralón (bolsa, caja, rollo, barra) y la app convierte internamente a la unidad de uso para el
+APU — exactamente para lo que existen `unidad_compra`/`factor_conversion` en `insumos`
+(`0017_alter_insumos.sql`), hoy cargadas solo en CEMENTO PORTLAND X 25KG de los 234 insumos. El
+factor va visible al lado del campo para que el usuario lo corrija. Conecta con la validación por
+banda de arriba: un error de formato de compra (bolsa de 50 donde se espera 25) duplica el precio
+por unidad y la banda lo detecta, por eso el aviso de fuera de banda menciona precio *y* formato de
+compra, no solo precio. Abierto: el factor no siempre es fijo por insumo (lana de vidrio por
+espesor, hierro por diámetro).
+
 **Abierto, sin diseño**: condiciones de pago (Felemax cotiza lista vs. contado — un promedio que
 mezcla ambas no representa a ninguna); revisión legal del texto de aviso/descargo.
 

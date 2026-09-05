@@ -6,7 +6,7 @@ escrita ni código tocado** — no repite ni reemplaza `docs/rubros_apu_diseno_d
 materiales que esos documentos y `docs/monetizacion.md` §5 ("Motor de precios de materiales (APU)")
 ya anticipaban sin detallar. Corrige puntualmente esa sección: **el fallback a MercadoLibre que
 `docs/monetizacion.md` §5 daba por sentado queda descartado como mecanismo de validación** — ver
-§6 más abajo.
+§7 más abajo.
 
 Origen: trabajar las primeras cotizaciones reales de corralones de Bariloche (Sólido, Felemax) y la
 pregunta de fondo de cómo lograr que el usuario confíe en los precios de la app sin prometer algo
@@ -69,10 +69,12 @@ mecanismo ya existente: `obra_insumo_precios`, por obra). Al catálogo compartid
 la validación. Si alguien se equivoca, se equivoca en su presupuesto, no en el de todos.
 
 **Validación por banda.** Se compara contra lo que ya hay para esa zona, ajustado por CAC del
-período. Nunca contra MercadoLibre — ver §6.
+período. Nunca contra MercadoLibre — ver §7.
 
-**Si se sale de banda:** no se traba la carga, se informa. Algo del tipo "este precio está fuera de
-los valores de mercado que tenemos registrados, ¿confirmás?". El usuario decide.
+**Si se sale de banda:** no se traba la carga, se informa. El aviso menciona precio y formato de
+compra — algo del tipo "este precio está fuera de los valores de mercado que tenemos registrados,
+¿confirmás el precio y el formato de compra?" — porque buena parte de los casos reales son un error
+de envase, no de precio (ver §4, unidad de compra vs. uso). El usuario decide.
 
 **Cómo se publica al catálogo compartido:** hacen falta **tres precios que coincidan dentro de un
 10% entre sí**, y entra el promedio de los tres. La validación la hace el volumen, no un análisis
@@ -85,7 +87,46 @@ descartan, para no mezclar épocas distintas.
 **Al principio, con poco volumen:** si pasa el mes sin llegar a tres, se le avisa a Seba para que lo
 verifique a mano. Es un mecanismo de arranque, no permanente — se retira cuando haya uso masivo.
 
-## 4. El mismo problema, la misma solución: precio de referencia por m² por zona
+## 4. Unidad de compra contra unidad de uso — CERRADO
+
+**El criterio**: el usuario carga el precio en el formato en que se lo da el corralón — la bolsa de
+cemento, la caja de cien tornillos, el rollo de lana de vidrio, la barra de hierro — y la app
+convierte internamente a la unidad de uso para el APU. En la Solapa de Materiales se muestra el
+precio comercial tal cual, lo que el usuario tipeó; el precio por unidad de uso aparece en el APU,
+ya convertido. Nadie tipea un número que no le dio nadie.
+
+Es exactamente para lo que existen `unidad_compra` y `factor_conversion` en `insumos`
+(`0017_alter_insumos.sql`) — hoy cargadas en un solo insumo del catálogo, CEMENTO PORTLAND X 25KG
+(`unidad_compra = 'bolsa 25kg'`, `factor_conversion = 25`, ver `0049_limpieza_catalogo_insumos.sql`
+§5, "caso testigo de la distinción unidad de compra vs. unidad de uso", ya anotado como pieza
+central del motor de precios en `docs/monetizacion.md` punto 5). El resto del catálogo (233 de 234
+insumos) todavía no tiene el par cargado.
+
+**El factor tiene que estar visible al lado del campo** — "bolsa de 25 kg" — para que el usuario lo
+corrija si su corralón le vende otro formato. Mismo criterio de transparencia que la fecha/origen
+del precio en §1: no esconder el número contra el que se calcula el precio por unidad de uso.
+
+**Abierto: el factor no siempre es fijo por insumo, a veces es por producto.** La lana de vidrio
+viene en rollos de metrajes distintos según el espesor, y el hierro depende del diámetro — un solo
+`factor_conversion` por fila de `insumos` no alcanza si una misma fila del catálogo tiene que cubrir
+variantes con distinto formato de compra. Sin diseño todavía: puede terminar resolviéndose con filas
+de insumo separadas por variante (el catálogo de 234 ya separa por diámetro/espesor en varios
+casos, sin verificar si en todos) o con un factor editable por obra en vez de fijo por insumo.
+
+### Conexión con la validación por banda (§3)
+
+Un error de formato es el que más se nota en el precio final: si alguien carga la bolsa de 50kg
+donde la app espera 25kg, el precio por unidad de uso sale al doble, y la banda de §3 lo detecta
+como si fuera un precio fuera de mercado.
+
+Por eso el aviso de "fuera de banda" de §3 menciona precio y formato de compra, no solo precio — en
+buena parte de los casos reales el problema va a ser el envase, no el número.
+
+Funciona también al revés: si el precio cargado es correcto y la alarma salta igual, puede que el
+`factor_conversion` cargado para ese insumo esté mal — la alarma de precio termina siendo,
+indirectamente, una alarma sobre los datos maestros del catálogo.
+
+## 5. El mismo problema, la misma solución: precio de referencia por m² por zona
 
 Ya anotado como roadmap en `CLAUDE.md` ("Motor de precio de referencia por m² por zona"). Esta
 sección lo amplía, no lo reemplaza, y se anota junto a §3 a propósito: es el mismo problema (un
@@ -112,11 +153,11 @@ obras suficientes cargadas en una zona y categoría, el valor no se puede public
 principio que "tres precios que coincidan dentro de un 10%" para insumos, pero acá la cantidad
 mínima de obras todavía no está definida. **Abierto.**
 
-**Privacidad, misma línea que §5**: el monto de una obra puntual nunca se muestra a otro usuario,
-solo entra al promedio anónimo — mismo criterio exacto que §5 ya cierra para precios de insumos,
+**Privacidad, misma línea que §6**: el monto de una obra puntual nunca se muestra a otro usuario,
+solo entra al promedio anónimo — mismo criterio exacto que §6 ya cierra para precios de insumos,
 aplicado acá a `obras.monto_total`/superficie en vez de `obra_insumo_precios`.
 
-## 5. Privacidad — CERRADO
+## 6. Privacidad — CERRADO
 
 **Compartir es obligatorio, anónimo y agregado.** Va en los términos de uso, explicado.
 
@@ -126,10 +167,10 @@ aplicado acá a `obras.monto_total`/superficie en vez de `obra_insumo_precios`.
   actual: los precios editados son por obra (`obra_insumo_precios`), no globales — mismo principio
   que ya cerró el RLS de `precios` en `0013_rls_proveedores_precios.sql` (nadie fuera del dueño del
   corralón hace `SELECT` crudo; acá aplica el equivalente para el usuario y su obra).
-- Mismo criterio para el promedio por m² de §4: el monto total de una obra puntual nunca se
+- Mismo criterio para el promedio por m² de §5: el monto total de una obra puntual nunca se
   muestra, solo entra agregado al promedio de su zona y categoría.
 
-## 6. Por qué MercadoLibre NO sirve como referencia de validación
+## 7. Por qué MercadoLibre NO sirve como referencia de validación
 
 Verificado con búsquedas reales el 06/09/2026, comparando contra las cotizaciones de Bariloche
 (Sólido, Felemax):
@@ -159,7 +200,7 @@ descartado como mecanismo de *validación* de precio. Si algún día se retoma M
 que sea acotado a detección de outliers (regla de Seba de arriba), nunca como banda de referencia
 de precio de mercado en zonas fuera del AMBA.
 
-## 7. Condiciones de pago — hallazgo nuevo, sin resolver
+## 8. Condiciones de pago — hallazgo nuevo, sin resolver
 
 Felemax entregó **dos cotizaciones con los mismos materiales**: una a precio de lista y otra con
 descuento al contado. La diferencia no es un error, es la condición de pago.
@@ -174,7 +215,7 @@ sino para que el promedio compare lo comparable.
 **Sin diseño todavía** — afecta potencialmente el schema de `precios`/`obra_insumo_precios`
 (agregar algo como `condicion_pago`), pero no se toca nada hasta que esto se diseñe puntualmente.
 
-## 8. Automatizado contra humano — criterio de arquitectura
+## 9. Automatizado contra humano — criterio de arquitectura
 
 Distinguir dos mecanismos que se mezclan:
 
@@ -188,7 +229,7 @@ trabaría el armado del presupuesto. Lo que sí se automatiza ahí es el envío 
 seguimiento de quién respondió y la comparación de respuestas — no el precio con el que se computa
 mientras tanto.
 
-## 9. Y algo que vale más que todo lo anterior
+## 10. Y algo que vale más que todo lo anterior
 
 Si cada usuario que pide cotización carga las respuestas, **la app acumula precios reales por zona
 y por fecha**. Es un dato que hoy no tiene nadie en el rubro — ni siquiera XCONS, que tiene sus
@@ -200,13 +241,18 @@ se negocia con un dataset propio de precios reales multi-proveedor que XCONS no 
 
 ## Para retomar
 
-- **Condiciones de pago (§7)**: sin diseño, afecta schema de precios.
+- **Condiciones de pago (§8)**: sin diseño, afecta schema de precios.
 - **Textos legales (§2)**: revisión de abogado antes de publicar, junto con T&C, registro del
   software y acuerdo de confidencialidad.
-- **Volumen mínimo del promedio por m² (§4)**: cuántas obras hacen falta por zona y categoría antes
+- **Factor de conversión por variante de producto (§4)**: lana de vidrio (por espesor), hierro (por
+  diámetro) — un `factor_conversion` fijo por fila de `insumos` no alcanza si hace falta cubrir
+  varios formatos de compra bajo el mismo insumo. Sin diseño.
+- **Cargar `unidad_compra`/`factor_conversion` en el resto del catálogo (§4)**: hoy solo está en
+  CEMENTO PORTLAND X 25KG, de los 234 insumos.
+- **Volumen mínimo del promedio por m² (§5)**: cuántas obras hacen falta por zona y categoría antes
   de publicar — sin definir, mismo problema que ya se resolvió para insumos con "tres precios que
   coincidan dentro de un 10%" (§3).
-- **`obras.categoria` (A/B/C, §4)**: columna sin agregar, ya prevista en el roadmap de
+- **`obras.categoria` (A/B/C, §5)**: columna sin agregar, ya prevista en el roadmap de
   `CLAUDE.md` para esta misma pieza.
 - Nada de esto tiene migración ni código todavía — ninguna de las piezas de este documento está
   bloqueando otro trabajo en curso (Factor K Paso B, zonas UOCRA, QR de vinculación).
