@@ -973,7 +973,7 @@ Pieza de confianza/frescura del motor de precios de materiales que `docs/monetiz
 `docs/confianza_precios_diseno.md` — leer ahí antes de retomar el motor de precios, no repetir acá.
 Sin ninguna migración escrita ni código tocado.
 
-**Principio central**: no prometer precios frescos (imposible con 234 insumos e inflación
+**Principio central**: no prometer precios frescos (imposible con 174 insumos e inflación
 argentina), prometer que el usuario sabe qué tan frescos son — fecha y origen al lado de cada
 precio, tres capas de aviso según antigüedad, nunca actualizar en silencio (sostiene
 `docs/precio_congelado_vs_recalculado.md`).
@@ -1003,7 +1003,7 @@ de insumos.
 **Unidad de compra vs. unidad de uso, CERRADO**: el usuario carga el precio en el formato que le da
 el corralón (bolsa, caja, rollo, barra) y la app convierte internamente a la unidad de uso para el
 APU — exactamente para lo que existen `unidad_compra`/`factor_conversion` en `insumos`
-(`0017_alter_insumos.sql`), hoy cargadas solo en CEMENTO PORTLAND X 25KG de los 234 insumos. El
+(`0017_alter_insumos.sql`), hoy cargadas solo en CEMENTO PORTLAND X 25KG de los 174 insumos. El
 factor va visible al lado del campo para que el usuario lo corrija. Conecta con la validación por
 banda de arriba: un error de formato de compra (bolsa de 50 donde se espera 25) duplica el precio
 por unidad y la banda lo detecta, por eso el aviso de fuera de banda menciona precio *y* formato de
@@ -1012,6 +1012,54 @@ espesor, hierro por diámetro).
 
 **Abierto, sin diseño**: condiciones de pago (Felemax cotiza lista vs. contado — un promedio que
 mezcla ambas no representa a ninguna); revisión legal del texto de aviso/descargo.
+
+### Catálogo de precios: CERRADO de punta a punta (2026-09-06) — ningún insumo sin precio
+
+Pieza distinta de "Confianza en los precios" de arriba (esa es diseño de frescura/aviso, sin
+implementar; esta es la carga de datos real). Migraciones `0057` a `0070`, todas aplicadas y
+verificadas en producción por el usuario. Estado final, confirmado con la consulta que cruza
+`insumos`/`apu_composicion_items`/`precios`: **174 insumos, 221 precios, 0 insumos de material
+sin precio** (bajaron de ~234 por las unificaciones de duplicados de `0049`/`0066`/`0069`, no
+por pérdida de datos).
+
+**Cómo se distingue hoy un precio real de uno estimado**: el nombre del corralón en `precios` es
+la ÚNICA señal — la tabla no tiene una columna dedicada para esto (mismo gap que documenta
+`docs/confianza_precios_diseno.md`, sigue sin resolver). Precios reales van con su corralón real
+(Sólido, Felemax, HIZA, SB Maderas — los 4 de `0058`). Precios de referencia/estimados van bajo
+el corralón `Cantera privada (referencia)` (creado en `0063` para PIEDRA, reutilizado para
+cerámicos/impregnante en `0067` y, en la tanda final, para 59 insumos más en `0069`).
+
+**La tanda final** (`0069`/`0070`, la que llevó `sin_precio` a 0):
+- Fusionó `AISLACION TERMICA EPS O LANA DE VIDRIO 50MM` (ML) en
+  `AISLACION TERMICA (LANA DE VIDRIO 50MM)` (M2) — el nombre del absorbido nombraba dos productos
+  a la vez, en las dos partidas que lo usan (14.3/14.4) va lana de vidrio de 50mm; rendimiento
+  convertido ×1,20 por el ancho real del rollo (1,20m, cotización HIZA). `EPS ALTA DENSIDAD` es
+  insumo distinto, no se tocó.
+- Cargó 4 precios reales de HIZA + 59 de referencia bajo `Cantera privada (referencia)` (10
+  corregidos por Seba con precio de mercado real, 49 estimados sin ningún factor de corrección —
+  la lista salió mezclada entre nivel Bariloche y nivel Buenos Aires, no había un factor único que
+  no rompiera los que ya estaban bien).
+- Auditó el presupuesto de Felemax (88 líneas con encabezado, 87 reales) contra lo cargado en
+  `precios`: encontró y cargó 4 líneas que nunca se habían mapeado — siding, membrana asfáltica,
+  cinta de enmascarar 24mm y disco de corte 115mm. Las 87 líneas reales están contabilizadas sin
+  ningún cabo suelto: 2 no son insumos de catálogo (costo adicional de pallet, flete zona 2) y 1
+  aparece duplicada en el PDF (misma lija, página 1 y 3, contada una sola vez) — 87 − 2 = 85, que
+  es el total real de líneas de insumo del CSV de mapeo (`supabase/seed_staging/`).
+- Regla aplicada cuando un segundo precio real cae sobre un insumo que ya tenía uno del mismo
+  corralón: se promedia, nunca se agrega una segunda fila para el mismo (insumo, corralón) — evita
+  el tipo de duplicado que `0068` tuvo que limpiar a mano. Pasó con la membrana asfáltica de
+  Felemax (dos productos cotizados, mismo insumo genérico del catálogo).
+- `ARCILLA EXPANDITA` y `EPS` (perlas) quedan con precio propio cada uno a propósito — son dos
+  formas distintas de contrapiso aislante, ninguna reemplaza a la otra.
+
+**Motivo de negocio**: el catálogo tiene que estar completo antes de repartir el APK — un catálogo
+a medias hace que el primer usuario que lo abra piense que la app está incompleta. Un precio
+estimado y marcado como tal (vía el corralón de referencia) es mejor que un hueco.
+
+**No tocado en esta pieza** (abierto de antes, ver `docs/confianza_precios_diseno.md` y la
+sección "Rubros / APU parte 2" más abajo): los grupos de media confianza sin unificar y las 2
+lijas que se solapan entre sí (`0049`); la columna que distinga precio cotizado de precio de
+referencia; el motor de frescura/aviso legal.
 
 ### Currency and formatting
 
