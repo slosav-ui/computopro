@@ -104,9 +104,10 @@ class ApuComposicionesRepository {
 
   /// Detalle línea por línea de la composición de un subítem — mano de obra, materiales y equipos
   /// con rendimiento y precio unitario ya resuelto (ver `calcular_composicion_detalle_subitem`,
-  /// 0060_calcular_composicion_detalle_subitem.sql). Un solo subitemId, no batch: a diferencia de
-  /// `calcularPreciosSubitems` (que arma el chip agregado de toda la lista de SubitemsScreen de
-  /// una sola vez), esto lo pide ComposicionApuScreen para una partida puntual.
+  /// 0060_calcular_composicion_detalle_subitem.sql, ampliada en 0071 con los ids/`es_personal` que
+  /// necesita la edición). Un solo subitemId, no batch: a diferencia de `calcularPreciosSubitems`
+  /// (que arma el chip agregado de toda la lista de SubitemsScreen de una sola vez), esto lo pide
+  /// ComposicionApuScreen para una partida puntual.
   ///
   /// Sin el mecanismo de `_rpcCalcularPreciosDisponible`: para cuando esto se llama, 0034/0059 ya
   /// se probaron al abrir SubitemsScreen (si no existieran, no habría llegado a mostrarse el chip
@@ -116,15 +117,63 @@ class ApuComposicionesRepository {
       'p_obra_id': obraId,
       'p_subitem_id': subitemId,
     });
-    return [
-      for (final row in data as List)
-        ApuComposicionItemDetalle(
-          tipoComponente: (row as Map<String, dynamic>)['tipo_componente'] as String,
-          insumoNombre: row['insumo_nombre'] as String,
-          insumoUnidad: row['insumo_unidad'] as String,
-          rendimiento: (row['rendimiento'] as num).toDouble(),
-          precioUnitario: (row['precio_unitario'] as num?)?.toDouble(),
-        ),
-    ];
+    return [for (final row in data as List) _itemDetalleDesdeFila(row as Map<String, dynamic>)];
+  }
+
+  /// Clona (si hace falta) y edita una línea de la receta, en una sola llamada (ver
+  /// `personalizar_item_apu`, 0071_personalizacion_apu_pro.sql) — la función se encarga de crear
+  /// la receta personal del usuario si todavía no existía, clonando ahí las 770 líneas de la
+  /// oficial que le correspondan a este subítem, y recién después aplica el cambio. Devuelve la
+  /// receta completa ya actualizada (con los ids nuevos si acabó de clonar), para no tener que
+  /// pedirla de nuevo con un segundo viaje de red.
+  ///
+  /// `insumoIdNuevo` null = solo cambia el rendimiento; con valor, también cambia qué insumo lleva
+  /// esa línea (el caso "reemplazar ladrillo común por ladrillón").
+  ///
+  /// Gate de PRO: NO se chequea acá — responsabilidad de quien llama (mismo patrón que
+  /// `PanelParametrosCargasSociales._onGuardar`, verificar `esPro` en vivo antes de llamar a esto).
+  Future<List<ApuComposicionItemDetalle>> personalizarItem({
+    required String obraId,
+    required String subitemId,
+    required String itemId,
+    required double rendimientoNuevo,
+    String? insumoIdNuevo,
+  }) async {
+    final data = await _client.rpc('personalizar_item_apu', params: {
+      'p_obra_id': obraId,
+      'p_subitem_id': subitemId,
+      'p_item_id': itemId,
+      'p_rendimiento_nuevo': rendimientoNuevo,
+      'p_insumo_id_nuevo': insumoIdNuevo,
+    });
+    return [for (final row in data as List) _itemDetalleDesdeFila(row as Map<String, dynamic>)];
+  }
+
+  /// Borra la receta personal del usuario para este subítem (ver `restaurar_receta_oficial_apu`) —
+  /// vuelve a mostrar la oficial. `true` si había algo para borrar, `false` si no tenía ninguna
+  /// personalización todavía. El aviso de "vas a perder tu personalización" es responsabilidad de
+  /// quien llama, esta función no confirma nada por su cuenta.
+  Future<bool> restaurarRecetaOficial(String subitemId) async {
+    final resultado = await _client.rpc('restaurar_receta_oficial_apu', params: {
+      'p_subitem_id': subitemId,
+    });
+    return resultado as bool;
+  }
+
+  /// Mapeo fila->modelo compartido entre `getComposicionDetalle` y `personalizarItem` — las dos
+  /// RPC devuelven exactamente la misma forma (la segunda literalmente llama a
+  /// `calcular_composicion_detalle_subitem` al final, ver 0071).
+  ApuComposicionItemDetalle _itemDetalleDesdeFila(Map<String, dynamic> row) {
+    return ApuComposicionItemDetalle(
+      itemId: row['item_id'].toString(),
+      apuComposicionId: row['apu_composicion_id'].toString(),
+      esPersonal: row['es_personal'] as bool,
+      tipoComponente: row['tipo_componente'] as String,
+      insumoId: row['insumo_id'].toString(),
+      insumoNombre: row['insumo_nombre'] as String,
+      insumoUnidad: row['insumo_unidad'] as String,
+      rendimiento: (row['rendimiento'] as num).toDouble(),
+      precioUnitario: (row['precio_unitario'] as num?)?.toDouble(),
+    );
   }
 }

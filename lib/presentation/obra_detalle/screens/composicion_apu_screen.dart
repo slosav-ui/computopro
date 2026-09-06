@@ -3,21 +3,31 @@ import '../../../core/utils/currency_formatter.dart';
 import '../../../data/models/apu_composicion_item_detalle.dart';
 import '../../../data/models/apu_precio_subitem.dart';
 import '../../../services/apu_composiciones_repository.dart';
+import '../../../services/auth_service.dart';
+import '../../../services/perfil_repository.dart';
+import '../../shared/pro_gate_dialog.dart';
+import '../tabs/panel_editar_item_apu.dart';
 
 /// Composición completa de una partida — mano de obra, materiales y equipos, cada uno con su
 /// rendimiento, precio unitario y subtotal (ver `calcular_composicion_detalle_subitem`,
-/// 0060_calcular_composicion_detalle_subitem.sql). Solo lectura: edición es PRO, va después.
+/// 0060_calcular_composicion_detalle_subitem.sql). Free lee, PRO edita (ver
+/// `PanelEditarItemApu` y `personalizar_item_apu`, 0071_personalizacion_apu_pro.sql) — primera
+/// pieza de "edición de APU en la Solapa APU".
 ///
 /// Se llega acá desde SubitemsScreen, tocando el precio APU de un subítem con composición cargada
 /// (chip "APU") — no hay un listado propio para esto, reusa la navegación de Rubros/Cómputo que
-/// ya existe. `precioAgregado` viene ya calculado por SubitemsScreen (mismo resultado de
-/// `calcular_precio_apu_subitems` que arma el chip de la lista) — no se vuelve a pedir acá, evita
-/// una segunda llamada para el mismo número.
+/// ya existe; la edición vive en esta misma pantalla, no en una aparte (mismo criterio ya escrito
+/// en `_buildTabApu()` de no duplicar navegación entre Cómputo y la Solapa APU).
 class ComposicionApuScreen extends StatefulWidget {
   final String obraId;
   final String subitemId;
   final String subitemCodigo;
   final String subitemDescripcion;
+  // Ya no se usa para el total mostrado (ver _resultadoActual, recalculado desde _items siempre
+  // que cambian: editar o restaurar una línea invalidaría este valor si se lo siguiera usando
+  // tal cual). Se mantiene como parámetro para no tocar el call site de SubitemsScreen — sigue
+  // siendo el número correcto para el primer render de la lista de partidas allá, solo que
+  // dejó de ser la fuente de verdad de esta pantalla.
   final ApuPrecioSubitem precioAgregado;
 
   const ComposicionApuScreen({
@@ -35,10 +45,30 @@ class ComposicionApuScreen extends StatefulWidget {
 
 class _ComposicionApuScreenState extends State<ComposicionApuScreen> {
   final ApuComposicionesRepository _repository = ApuComposicionesRepository();
+  final PerfilRepository _perfilRepository = PerfilRepository();
+  final AuthService _authService = AuthService();
 
   List<ApuComposicionItemDetalle> _items = [];
   bool _cargando = true;
   String? _error;
+  // Solo para el botón "Volver a la receta oficial" -- el resto de la pantalla no necesita saber
+  // esto mientras carga.
+  bool _verificandoProRestaurar = false;
+
+  /// Recalculado siempre desde `_items`, nunca desde `widget.precioAgregado` (ver comentario del
+  /// campo en el widget) -- mismo COALESCE que ya hace `calcular_precio_apu_subitems`/
+  /// `calcular_composicion_detalle_subitem`, solo que sumado acá porque `_items` puede cambiar
+  /// (editar una línea, o restaurar la oficial) sin que valga la pena pedir un nuevo agregado a la
+  /// base cuando ya tenemos el detalle completo en memoria.
+  ApuPrecioSubitem get _resultadoActual {
+    final conPrecio = _items.where((i) => i.precioUnitario != null).toList();
+    final total = conPrecio.fold<double>(0, (acc, i) => acc + i.subtotal!);
+    return ApuPrecioSubitem(
+      precioTotal: total,
+      insumosConPrecio: conPrecio.length,
+      insumosTotal: _items.length,
+    );
+  }
 
   @override
   void initState() {
@@ -131,6 +161,9 @@ class _ComposicionApuScreenState extends State<ComposicionApuScreen> {
     return ListView(
       padding: const EdgeInsets.all(12),
       children: [
+        // Todas las líneas comparten la misma composición (oficial o personal) -- alcanza con
+        // mirar la primera para saber cuál se está mostrando.
+        if (_items.first.esPersonal) _buildBannerPersonalizado(),
         if (manoDeObra.isNotEmpty) _buildSeccion('MANO DE OBRA', manoDeObra),
         if (materiales.isNotEmpty) _buildSeccion('MATERIALES', materiales),
         if (equipos.isNotEmpty) _buildSeccion('EQUIPOS', equipos),
@@ -138,6 +171,101 @@ class _ComposicionApuScreenState extends State<ComposicionApuScreen> {
         _buildTotal(),
       ],
     );
+  }
+
+  /// Aviso + acción cuando la receta que se está mostrando es la personal del usuario, no la
+  /// oficial (ver `es_personal`, 0071). Solo informa/ofrece volver -- no dice qué se editó línea
+  /// por línea, ese detalle ya se ve en las secciones de abajo.
+  Widget _buildBannerPersonalizado() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.amber[50],
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.amber[200]!),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.edit_note, size: 16, color: Colors.amber[900]),
+          const SizedBox(width: 8),
+          const Expanded(
+            child: Text(
+              'Esta es tu receta personalizada de esta partida.',
+              style: TextStyle(fontSize: 11, color: Colors.black87),
+            ),
+          ),
+          TextButton(
+            onPressed: _verificandoProRestaurar ? null : _onRestaurarOficial,
+            style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+            child: Text(_verificandoProRestaurar ? 'Verificando...' : 'Volver a la oficial'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _onRestaurarOficial() async {
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text(
+          'Volver a la receta oficial',
+          style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1B365D)),
+        ),
+        content: const Text(
+          'Vas a perder tu personalización de esta partida (rendimientos e insumos que hayas '
+          'cambiado). No se puede deshacer.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Volver a la oficial'),
+          ),
+        ],
+      ),
+    );
+    if (confirmar != true) return;
+
+    final usuarioId = _authService.usuarioActual?.id;
+    setState(() => _verificandoProRestaurar = true);
+    final esProAhora = usuarioId != null ? await _perfilRepository.esPro(usuarioId) : false;
+    if (!mounted) return;
+    setState(() => _verificandoProRestaurar = false);
+
+    if (!esProAhora) {
+      await mostrarDialogoFuncionPro(context, mensaje: 'Editar la composición de APU es una función PRO.');
+      return;
+    }
+
+    try {
+      await _repository.restaurarRecetaOficial(widget.subitemId);
+      if (!mounted) return;
+      await _cargarDetalle(); // los ids cambian al volver a la oficial, recarga completa
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No se pudo restaurar la receta oficial. Probá de nuevo.')),
+      );
+    }
+  }
+
+  Future<void> _abrirEdicion(ApuComposicionItemDetalle item) async {
+    final resultado = await showDialog<List<ApuComposicionItemDetalle>>(
+      context: context,
+      builder: (_) => PanelEditarItemApu(
+        obraId: widget.obraId,
+        subitemId: widget.subitemId,
+        item: item,
+      ),
+    );
+    if (resultado == null || !mounted) return;
+    setState(() => _items = resultado);
   }
 
   Widget _buildSeccion(String titulo, List<ApuComposicionItemDetalle> items) {
@@ -205,15 +333,25 @@ class _ComposicionApuScreenState extends State<ComposicionApuScreen> {
                     style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF1B365D)),
                   ),
           ),
+          // Visible para cualquiera (Free incluido) -- el gate de PRO es al Guardar, adentro del
+          // diálogo, no acá (mismo criterio "no ocultar la función, gatear la acción").
+          IconButton(
+            icon: const Icon(Icons.edit_outlined, size: 16, color: Colors.black45),
+            tooltip: 'Editar',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+            onPressed: () => _abrirEdicion(item),
+          ),
         ],
       ),
     );
   }
 
-  /// Mismo semáforo que `_buildPrecioApuDerivado` de SubitemsScreen — no un total nuevo, el mismo
-  /// resultado que ya arma el chip de la lista, mostrado más grande acá.
+  /// Mismo semáforo que `_buildPrecioApuDerivado` de SubitemsScreen, pero recalculado desde
+  /// `_items` (`_resultadoActual`), no desde `widget.precioAgregado` -- ese valor queda desactualizado
+  /// apenas se edita una línea o se restaura la oficial, ver el comentario del campo en el widget.
   Widget _buildTotal() {
-    final resultado = widget.precioAgregado;
+    final resultado = _resultadoActual;
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
