@@ -1,24 +1,20 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../../core/utils/parser_numero_ar.dart';
 import '../../../data/models/apu_composicion_item_detalle.dart';
-import '../../../data/models/insumo_busqueda.dart';
 import '../../../services/apu_composiciones_repository.dart';
 import '../../../services/auth_service.dart';
-import '../../../services/insumos_repository.dart';
 import '../../../services/perfil_repository.dart';
 import '../../shared/pro_gate_dialog.dart';
 
-/// Edición de una línea de la composición de APU (ver `personalizar_item_apu`,
-/// 0071_personalizacion_apu_pro.sql) — primera pieza de "edición de APU en la Solapa APU".
-/// Siempre edita el rendimiento; si la línea es un material, además permite reemplazar qué
-/// insumo lleva esa línea (el caso "ladrillo común -> ladrillón" de Seba). Mano de obra y equipos
-/// solo editan rendimiento, sin selector de insumo — decisión explícita, no una limitación
-/// técnica (la función de base admite cualquier tipo_componente).
+/// Edición de una línea de la composición de APU — rendimiento y precio, los dos editables por
+/// PRO en el mismo diálogo (ver `personalizar_item_apu`, reescrita en
+/// `0072_edicion_apu_correcciones.sql`). Ya no ofrece cambiar qué insumo lleva la línea (eso queda
+/// reemplazado por agregar/quitar material, ver `ComposicionApuScreen`) — corrección sobre la
+/// primera versión de este panel, que sí tenía un selector de swap.
 ///
-/// Gate de PRO al Guardar, no al abrir — mismo patrón que `PanelParametrosCargasSociales`, no el
-/// de `BloqueFactorK` (que gatea antes de abrir): cualquiera puede abrir este diálogo y ver el
-/// campo, el chequeo real de `esPro` pasa recién al tocar Guardar.
+/// Gate de PRO al Guardar, no al abrir — mismo patrón que `PanelParametrosCargasSociales`: cualquiera
+/// puede abrir este diálogo y ver los campos, el chequeo real de `esPro` pasa recién al tocar
+/// Guardar.
 ///
 /// Devuelve por `Navigator.pop`: `null` si se cancela, o la receta completa ya actualizada
 /// (`List<ApuComposicionItemDetalle>`) si se guardó — la propia función de base la devuelve, así
@@ -41,22 +37,11 @@ class PanelEditarItemApu extends StatefulWidget {
 
 class _PanelEditarItemApuState extends State<PanelEditarItemApu> {
   final ApuComposicionesRepository _composicionesRepository = ApuComposicionesRepository();
-  final InsumosRepository _insumosRepository = InsumosRepository();
   final PerfilRepository _perfilRepository = PerfilRepository();
   final AuthService _authService = AuthService();
 
   late final TextEditingController _rendimientoController;
-  final TextEditingController _busquedaController = TextEditingController();
-  Timer? _debounceBusqueda;
-
-  bool get _esMaterial => widget.item.tipoComponente == 'material';
-
-  // Insumo elegido para reemplazar al actual -- null mientras no se cambió nada (se guarda solo
-  // el rendimiento, mismo insumo de siempre).
-  InsumoBusqueda? _insumoSeleccionado;
-  bool _buscando = false;
-  bool _cargandoBusqueda = false;
-  List<InsumoBusqueda> _resultados = [];
+  late final TextEditingController _precioController;
 
   String? _error;
   bool _guardando = false;
@@ -66,13 +51,16 @@ class _PanelEditarItemApuState extends State<PanelEditarItemApu> {
   void initState() {
     super.initState();
     _rendimientoController = TextEditingController(text: _formatearRendimiento(widget.item.rendimiento));
+    _precioController = TextEditingController(
+      text: widget.item.precioUnitario != null ? widget.item.precioUnitario!.toStringAsFixed(2) : '',
+    );
+    _precioController.addListener(() => setState(() {}));
   }
 
   @override
   void dispose() {
     _rendimientoController.dispose();
-    _busquedaController.dispose();
-    _debounceBusqueda?.cancel();
+    _precioController.dispose();
     super.dispose();
   }
 
@@ -80,35 +68,16 @@ class _PanelEditarItemApuState extends State<PanelEditarItemApu> {
     return valor == valor.roundToDouble() ? valor.toInt().toString() : valor.toString();
   }
 
-  void _onBuscarCambiado(String texto) {
-    _debounceBusqueda?.cancel();
-    if (texto.trim().isEmpty) {
-      setState(() => _resultados = []);
-      return;
-    }
-    _debounceBusqueda = Timer(const Duration(milliseconds: 300), () async {
-      setState(() => _cargandoBusqueda = true);
-      try {
-        final resultados = await _insumosRepository.buscarMateriales(texto);
-        if (!mounted) return;
-        setState(() {
-          _resultados = resultados;
-          _cargandoBusqueda = false;
-        });
-      } catch (e) {
-        if (!mounted) return;
-        setState(() => _cargandoBusqueda = false);
-      }
-    });
-  }
-
-  void _elegirInsumo(InsumoBusqueda insumo) {
-    setState(() {
-      _insumoSeleccionado = insumo;
-      _buscando = false;
-      _resultados = [];
-      _busquedaController.clear();
-    });
+  /// El precio "cambió" si el valor tipeado difiere del original (con tolerancia) — determina si
+  /// se muestra el aviso de alcance y si se manda `precioNuevo` al guardar. Dejar el campo vacío
+  /// nunca cuenta como cambio (no hay forma de "borrar" el precio desde acá).
+  bool get _precioCambio {
+    final texto = _precioController.text.trim();
+    if (texto.isEmpty) return false;
+    final valor = ParserNumeroAr.parsear(texto);
+    if (valor == null) return false;
+    final original = widget.item.precioUnitario;
+    return original == null || (valor - original).abs() > 0.001;
   }
 
   Future<void> _onGuardar() async {
@@ -116,6 +85,15 @@ class _PanelEditarItemApuState extends State<PanelEditarItemApu> {
     if (rendimientoNuevo == null || rendimientoNuevo < 0) {
       setState(() => _error = 'Rendimiento inválido. Ingresá un número mayor o igual a 0.');
       return;
+    }
+
+    double? precioNuevo;
+    if (_precioCambio) {
+      precioNuevo = ParserNumeroAr.parsear(_precioController.text);
+      if (precioNuevo == null || precioNuevo < 0) {
+        setState(() => _error = 'Precio inválido. Ingresá un número mayor o igual a 0.');
+        return;
+      }
     }
 
     final usuarioId = _authService.usuarioActual?.id;
@@ -137,9 +115,9 @@ class _PanelEditarItemApuState extends State<PanelEditarItemApu> {
       final recetaActualizada = await _composicionesRepository.personalizarItem(
         obraId: widget.obraId,
         subitemId: widget.subitemId,
-        itemId: widget.item.itemId,
+        insumoId: widget.item.insumoId,
         rendimientoNuevo: rendimientoNuevo,
-        insumoIdNuevo: _insumoSeleccionado?.id,
+        precioNuevo: precioNuevo,
       );
       if (!mounted) return;
       Navigator.pop(context, recetaActualizada);
@@ -155,28 +133,55 @@ class _PanelEditarItemApuState extends State<PanelEditarItemApu> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text(
-        'Editar línea de la receta',
-        style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1B365D)),
+      title: Text(
+        widget.item.insumoNombre,
+        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1B365D)),
       ),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildBloqueInsumo(),
-            const SizedBox(height: 14),
             TextField(
               controller: _rendimientoController,
-              autofocus: !_esMaterial,
+              autofocus: true,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
               decoration: InputDecoration(
                 labelText: 'Rendimiento',
-                suffixText: (_insumoSeleccionado?.unidad ?? widget.item.insumoUnidad).toUpperCase(),
+                suffixText: widget.item.insumoUnidad.toUpperCase(),
                 border: const OutlineInputBorder(),
                 isDense: true,
               ),
             ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: _precioController,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                labelText: 'Precio unitario',
+                prefixText: '\$ ',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+            if (_precioCambio) ...[
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.amber[50],
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: Colors.amber[200]!),
+                ),
+                child: Text(
+                  'Este precio no se guarda solo acá: se guarda en Mat y MO y va a aplicarse a '
+                  'todas las partidas de esta obra que usan ${widget.item.insumoNombre.toLowerCase()}, '
+                  'no solo esta. Y es solo para esta obra — el rendimiento, en cambio, es tuyo: te '
+                  'queda guardado para todas tus obras futuras.',
+                  style: const TextStyle(fontSize: 11, color: Colors.black87),
+                ),
+              ),
+            ],
             if (_error != null) ...[
               const SizedBox(height: 12),
               Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 12)),
@@ -199,86 +204,6 @@ class _PanelEditarItemApuState extends State<PanelEditarItemApu> {
                 )
               : Text(_verificandoPro ? 'Verificando...' : 'Guardar'),
         ),
-      ],
-    );
-  }
-
-  Widget _buildBloqueInsumo() {
-    final nombreActual = _insumoSeleccionado?.nombre ?? widget.item.insumoNombre;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Text(
-                nombreActual,
-                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-              ),
-            ),
-            // Solo materiales pueden cambiar de insumo -- mano de obra y equipos solo editan
-            // rendimiento (decisión explícita, no limitación de la función de base).
-            if (_esMaterial && !_buscando)
-              TextButton(
-                onPressed: () => setState(() => _buscando = true),
-                child: const Text('Cambiar', style: TextStyle(fontSize: 12)),
-              ),
-          ],
-        ),
-        if (_insumoSeleccionado != null && !_buscando)
-          Padding(
-            padding: const EdgeInsets.only(top: 2),
-            child: Text(
-              'Reemplaza a "${widget.item.insumoNombre}"',
-              style: const TextStyle(fontSize: 11, color: Colors.black45),
-            ),
-          ),
-        if (_buscando) ...[
-          const SizedBox(height: 8),
-          TextField(
-            controller: _busquedaController,
-            autofocus: true,
-            onChanged: _onBuscarCambiado,
-            decoration: InputDecoration(
-              hintText: 'Buscar material...',
-              isDense: true,
-              border: const OutlineInputBorder(),
-              suffixIcon: _cargandoBusqueda
-                  ? const Padding(
-                      padding: EdgeInsets.all(10),
-                      child: SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2)),
-                    )
-                  : IconButton(
-                      icon: const Icon(Icons.close, size: 18),
-                      onPressed: () => setState(() {
-                        _buscando = false;
-                        _resultados = [];
-                        _busquedaController.clear();
-                      }),
-                    ),
-            ),
-          ),
-          if (_resultados.isNotEmpty)
-            Container(
-              margin: const EdgeInsets.only(top: 4),
-              constraints: const BoxConstraints(maxHeight: 160),
-              decoration: BoxDecoration(border: Border.all(color: Colors.black12)),
-              child: ListView.builder(
-                shrinkWrap: true,
-                itemCount: _resultados.length,
-                itemBuilder: (context, index) {
-                  final insumo = _resultados[index];
-                  return ListTile(
-                    dense: true,
-                    title: Text(insumo.nombre, style: const TextStyle(fontSize: 13)),
-                    trailing: Text(insumo.unidad, style: const TextStyle(fontSize: 11, color: Colors.black45)),
-                    onTap: () => _elegirInsumo(insumo),
-                  );
-                },
-              ),
-            ),
-        ],
       ],
     );
   }

@@ -5,8 +5,13 @@
 ///
 /// `precioUnitario` es `null` cuando el insumo no tiene precio cargado — nunca `0`, mismo criterio
 /// que `ApuPrecioSubitem` (no colapsar "sin precio" a un número real).
+///
+/// `itemId` es `null` para una fila virtual de mano de obra (0072_edicion_apu_correcciones.sql) —
+/// una de las 5 categorías que la receta que se está mostrando todavía no tiene como línea real.
+/// Editar esa fila ya no depende de `itemId` (ver `insumoId`, que sí está siempre): la ubicación
+/// del lado del servidor pasó a ser por insumo, no por id de fila.
 class ApuComposicionItemDetalle {
-  final String itemId;
+  final String? itemId;
   final String apuComposicionId;
   final bool esPersonal;
   final String tipoComponente; // 'material' | 'mano_obra' | 'equipo'

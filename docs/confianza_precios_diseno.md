@@ -265,6 +265,66 @@ insumos explícitamente regionales en el catálogo (como ya pasó con piedra/can
 asumir un catálogo único válido en todo el país. No bloquea nada en curso — el catálogo hoy solo
 tiene datos de Bariloche, así que el problema todavía no se manifestó en la práctica.
 
+## 12. Equipos: catálogo colaborativo por nombre, no por precio — decisión con un cabo suelto
+
+Extiende el mecanismo de §3 a una pieza distinta: la composición de APU (`apu_composicion_items`)
+admite líneas de tipo `equipo` desde el diseño fundacional, pero el catálogo de `insumos` con
+`tipo = 'equipo'` estaba en cero — ninguna migración cargó nunca un equipo. Resuelto en
+`0074_catalogo_colaborativo_equipos.sql`: el usuario da de alta un equipo directamente desde la
+pantalla (nombre, unidad hora/día, precio, rendimiento) cuando el catálogo todavía no tiene
+ninguno, o lo busca (con opción de crear si no lo encuentra) cuando ya hay al menos uno.
+
+**Lo que cambia respecto a §3: la identidad del equipo es el nombre, no el precio.**
+`buscar_o_crear_equipo_apu()` compara nombres normalizados (`upper(trim(...))`) — si ya existe un
+equipo con ese nombre, sea quien sea quien lo haya cargado, se reusa esa fila en vez de crear un
+duplicado. El precio nunca participa de esa comparación. Motivo: el alquiler de una hormigonera en
+Bariloche y en Córdoba no tiene por qué coincidir, y no hay ninguna razón de mercado para que
+converjan — exigir que además coincidieran en precio (como si el equipo fuera un insumo con un
+único valor de mercado, igual que §3 asume para materiales) dejaría a los equipos afuera del
+catálogo compartido para siempre, porque tres usuarios de tres zonas jamás van a cargar el mismo
+número. El precio en sí sigue exactamente el mismo circuito que cualquier otro insumo: por obra,
+en `obra_insumo_precios`, sin ningún promedio colaborativo — ese promedio (§3) sigue sin
+implementarse en código para materiales tampoco, así que acá no hay ninguna divergencia real
+todavía, los dos están en el mismo estado ("diseñado o parcialmente construido, sin motor de
+promedio").
+
+**El cabo suelto, sin resolver: la EXISTENCIA del equipo (su nombre) queda visible para cualquier
+usuario apenas se crea, sin ningún paso de validación por volumen.** Esto sí es una divergencia real
+de fondo respecto al principio de §3/§6 ("nadie entra al catálogo compartido sin que el volumen lo
+corrobore") — y es una decisión tomada sin marcarla como tal en su momento, no una limitación de
+schema. La razón técnica de por qué pasó así: `insumos` ya tenía `SELECT` abierto a cualquier
+autenticado desde `0013_rls_proveedores_precios.sql`, sin distinguir por `creador_usuario_id` —
+eso ya hacía visibles para todos los insumos personalizados de materiales que un usuario pudiera
+cargar en otras piezas del proyecto, así que extender la misma apertura a equipos pareció
+consistente con lo que ya existía. Pero un equipo con nombre inventado, mal escrito o directamente
+spam queda instalado en el catálogo compartido de entrada, sin que nadie más lo haya usado ni
+corroborado — exactamente lo que §3 evita para precios exigiendo tres coincidencias antes de
+publicar.
+
+**Qué haría falta para cerrar esa brecha, si se decide hacerlo:** no es un cambio de schema grande,
+pero tampoco es gratis.
+
+1. Agregar a la política `insumos_select` una condición que, para `tipo = 'equipo'` con
+   `creador_usuario_id` no nulo, solo deje verlo a su creador hasta que se corrobore — hoy esa
+   política es un `using (auth.uid() is not null)` liso, sin ninguna rama por tipo ni por dueño.
+2. Definir qué corrobora un equipo. No hace falta reconstruir el mecanismo de "tres valores que
+   coincidan dentro de un 10%" de §3 — ahí la dificultad es que el *valor* varía y hay que decidir
+   si dos números son "el mismo precio"; acá la identidad ya es exacta (mismo `insumo_id`) desde
+   que se creó, así que alcanza con contar corroboración de *uso*, no de *valor*: por ejemplo,
+   cuántos usuarios distintos (o cuántas obras de usuarios distintos) tienen ese `insumo_id` cargado
+   en su propio `obra_insumo_precios`. Bastaría una función `SECURITY DEFINER` chica (mismo patrón
+   que `is_corralon_owner`/`is_obra_member`) que cuente eso y la política de `SELECT` la consulte.
+3. Mientras no llegue a ese umbral, el creador lo sigue viendo y usando en sus propias obras sin
+   ninguna traba (mismo principio de §3: "si alguien se equivoca, se equivoca en su presupuesto, no
+   en el de todos") — lo único que cambia es que otros usuarios no lo encuentran en el buscador
+   hasta que se corrobore.
+
+**Sin decidir si se construye.** Mientras el volumen de equipos cargados sea bajo (arranca en cero),
+el riesgo real de catálogo contaminado es bajo también — mismo argumento que ya usa §3 para su
+"aviso manual a Seba mientras el volumen es bajo" en vez de un mecanismo permanente desde el día
+uno. Queda anotado para que la próxima vez que se toque este tema no se repita la misma omisión sin
+que quede a la vista.
+
 ## Para retomar
 
 - **Condiciones de pago (§8)**: sin diseño, afecta schema de precios.
@@ -285,3 +345,8 @@ tiene datos de Bariloche, así que el problema todavía no se manifestó en la p
 - **Catálogo regional, no nacional (§11)**: si el promedio colaborativo necesita agrupar por zona
   antes de promediar, y si hacen falta más insumos explícitamente regionales — sin definir, no
   bloquea nada mientras el catálogo solo tenga datos de Bariloche.
+- **Corroboración por volumen para equipos nuevos (§12)**: hoy un equipo recién creado queda visible
+  para todos sin ningún umbral de uso, a diferencia del principio de §3/§6 para precios — decisión
+  tomada sin flaggear en su momento, sin resolver si se cierra. Requiere una rama nueva en la
+  política `insumos_select` (hoy no distingue por tipo ni por dueño) más una función que cuente
+  cuántos usuarios distintos corroboran el equipo.

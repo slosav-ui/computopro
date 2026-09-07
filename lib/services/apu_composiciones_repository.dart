@@ -120,31 +120,114 @@ class ApuComposicionesRepository {
     return [for (final row in data as List) _itemDetalleDesdeFila(row as Map<String, dynamic>)];
   }
 
-  /// Clona (si hace falta) y edita una línea de la receta, en una sola llamada (ver
-  /// `personalizar_item_apu`, 0071_personalizacion_apu_pro.sql) — la función se encarga de crear
-  /// la receta personal del usuario si todavía no existía, clonando ahí las 770 líneas de la
-  /// oficial que le correspondan a este subítem, y recién después aplica el cambio. Devuelve la
-  /// receta completa ya actualizada (con los ids nuevos si acabó de clonar), para no tener que
-  /// pedirla de nuevo con un segundo viaje de red.
+  /// Clona (si hace falta) y edita rendimiento y/o precio de una línea, en una sola llamada (ver
+  /// `personalizar_item_apu`, reescrita en 0072_edicion_apu_correcciones.sql). Ubica la línea por
+  /// `insumoId`, no por el id de la fila -- una fila virtual de mano de obra (una de las 5
+  /// categorías que la receta todavía no tiene, ver `ApuComposicionItemDetalle.itemId`) no tiene
+  /// id hasta que se edita. Devuelve la receta completa ya actualizada, para no tener que pedirla
+  /// de nuevo con un segundo viaje de red.
   ///
-  /// `insumoIdNuevo` null = solo cambia el rendimiento; con valor, también cambia qué insumo lleva
-  /// esa línea (el caso "reemplazar ladrillo común por ladrillón").
+  /// `precioNuevo` null = no toca el precio -- la función de base decide sola, según
+  /// `insumos.tipo`, si el precio va a `obra_valor_hora_override` (mano de obra, por categoría
+  /// UOCRA) o a `obra_insumo_precios` (material/equipo); acá no hace falta distinguirlo. Clonar la
+  /// receta personal solo pasa si el rendimiento cambió de verdad -- editar solo el precio no
+  /// fuerza un fork, porque el precio no vive en la receta (ver comentario de la migración).
   ///
   /// Gate de PRO: NO se chequea acá — responsabilidad de quien llama (mismo patrón que
   /// `PanelParametrosCargasSociales._onGuardar`, verificar `esPro` en vivo antes de llamar a esto).
   Future<List<ApuComposicionItemDetalle>> personalizarItem({
     required String obraId,
     required String subitemId,
-    required String itemId,
+    required String insumoId,
     required double rendimientoNuevo,
-    String? insumoIdNuevo,
+    double? precioNuevo,
   }) async {
     final data = await _client.rpc('personalizar_item_apu', params: {
       'p_obra_id': obraId,
       'p_subitem_id': subitemId,
-      'p_item_id': itemId,
+      'p_insumo_id': insumoId,
       'p_rendimiento_nuevo': rendimientoNuevo,
-      'p_insumo_id_nuevo': insumoIdNuevo,
+      'p_precio_nuevo': precioNuevo,
+    });
+    return [for (final row in data as List) _itemDetalleDesdeFila(row as Map<String, dynamic>)];
+  }
+
+  /// Agrega un material nuevo a la receta personal del usuario (clona primero si hace falta, ver
+  /// `agregar_material_apu`, 0072_edicion_apu_correcciones.sql). El catálogo oficial no se toca.
+  ///
+  /// Gate de PRO: NO se chequea acá, mismo criterio que `personalizarItem`.
+  Future<List<ApuComposicionItemDetalle>> agregarMaterial({
+    required String obraId,
+    required String subitemId,
+    required String insumoId,
+    required double rendimiento,
+  }) async {
+    final data = await _client.rpc('agregar_material_apu', params: {
+      'p_obra_id': obraId,
+      'p_subitem_id': subitemId,
+      'p_insumo_id': insumoId,
+      'p_rendimiento': rendimiento,
+    });
+    return [for (final row in data as List) _itemDetalleDesdeFila(row as Map<String, dynamic>)];
+  }
+
+  /// Quita un material de la receta personal del usuario (clona primero si hace falta, ver
+  /// `quitar_material_apu`, 0072_edicion_apu_correcciones.sql). El catálogo oficial no se toca.
+  ///
+  /// Gate de PRO: NO se chequea acá, mismo criterio que `personalizarItem`.
+  Future<List<ApuComposicionItemDetalle>> quitarMaterial({
+    required String obraId,
+    required String subitemId,
+    required String insumoId,
+  }) async {
+    final data = await _client.rpc('quitar_material_apu', params: {
+      'p_obra_id': obraId,
+      'p_subitem_id': subitemId,
+      'p_insumo_id': insumoId,
+    });
+    return [for (final row in data as List) _itemDetalleDesdeFila(row as Map<String, dynamic>)];
+  }
+
+  /// Agrega un equipo nuevo a la receta personal del usuario -- mismo mecanismo que
+  /// `agregarMaterial`, funciones de base separadas (`agregar_equipo_apu`,
+  /// `0074_catalogo_colaborativo_equipos.sql`) para no cambiarle la firma a las que ya estaban en
+  /// producción. `precioInicial` es para el formulario de alta directa (`PanelCrearEquipoApu`,
+  /// catálogo de equipos vacío) que pide rendimiento y precio en un solo paso -- va a
+  /// `obra_insumo_precios` en la misma llamada, mismo criterio que `personalizarItem`. Al agregar
+  /// un equipo que ya existía en el catálogo (buscador, no formulario de alta) queda `null` -- el
+  /// precio se carga después igual que el de un material, tocando el precio unitario de la línea.
+  ///
+  /// Gate de PRO: NO se chequea acá, mismo criterio que `personalizarItem`.
+  Future<List<ApuComposicionItemDetalle>> agregarEquipo({
+    required String obraId,
+    required String subitemId,
+    required String insumoId,
+    required double rendimiento,
+    double? precioInicial,
+  }) async {
+    final data = await _client.rpc('agregar_equipo_apu', params: {
+      'p_obra_id': obraId,
+      'p_subitem_id': subitemId,
+      'p_insumo_id': insumoId,
+      'p_rendimiento': rendimiento,
+      'p_precio_inicial': precioInicial,
+    });
+    return [for (final row in data as List) _itemDetalleDesdeFila(row as Map<String, dynamic>)];
+  }
+
+  /// Quita un equipo de la receta personal del usuario (ver `quitar_equipo_apu`,
+  /// `0073_agregar_quitar_equipo_apu.sql`). El catálogo oficial no se toca.
+  ///
+  /// Gate de PRO: NO se chequea acá, mismo criterio que `personalizarItem`.
+  Future<List<ApuComposicionItemDetalle>> quitarEquipo({
+    required String obraId,
+    required String subitemId,
+    required String insumoId,
+  }) async {
+    final data = await _client.rpc('quitar_equipo_apu', params: {
+      'p_obra_id': obraId,
+      'p_subitem_id': subitemId,
+      'p_insumo_id': insumoId,
     });
     return [for (final row in data as List) _itemDetalleDesdeFila(row as Map<String, dynamic>)];
   }
@@ -160,12 +243,12 @@ class ApuComposicionesRepository {
     return resultado as bool;
   }
 
-  /// Mapeo fila->modelo compartido entre `getComposicionDetalle` y `personalizarItem` — las dos
-  /// RPC devuelven exactamente la misma forma (la segunda literalmente llama a
-  /// `calcular_composicion_detalle_subitem` al final, ver 0071).
+  /// Mapeo fila->modelo compartido por las 4 RPC de arriba -- todas devuelven exactamente la misma
+  /// forma (las 3 de escritura literalmente llaman a `calcular_composicion_detalle_subitem` al
+  /// final). `item_id` puede venir null (fila virtual de mano de obra, ver 0072).
   ApuComposicionItemDetalle _itemDetalleDesdeFila(Map<String, dynamic> row) {
     return ApuComposicionItemDetalle(
-      itemId: row['item_id'].toString(),
+      itemId: row['item_id']?.toString(),
       apuComposicionId: row['apu_composicion_id'].toString(),
       esPersonal: row['es_personal'] as bool,
       tipoComponente: row['tipo_componente'] as String,

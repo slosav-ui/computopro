@@ -240,7 +240,7 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> with SingleTick
                 padding: EdgeInsets.all(24),
                 child: Text(
                   'Para ver la composición y el precio de una partida, andá a la solapa '
-                  'Cómputo y tocá el precio de una partida con receta cargada (chip "APU").',
+                  'Cómputo y tocá el precio de una partida con APU cargado (chip "APU").',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: Colors.black54),
                 ),

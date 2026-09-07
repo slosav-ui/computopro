@@ -4,8 +4,11 @@ import '../../../data/models/apu_composicion_item_detalle.dart';
 import '../../../data/models/apu_precio_subitem.dart';
 import '../../../services/apu_composiciones_repository.dart';
 import '../../../services/auth_service.dart';
+import '../../../services/insumos_repository.dart';
 import '../../../services/perfil_repository.dart';
 import '../../shared/pro_gate_dialog.dart';
+import '../tabs/panel_agregar_item_apu.dart';
+import '../tabs/panel_crear_equipo_apu.dart';
 import '../tabs/panel_editar_item_apu.dart';
 
 /// Composición completa de una partida — mano de obra, materiales y equipos, cada uno con su
@@ -45,6 +48,7 @@ class ComposicionApuScreen extends StatefulWidget {
 
 class _ComposicionApuScreenState extends State<ComposicionApuScreen> {
   final ApuComposicionesRepository _repository = ApuComposicionesRepository();
+  final InsumosRepository _insumosRepository = InsumosRepository();
   final PerfilRepository _perfilRepository = PerfilRepository();
   final AuthService _authService = AuthService();
 
@@ -165,8 +169,21 @@ class _ComposicionApuScreenState extends State<ComposicionApuScreen> {
         // mirar la primera para saber cuál se está mostrando.
         if (_items.first.esPersonal) _buildBannerPersonalizado(),
         if (manoDeObra.isNotEmpty) _buildSeccion('MANO DE OBRA', manoDeObra),
-        if (materiales.isNotEmpty) _buildSeccion('MATERIALES', materiales),
-        if (equipos.isNotEmpty) _buildSeccion('EQUIPOS', equipos),
+        _buildSeccion(
+          'MATERIALES',
+          materiales,
+          accionAgregar: () => _abrirAgregarItem('material'),
+          conAccionQuitar: true,
+          textoVacio: 'Sin materiales cargados.',
+        ),
+        _buildSeccion(
+          'EQUIPOS',
+          equipos,
+          accionAgregar: () => _abrirAgregarItem('equipo'),
+          conAccionQuitar: true,
+          textoVacio: 'Sin equipos cargados.',
+          atenuarSiVacio: true,
+        ),
         const SizedBox(height: 8),
         _buildTotal(),
       ],
@@ -191,7 +208,7 @@ class _ComposicionApuScreenState extends State<ComposicionApuScreen> {
           const SizedBox(width: 8),
           const Expanded(
             child: Text(
-              'Esta es tu receta personalizada de esta partida.',
+              'Este es tu APU personalizado de esta partida.',
               style: TextStyle(fontSize: 11, color: Colors.black87),
             ),
           ),
@@ -210,7 +227,7 @@ class _ComposicionApuScreenState extends State<ComposicionApuScreen> {
       context: context,
       builder: (dialogCtx) => AlertDialog(
         title: const Text(
-          'Volver a la receta oficial',
+          'Volver al APU oficial',
           style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1B365D)),
         ),
         content: const Text(
@@ -250,7 +267,7 @@ class _ComposicionApuScreenState extends State<ComposicionApuScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No se pudo restaurar la receta oficial. Probá de nuevo.')),
+        const SnackBar(content: Text('No se pudo restaurar el APU oficial. Probá de nuevo.')),
       );
     }
   }
@@ -268,8 +285,162 @@ class _ComposicionApuScreenState extends State<ComposicionApuScreen> {
     setState(() => _items = resultado);
   }
 
-  Widget _buildSeccion(String titulo, List<ApuComposicionItemDetalle> items) {
-    return Card(
+  /// `tipoComponente`: 'material' o 'equipo' -- mismo mecanismo de clonado para los dos, solo
+  /// cambia a qué RPC de base termina llamando. Para equipo, antes de cualquier otra cosa se
+  /// muestra un aviso aparte (`_confirmarAgregarEquipo`) -- tiene que verse ANTES de cargar nada,
+  /// no adentro del diálogo de carga (ver conversación: si aparece después, el usuario ya cargó
+  /// mal). Después el camino se bifurca según si el catálogo de equipos ya tiene algo: vacío (hoy,
+  /// siempre) va directo al formulario de alta (`PanelCrearEquipoApu`); con al menos un equipo va
+  /// al buscador (`PanelAgregarItemApu`, mismo que materiales, con su propia salida a
+  /// `PanelCrearEquipoApu` si no encuentra lo que busca).
+  Future<void> _abrirAgregarItem(String tipoComponente) async {
+    if (tipoComponente == 'equipo') {
+      final continuar = await _confirmarAgregarEquipo();
+      if (continuar != true || !mounted) return;
+
+      final hayCatalogo = await _insumosRepository.hayInsumosDeTipo('equipo');
+      if (!mounted) return;
+      if (!hayCatalogo) {
+        final resultado = await showDialog<List<ApuComposicionItemDetalle>>(
+          context: context,
+          builder: (_) => PanelCrearEquipoApu(obraId: widget.obraId, subitemId: widget.subitemId),
+        );
+        if (resultado == null || !mounted) return;
+        setState(() => _items = resultado);
+        return;
+      }
+    }
+
+    final idsExistentes = _items.where((i) => i.tipoComponente == tipoComponente).map((i) => i.insumoId).toSet();
+    final resultado = await showDialog<List<ApuComposicionItemDetalle>>(
+      context: context,
+      builder: (_) => PanelAgregarItemApu(
+        obraId: widget.obraId,
+        subitemId: widget.subitemId,
+        insumoIdsExistentes: idsExistentes,
+        tipoComponente: tipoComponente,
+      ),
+    );
+    if (resultado == null || !mounted) return;
+    setState(() => _items = resultado);
+  }
+
+  /// Aviso obligatorio antes de abrir el buscador de equipos -- ejemplo concreto, sin
+  /// "amortización"/"prorrateo" (PRO es un plan, no un rol de caja blanca: un constructor sin
+  /// formación contable también puede ser PRO y tocar este botón). `true` = el usuario tocó
+  /// Continuar, `null`/`false` = canceló y no se abre nada.
+  Future<bool?> _confirmarAgregarEquipo() {
+    return showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text(
+          'Antes de agregar un equipo',
+          style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1B365D)),
+        ),
+        content: const Text(
+          'Ojo cómo cargás el precio: si alquilás la hormigonera por día y la usás 4 horas para '
+          '10 m² de mampostería, no cargues el alquiler del día ni del mes — cargá el precio de '
+          'esa hora, y como rendimiento las horas que lleva cada m². Cargado mal (el precio del '
+          'día entero, por ejemplo), el precio por unidad sale disparatado.\n\n'
+          'Y si el costo de este equipo ya está contemplado en los Gastos Generales del Factor K '
+          'de esta obra, no lo agregues acá de nuevo: lo estarías contando dos veces.',
+          style: TextStyle(fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(true),
+            child: const Text('Continuar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Quita una línea de material o equipo -- misma confirmación y gate para las dos, solo cambia
+  /// qué RPC de base termina llamando (`quitarMaterial`/`quitarEquipo`, ver
+  /// `ApuComposicionesRepository`).
+  Future<void> _onQuitarItem(ApuComposicionItemDetalle item) async {
+    final esEquipo = item.tipoComponente == 'equipo';
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: Text(
+          esEquipo ? 'Quitar equipo' : 'Quitar material',
+          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1B365D)),
+        ),
+        content: Text('Vas a quitar "${item.insumoNombre}" de tu APU de esta partida.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Quitar'),
+          ),
+        ],
+      ),
+    );
+    if (confirmar != true) return;
+
+    final usuarioId = _authService.usuarioActual?.id;
+    final esProAhora = usuarioId != null ? await _perfilRepository.esPro(usuarioId) : false;
+    if (!mounted) return;
+    if (!esProAhora) {
+      await mostrarDialogoFuncionPro(context, mensaje: 'Editar la composición de APU es una función PRO.');
+      return;
+    }
+
+    try {
+      final resultado = esEquipo
+          ? await _repository.quitarEquipo(
+              obraId: widget.obraId,
+              subitemId: widget.subitemId,
+              insumoId: item.insumoId,
+            )
+          : await _repository.quitarMaterial(
+              obraId: widget.obraId,
+              subitemId: widget.subitemId,
+              insumoId: item.insumoId,
+            );
+      if (!mounted) return;
+      setState(() => _items = resultado);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No se pudo quitar el ${esEquipo ? 'equipo' : 'material'}. Probá de nuevo.')),
+      );
+    }
+  }
+
+  // Anchos fijos de las 3 columnas numéricas, compartidos entre el encabezado y cada fila para que
+  // queden alineadas entre sí (y las cifras en la misma vertical) -- ver conversación: probado que
+  // el emulador angosto no alcanza para confiar en que "se acomoda solo", hay que fijarlos.
+  static const double _colUnidad = 32;
+  static const double _colRendimiento = 46;
+  static const double _colPrecio = 64;
+  static const double _colSubtotal = 72;
+  static const double _colAccion = 26;
+
+  /// `atenuarSiVacio`: la sección nunca se oculta (existe igual, con su título y su botón de
+  /// agregar), pero si no tiene líneas cargadas se ve apagada -- se entiende que la opción existe
+  /// sin que compita visualmente con las secciones que sí están en uso. El estado "apagada" no se
+  /// guarda en ningún lado: se deriva de `items.isEmpty`, no es una preferencia del usuario.
+  Widget _buildSeccion(
+    String titulo,
+    List<ApuComposicionItemDetalle> items, {
+    VoidCallback? accionAgregar,
+    bool conAccionQuitar = false,
+    String textoVacio = 'Sin líneas cargadas.',
+    bool atenuarSiVacio = false,
+  }) {
+    final apagada = atenuarSiVacio && items.isEmpty;
+    final tarjeta = Card(
       margin: const EdgeInsets.only(bottom: 8),
       elevation: 1,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
@@ -278,73 +449,164 @@ class _ComposicionApuScreenState extends State<ComposicionApuScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              titulo,
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF1B365D)),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  titulo,
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF1B365D)),
+                ),
+                // Visible para cualquiera (Free incluido) -- mismo criterio que el precio: el gate
+                // de PRO es al Guardar, adentro del diálogo, no acá.
+                if (accionAgregar != null)
+                  TextButton.icon(
+                    onPressed: accionAgregar,
+                    icon: const Icon(Icons.add, size: 16),
+                    label: const Text('Agregar', style: TextStyle(fontSize: 12)),
+                    style: TextButton.styleFrom(visualDensity: VisualDensity.compact, padding: EdgeInsets.zero),
+                  ),
+              ],
             ),
             const Divider(height: 16),
-            for (final item in items) _buildFilaItem(item),
+            if (items.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Text(
+                  textoVacio,
+                  style: const TextStyle(fontSize: 12, color: Colors.black45, fontStyle: FontStyle.italic),
+                ),
+              )
+            else ...[
+              _buildEncabezadoColumnas(conAccionQuitar: conAccionQuitar),
+              for (final item in items) _buildFilaItem(item, conAccionQuitar: conAccionQuitar),
+            ],
           ],
         ),
       ),
     );
+    // Opacity, no un color gris propio -- el botón "Agregar" tiene que seguir siendo tocable
+    // (Opacity no bloquea hit-testing), a diferencia de deshabilitarlo.
+    return apagada ? Opacity(opacity: 0.45, child: tarjeta) : tarjeta;
   }
 
-  Widget _buildFilaItem(ApuComposicionItemDetalle item) {
-    final sinPrecio = item.precioUnitario == null;
+  /// Encabezados de columna -- sin esto, las 3 cifras seguidas de cada línea (rendimiento, precio
+  /// unitario, subtotal) no dicen cuál es cuál. Letra chica y atenuada a propósito, para que no
+  /// compita con los datos de abajo.
+  Widget _buildEncabezadoColumnas({required bool conAccionQuitar}) {
+    const estilo = TextStyle(
+      fontSize: 9,
+      fontWeight: FontWeight.w600,
+      color: Colors.black38,
+      letterSpacing: 0.3,
+    );
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.only(bottom: 4),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          Expanded(
-            flex: 3,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  item.insumoNombre,
-                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-                ),
-                Text(
-                  '${_fmtRendimiento(item.rendimiento)} ${item.insumoUnidad.toUpperCase()}',
-                  style: const TextStyle(fontSize: 11, color: Colors.black45),
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            flex: 2,
-            child: sinPrecio
-                ? Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      Icon(Icons.info_outline, size: 12, color: Colors.orange[800]),
-                      const SizedBox(width: 4),
-                      Text(
-                        'sin precio',
-                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.orange[800]),
-                      ),
-                    ],
-                  )
-                : Text(
-                    CurrencyFormatter.formatARS(item.subtotal!),
-                    textAlign: TextAlign.right,
-                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF1B365D)),
-                  ),
-          ),
-          // Visible para cualquiera (Free incluido) -- el gate de PRO es al Guardar, adentro del
-          // diálogo, no acá (mismo criterio "no ocultar la función, gatear la acción").
-          IconButton(
-            icon: const Icon(Icons.edit_outlined, size: 16, color: Colors.black45),
-            tooltip: 'Editar',
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-            onPressed: () => _abrirEdicion(item),
-          ),
+          const Expanded(child: Text('INSUMO', style: estilo)),
+          const SizedBox(width: _colUnidad, child: Text('UNID.', style: estilo, textAlign: TextAlign.right)),
+          const SizedBox(width: _colRendimiento, child: Text('REND.', style: estilo, textAlign: TextAlign.right)),
+          const SizedBox(width: _colPrecio, child: Text('P. UNIT.', style: estilo, textAlign: TextAlign.right)),
+          const SizedBox(width: _colSubtotal, child: Text('SUBTOTAL', style: estilo, textAlign: TextAlign.right)),
+          if (conAccionQuitar) SizedBox(width: _colAccion),
         ],
       ),
     );
+  }
+
+  /// Una fila por línea, alineada a `_buildEncabezadoColumnas`: insumo (ocupa lo que sobra, se
+  /// corta con puntos suspensivos antes que apretar las columnas numéricas -- el nombre completo
+  /// se ve en el diálogo que abre el precio), unidad, rendimiento, precio unitario (el toque para
+  /// editar, ver `PanelEditarItemApu`) y subtotal (texto plano, resultado calculado). Vale igual
+  /// para material, mano de obra (el precio unitario ahí es el valor hora de la categoría) y
+  /// equipos.
+  Widget _buildFilaItem(ApuComposicionItemDetalle item, {required bool conAccionQuitar}) {
+    final sinPrecio = item.precioUnitario == null;
+    // Categoría de mano de obra sin rendimiento cargado (fila real en 0, o virtual todavía --
+    // corrección #1: las 5 categorías siempre visibles, atenuadas mientras estén en 0).
+    final atenuado = item.tipoComponente == 'mano_obra' && item.rendimiento == 0;
+    final fila = Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            child: Text(
+              item.insumoNombre,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            ),
+          ),
+          SizedBox(
+            width: _colUnidad,
+            child: Text(
+              item.insumoUnidad.toUpperCase(),
+              textAlign: TextAlign.right,
+              style: const TextStyle(fontSize: 11, color: Colors.black45),
+            ),
+          ),
+          SizedBox(
+            width: _colRendimiento,
+            child: Text(
+              _fmtRendimiento(item.rendimiento),
+              textAlign: TextAlign.right,
+              style: const TextStyle(fontSize: 11, color: Colors.black45),
+            ),
+          ),
+          SizedBox(
+            width: _colPrecio,
+            // Único toque para editar rendimiento y precio (ver PanelEditarItemApu) -- visible
+            // para cualquiera (Free incluido), el gate de PRO es al Guardar, adentro del diálogo.
+            child: InkWell(
+              onTap: () => _abrirEdicion(item),
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: Text(
+                  sinPrecio ? 'Cargar precio' : CurrencyFormatter.formatARS(item.precioUnitario!),
+                  textAlign: TextAlign.right,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: sinPrecio ? Colors.orange[800] : const Color(0xFF1B365D),
+                    decoration: TextDecoration.underline,
+                    decorationColor: Colors.black26,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          SizedBox(
+            width: _colSubtotal,
+            child: Text(
+              sinPrecio ? '—' : CurrencyFormatter.formatARS(item.subtotal!),
+              textAlign: TextAlign.right,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF1B365D)),
+            ),
+          ),
+          if (conAccionQuitar)
+            SizedBox(
+              width: _colAccion,
+              // La sección que pasa conAccionQuitar:true es homogénea (solo materiales o solo
+              // equipos, ver los dos call sites de _buildSeccion) -- alcanza con mostrar el ícono
+              // siempre acá, _onQuitarItem ya distingue a qué RPC llamar según item.tipoComponente.
+              child: IconButton(
+                icon: const Icon(Icons.delete_outline, size: 15, color: Colors.black45),
+                tooltip: 'Quitar',
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+                onPressed: () => _onQuitarItem(item),
+              ),
+            ),
+        ],
+      ),
+    );
+    return atenuado ? Opacity(opacity: 0.5, child: fila) : fila;
   }
 
   /// Mismo semáforo que `_buildPrecioApuDerivado` de SubitemsScreen, pero recalculado desde
@@ -362,7 +624,12 @@ class _ComposicionApuScreenState extends State<ComposicionApuScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          const Text('Precio unitario de la partida', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+          // Expanded -- con letra grande (accesibilidad) esta etiqueta más el precio de al lado no
+          // entran en una sola línea sin desbordar; acá puede ajustarse o pasar a una segunda línea.
+          const Expanded(
+            child: Text('Precio unitario de la partida', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+          ),
+          const SizedBox(width: 8),
           resultado.completo
               ? Text(
                   CurrencyFormatter.formatARS(resultado.precioTotal),

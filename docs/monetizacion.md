@@ -48,5 +48,15 @@ Angulo de marketing: profesionales que presupuestan por analogía en vez de APU 
 
 
 
+8\. Plan PRO — prueba gratuita y precio (decisiones 2026-09-07)
+
+Un mes gratis de PRO al registrarse. Al vencer, pasa a Free automáticamente — no es un plan pago desde el alta, es un período de prueba.
+
+Si durante ese mes el usuario personalizó APU (rendimientos/insumos editados, ver `personalizar_item_apu`) y después cae a Free, esas personalizaciones no se borran: quedan guardadas en su usuario (misma tabla, mismo dueño), pero vuelve a ver la oficial hasta que sea PRO de nuevo — necesita PRO para usarlas, no para conservarlas. Esto tiene que quedar explicado desde antes de que el usuario empiece a cargar nada, en el arranque del mes de prueba — no como sorpresa recién cuando el mes se vence y deja de poder editar.
+
+Precio orientativo: USD 15/mes. El equivalente en pesos no se fija como un segundo número aparte — se revisa periódicamente, porque un valor en ARS fijado de una vez se desactualiza (mismo problema que ya resuelve el USD Ref. BNA del Dashboard, que se actualiza al abrir la app en vez de quedar hardcodeado). Corrige el precio anterior que tenía anotado el roadmap (`CLAUDE.md`, "Monetización y lanzamiento": USD 12/mes o $15.000 ARS/mes) — ese valor queda obsoleto, no es un error de este documento.
+
+
+
 Pendientes legales transversales: ToS/Privacidad propios, Ley 25.326 (datos de ejecutores/CV), deslinde por variación de costos, esquema de facturación si la app intermedia cobros.
 
