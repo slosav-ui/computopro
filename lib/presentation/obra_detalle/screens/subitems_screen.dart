@@ -1047,6 +1047,19 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
                 // vinculación con APU. El resto (usaApu == true, oficial,
                 // sin composición) sigue mostrando solo cantidad.
                 //
+                // CORRECCIÓN (ver docs/importador_capa2_diseno_datos.md §4): un subítem OFICIAL de
+                // un rubro con usaApu == true puede tener igual un precio manual cargado en
+                // obra_subitems.precio_unitario_manual -- hoy solo lo escribe el importador, pero
+                // el chequeo no depende de él, es genérico. Antes de este cambio, esa fila caía
+                // siempre en la rama de composición (o en "solo cantidad" si no había ninguna),
+                // así que un precio manual ahí quedaba guardado pero invisible -- no había forma de
+                // ponerlo desde la UI ni de verlo si algo externo lo cargaba. Ahora, si ya existe un
+                // precio_unitario_manual (sin importar el porqué), gana esa rama sobre la de
+                // composición -- mismo campo agrupado cantidad+precio+subtotal que ya usan los
+                // rubros de precio manual y los propios. Sin riesgo de regresión: ningún camino
+                // existente escribía ahí antes de esta pieza, así que el chequeo es un no-op para
+                // todos los datos que ya había.
+                //
                 // Gate de privacidad primero, antes de cualquiera de esos casos: sin
                 // puedeVerMontosYAPU (Constructor, Veedor, etc. — Caja Negra/Vista Operativa por
                 // matriz) siempre cantidad sola, sin importar tipoPrecioManual ni composición. Antes
@@ -1068,15 +1081,17 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
                               ? _buildCampoPrecio(subitem, aplicable, puedeEditar, hint: 'Monto total')
                               : subitem.creadorUsuarioId != null
                                   ? _buildFilaCantidadPrecioConSubtotal(subitem, aplicable, puedeEditar)
-                                  : _subitemsConComposicion.contains(subitem.id)
-                                      ? _buildFilaCantidadPrecioApu(subitem, aplicable, puedeEditar)
-                                      : Align(
-                                          alignment: Alignment.centerRight,
-                                          child: SizedBox(
-                                            width: 140,
-                                            child: _buildCampoCantidad(subitem, aplicable, puedeEditar),
-                                          ),
-                                        ),
+                                  : (_obraSubitemsPorSubitemId[subitem.id]?.precioUnitarioManual != null)
+                                      ? _buildFilaCantidadPrecioConSubtotal(subitem, aplicable, puedeEditar)
+                                      : _subitemsConComposicion.contains(subitem.id)
+                                          ? _buildFilaCantidadPrecioApu(subitem, aplicable, puedeEditar)
+                                          : Align(
+                                              alignment: Alignment.centerRight,
+                                              child: SizedBox(
+                                                width: 140,
+                                                child: _buildCampoCantidad(subitem, aplicable, puedeEditar),
+                                              ),
+                                            ),
                 ),
               ],
             ),
