@@ -924,47 +924,81 @@ punta a punta. Roadmap futuro sin fecha: bot de escala UOCRA (ver
 `docs/costo_mano_de_obra_decisiones.md`), conectar el bloque a la solapa APU real (sigue mock) y al
 Factor K.
 
-### Importador de Excel/PDF: diseño de datos cerrado en dos capas, sin implementar (2026-08-22)
+### Importador de Excel/PDF: diseño cerrado en dos capas, capa de datos aplicada (2026-09-07)
 
-Puerta de entrada para que un profesional suba su propio cómputo/presupuesto (Excel/PDF/foto) sin
-migrar a Rubros/APU — disponible para TODOS los usuarios, con límite de documentos/mes en Free (no
-es funcionalidad bloqueada para Free). Pausado al principio de su diseño al descubrir que el mapeo
-final depende de Rubros/APU en Supabase (sección anterior, también sin implementar). Para no
-bloquear todo, se separó en dos capas — diseño completo en `docs/importador_capa1_diseno_datos.md`,
-**las 7 ambigüedades de la Capa 1 ya cerradas, pero cero migraciones escritas ni aplicadas**:
+Puerta de entrada para que un profesional suba su propio cómputo/presupuesto (Excel primero, PDF/
+foto en una segunda tanda) sin cargarlo partida por partida en Rubros/APU. Diseño en dos documentos
+— `docs/importador_capa1_diseno_datos.md` (Capa 1, Lectura y extracción, cerrado 2026-08-22) y
+`docs/importador_capa2_diseno_datos.md` (Capa 2, Mapeo y persistencia, cerrado 2026-09-06, corrige
+3 puntos de Capa 1) — **ambos ya no bloqueados por Rubros/APU** (esa pieza tiene persistencia real
+desde el 2026-08-28, ver secciones anteriores). Tablas/función aplicadas y verificadas en producción
+por el usuario (2026-09-07, confirmado en Table Editor y Database → Functions):
+`supabase/migrations/0080_importaciones.sql`/`0081_confirmar_importacion.sql`.
 
-- **Capa 1 — Lectura y extracción** (diseño cerrado): tablas `importaciones` (header: `obra_id`
-  **nullable** — puede importarse antes de crear la obra, ver más abajo —, `archivo_storage_path`
-  obligatorio, `hojas_seleccionadas text[]` elegidas por el usuario antes de leer, `moneda_default`,
-  estado `pendiente_revision`/`confirmado`/`descartado`, entrada mínima garantizada de
-  `pct_avance_manual`/`monto_certificado_manual` a nivel de documento completo) +
-  `importaciones_items` (filas extraídas: columnas estructuradas conocidas —
-  rubro/descripción/unidad/cantidad/precio/moneda, donde `moneda` null hereda el `moneda_default`
-  del header — más un `datos_originales jsonb` catch-all, mismo patrón que
-  `libro_entradas.adjuntos`/`audit_log.detalle`). No depende de que exista `rubros`/`subitems` en
-  Supabase — se puede implementar ya. RLS: con `obra_id` cargado, mismo criterio que `obra_subitems`
-  (`is_obra_member` + `tiene_rol_en_obra('admin_maestro'|'profesional')`); con `obra_id` null, la
-  fila es personal (`usuario_id = auth.uid()`) hasta que se asocie a una obra.
-- **Capa 2 — Mapeo y persistencia** (no diseñada, solo interfaz reservada): columnas
-  `importaciones_items.rubro_id`/`subitem_id` dejadas como `uuid` sueltos sin FK, mismo patrón que
-  `modificaciones_obra.subitem_id` en Etapa 3. Le queda pendiente además resolver a qué obra se
-  asocia una importación confirmada que llegó sin `obra_id`.
+**3 correcciones de Capa 2 sobre el diseño original de Capa 1**, cerradas en conversación:
+- **Importador exclusivo de PRO** — corrige la Capa 1 ("disponible para todos, con límite de
+  documentos/mes en Free"). Mismo criterio que ya cerró el Factor K (`docs/monetizacion.md` §9): si
+  Free pudiera importar su presupuesto completo y usar Gestión de Obra con eso, se lleva el
+  diferencial de la app sin pagar. Se cae la necesidad de contar documentos por mes — el gate es
+  `perfiles.es_pro`, verificado en vivo desde la app (capa de app, no RLS — mismo criterio ya
+  aceptado para el resto del catálogo Free/PRO).
+- **Excel primero, sin IA — PDF/foto quedan para la segunda tanda**, aunque Seba estima que la
+  mayoría de los usuarios reales va a subir PDF o foto. El orden no es "lo más común primero", es
+  "lo que se puede construir determinístico primero" — todo el mapeo/confirmación/creación de
+  partidas (el grueso de Capa 2) se reusa igual el día que se sume lectura de PDF/foto, lo único que
+  cambia es qué llena `importaciones_items` (parser de planillas vs. modelo de visión).
+- **`obra_id` pasa a `not null`** — corrige el schema de Capa 1 (era nullable, pensado para
+  "estimación rápida sin obra", un caso sin verificar en ningún doc del proyecto). Se importa sobre
+  una obra ya elegida o recién creada, nunca "suelta"; la rama de RLS para `obra_id` null queda
+  afuera de esta ronda a propósito, se agrega en su propia migración el día que ese caso se diseñe.
 
-**Mecanismo de lectura confirmado**: Edge Function de Supabase del lado servidor llamando al LLM,
-nunca desde el cliente Flutter — por seguridad (no exponer la API key en el binario) y para poder
-aplicar el límite mensual de Free desde el servidor. El archivo original se guarda en Supabase
-Storage (no solo el resultado de la lectura), como respaldo/trazabilidad.
+**Lo que no cambió de Capa 1**: el mecanismo de lectura (Edge Function de Supabase del lado
+servidor, nunca desde el cliente — por seguridad de la clave y, para la segunda tanda con IA, para
+poder aplicar cualquier límite de costo desde el servidor) y que el archivo original se guarda en
+Supabase Storage además de lo extraído (bucket privado `importaciones`, política de acceso por
+`obra_id` como primer segmento del path — ver `0080`).
 
-**Dos decisiones citaron precedentes de piezas que no están documentadas en este archivo ni en
-`docs/`** ("el importador de certificados externos" para el límite Free/PRO, "el freemium de
-estimación rápida" para `obra_id` nullable) — quedaron anotadas tal como las describió el usuario,
-sin poder verificarlas contra ningún doc del proyecto porque no existen todavía. Si se retoma este
-tema, puede hacer falta pedirle al usuario más detalle de esas dos piezas.
+**Hallazgo real de Capa 2, ya cerrado como pieza propia**: lo que se importa es cómputo cerrado
+(rubro/partida/unidad/cantidad/precio unitario), nunca una composición de APU — mapear una fila es
+solo resolver `subitems.id`/`rubros.id` desde texto libre, `apu_composiciones` no se toca. Y el
+precio importado es *siempre* manual, sin importar si el subítem matcheado pertenece a un rubro con
+`usa_apu = true` — esto exponía un bug real en `subitems_screen.dart` (`_buildContenido()` nunca
+miraba si `obra_subitems.precio_unitario_manual` ya tenía valor antes de caer en la rama derivada de
+APU, así que un precio manual en un subítem oficial de rubro con APU quedaba guardado pero
+invisible). **Corregido y commiteado por separado, antes del resto del importador** (tanda aislada,
+no depende de ninguna otra pieza de esta sección): la pantalla ahora prioriza
+`precio_unitario_manual` sobre la composición cuando ya tiene un valor cargado. Verificado en el
+emulador con la partida 8.1 — precio cargado por SQL se muestra editable, el resto del rubro sigue
+derivando su precio del APU sin cambios.
 
-**Para retomar**: nada bloquea empezar a escribir las migraciones de Capa 1 (todas las ambigüedades
-de diseño de datos están cerradas) salvo el detalle fino de la Edge Function (prompt, formato de
-respuesta, manejo de errores), que todavía no se diseñó. Capa 2 sigue esperando el listado semilla
-de macrorrubros de la pieza de Rubros/APU.
+**Mapeo por fila — 3 acciones sin algoritmo automático en esta ronda** (Capa 2 §3): elegir del
+catálogo (buscador manual, mismo patrón que agregar materiales/equipos a un APU), crear como propia
+(reusa `SubitemsRepository.crearPersonalizado`/`RubrosRepository.crearPersonalizado`, con la
+descripción/unidad extraídas como valores iniciales editables — la novedad real desde agosto: en el
+diseño original "no matchea" solo tenía descartar o quedar pendiente para siempre), o descartar la
+fila (el dato crudo queda en `importaciones_items`, sin borrar nada). Sin columna de estado nueva:
+`rubro_id`/`subitem_id` cargados = resuelta, `null` = descartada/sin resolver — el mismo par de
+columnas que Capa 1 ya había reservado sin FK, ahora con su FK real (`0081`). `pg_trgm` para ordenar
+resultados por parecido queda anotado como mejora futura, no de esta ronda.
+
+**Confirmación — `confirmar_importacion(p_importacion_id)`** (`0081`, mismo criterio atómico que
+`emitir_certificado`/`aprobar_ajuste_contrato`): recorre los ítems resueltos de la importación,
+upsert de cada uno en `obra_subitems` (por `obra_id`+`subitem_id`, sin `ON CONFLICT` formal porque
+`obra_subitems` no tiene unique constraint — un `SELECT` previo dentro de la misma función hace de
+upsert), y solo si el lote entero entra bien marca `importaciones.estado = 'confirmado'`. Moneda:
+sin conversión automática en esta ronda (no hay cotización histórica confiable en el proyecto), la
+pantalla de revisión avisa si la moneda de una fila no coincide con la de la obra y deja la decisión
+al usuario.
+
+**Qué NO se resuelve en esta ronda, a propósito** (Capa 2 §7): PDF/foto (segunda tanda), `obra_id`
+nullable/estimación sin obra, fuzzy-matching automático del mapeo, conversión de moneda, límite de
+documentos/mes (ya no aplica, el gate es PRO exclusivo).
+
+**Para retomar**: con la capa de datos aplicada, sigue la Edge Function del parser de Excel
+(encabezados reconocidos, sin IA — el detalle fino de qué encabezados y sinónimos todavía no se
+diseñó), los modelos Dart (`importacion.dart`/`importacion_item.dart`), `ImportacionesRepository`, y
+las 2 pantallas (subida y revisión) — ver `docs/importador_capa2_diseno_datos.md`, "Archivos para
+esta ronda", para el listado completo tentativo.
 
 ### Confianza en los precios: frescura, aviso legal y mecanismo colaborativo — diseño cerrado, sin implementar (2026-09-05/06)
 
