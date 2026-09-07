@@ -6,7 +6,12 @@ plugins {
 
 android {
     namespace = "com.example.mi_primera_app"
-    compileSdk = flutter.compileSdkVersion
+    // Fijo en 36, no flutter.compileSdkVersion (que hoy resuelve a 34 con el Flutter SDK
+    // instalado) -- file_picker (vía flutter_plugin_android_lifecycle) exige compilar contra 36.
+    // Solo compileSdk: compilación únicamente, sin efecto en runtime ni en qué dispositivos
+    // instalan la app -- minSdk/targetSdk siguen atados a flutter.minSdkVersion/targetSdkVersion,
+    // sin tocar.
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {

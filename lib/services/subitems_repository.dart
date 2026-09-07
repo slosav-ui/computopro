@@ -91,6 +91,19 @@ class SubitemsRepository {
     return conteo;
   }
 
+  /// Todos los subitems visibles (oficiales + propios del usuario), de todos los rubros a la vez —
+  /// para el buscador global de la revisión del importador (docs/importador_capa2_diseno_datos.md
+  /// §3, acción "elegir del catálogo"): ahí no se sabe de antemano en qué rubro cae cada fila
+  /// importada, así que no alcanza con getSubitemsDeRubro (acotado a uno). El catálogo es chico
+  /// (116 oficiales + lo que cada usuario haya creado), una sola consulta y filtro en Dart alcanza
+  /// -- mismo criterio ya usado en getConteoOficialPorRubro.
+  Future<List<SubitemCatalogo>> getTodos({String? usuarioId}) async {
+    final data = usuarioId == null
+        ? await _client.from('subitems').select().isFilter('creador_usuario_id', null)
+        : await _client.from('subitems').select().or('creador_usuario_id.is.null,creador_usuario_id.eq.$usuarioId');
+    return (data as List).map((row) => _fromRow(row as Map<String, dynamic>)).toList();
+  }
+
   /// Filas de `subitems` por id — para resolver descripciones en la vista previa del certificado
   /// (subítems de varios rubros a la vez, a diferencia de `getSubitemsDeRubro`). Sin filtro de
   /// `creador_usuario_id`: la propia RLS de `subitems_select` (0016, extendida en 0019 con

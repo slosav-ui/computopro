@@ -10,6 +10,7 @@ import '../../../services/obra_rubros_orden_repository.dart';
 import '../../../services/perfil_repository.dart';
 import '../../../services/auth_service.dart';
 import '../../shared/pro_gate_dialog.dart';
+import '../screens/importar_excel_screen.dart';
 import '../screens/subitems_screen.dart';
 
 class RubrosTab extends StatefulWidget {
@@ -320,7 +321,18 @@ class _RubrosTabState extends State<RubrosTab> {
                   onPressed: _restaurarAviso,
                 ),
                 const Spacer(),
-                _buildBotonNuevoRubro(),
+                // Wrap, no Row, para los dos botones -- en pantallas angostas (~360dp) "Importar
+                // Excel" + "Nuevo Rubro" con sus labels completos no entran en una sola línea (ver
+                // docs de la pieza de overflow, memoria del proyecto); Wrap los baja a una segunda
+                // línea en vez de desbordar.
+                Flexible(
+                  child: Wrap(
+                    alignment: WrapAlignment.end,
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: [_buildBotonImportarExcel(), _buildBotonNuevoRubro()],
+                  ),
+                ),
               ],
             ),
           )
@@ -334,9 +346,11 @@ class _RubrosTabState extends State<RubrosTab> {
           // floatingActionButton.
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-            child: Align(
-              alignment: Alignment.centerRight,
-              child: _buildBotonNuevoRubro(),
+            child: Wrap(
+              alignment: WrapAlignment.end,
+              spacing: 8,
+              runSpacing: 4,
+              children: [_buildBotonImportarExcel(), _buildBotonNuevoRubro()],
             ),
           ),
         ],
@@ -347,6 +361,18 @@ class _RubrosTabState extends State<RubrosTab> {
           ),
         ),
       ],
+    );
+  }
+
+  /// Botón "Importar Excel" — mismo criterio que "Nuevo Rubro": siempre visible, para PRO y para
+  /// Free (Free ve el diálogo de función PRO al tocarlo, ver _onImportarExcel), extraído por el
+  /// mismo motivo (dos filas posibles según _avisoOrdenDescartado, ver build()).
+  Widget _buildBotonImportarExcel() {
+    return OutlinedButton.icon(
+      onPressed: _cargando ? null : _onImportarExcel,
+      icon: const Icon(Icons.upload_file, size: 18),
+      label: const Text('Importar Excel'),
+      style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF1B365D)),
     );
   }
 
@@ -740,6 +766,27 @@ class _RubrosTabState extends State<RubrosTab> {
 
   void _mostrarSnackError(String mensaje) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(mensaje)));
+  }
+
+  /// Gate en el botón, antes de abrir -- mismo criterio que _onNuevoRubro/_onNuevoSubitem, no el
+  /// de PanelEditarImpuestos (gate al Guardar): acá no hay nada que Free deba poder ver antes de
+  /// decidir, así que no hace falta dejarlo entrar al formulario primero.
+  /// Importador exclusivo de PRO -- docs/importador_capa2_diseno_datos.md §1, mismo criterio que ya
+  /// cerró el Factor K (docs/monetizacion.md §9): si Free pudiera importar su presupuesto completo
+  /// y usar Gestión de Obra con eso, se lleva el diferencial de la app sin pagar.
+  Future<void> _onImportarExcel() async {
+    if (!_esPro) {
+      await mostrarDialogoFuncionPro(
+        context,
+        mensaje: 'Importar un presupuesto desde Excel es una función PRO.',
+      );
+      return;
+    }
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => ImportarExcelScreen(obraId: widget.obraId)),
+    );
+    await _cargarConteos();
   }
 
   void _onNuevoRubro() {

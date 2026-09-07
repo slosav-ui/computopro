@@ -17,6 +17,14 @@ dependencies:
   printing: ^5.11.1
   path_provider: ^2.1.2
   shared_preferences: ^2.5.5
+  # Importador de Excel (docs/importador_capa2_diseno_datos.md) -- elegir el archivo a subir.
+  # El AGP del proyecto ya es 9.0.1 (android/settings.gradle.kts), por encima del piso 8.11.1 que
+  # CLAUDE.md marca como condición para evitar el problema histórico de Gradle con este paquete.
+  file_picker: ^8.1.2
+  # Parseo de Excel del lado del cliente, sin Edge Function -- ver CLAUDE.md, "Importador de
+  # Excel/PDF": decisión explícita de no sumar infraestructura de servidor para esta ronda (sin IA,
+  # sin límite de Free que aplicar, un solo desarrollador sosteniendo el proyecto).
+  excel: ^4.0.6
 
   cupertino_icons: ^1.0.8
   supabase_flutter: ^2.17.2

@@ -994,11 +994,74 @@ al usuario.
 nullable/estimación sin obra, fuzzy-matching automático del mapeo, conversión de moneda, límite de
 documentos/mes (ya no aplica, el gate es PRO exclusivo).
 
-**Para retomar**: con la capa de datos aplicada, sigue la Edge Function del parser de Excel
-(encabezados reconocidos, sin IA — el detalle fino de qué encabezados y sinónimos todavía no se
-diseñó), los modelos Dart (`importacion.dart`/`importacion_item.dart`), `ImportacionesRepository`, y
-las 2 pantallas (subida y revisión) — ver `docs/importador_capa2_diseno_datos.md`, "Archivos para
-esta ronda", para el listado completo tentativo.
+**Corrección de arquitectura sobre la primera versión de esta pieza (2026-09-07): sin Edge
+Function.** La primera versión escrita acá usaba una Edge Function de Supabase para leer el Excel
+del lado servidor, siguiendo el mecanismo que Capa 1 §3.B ya había fijado ("Edge Function, nunca
+desde el cliente" — dos motivos: proteger una clave de IA, y aplicar el límite de documentos/mes de
+Free desde el servidor). Al revisar esa decisión con el usuario, los dos motivos resultaron no
+aplicar a esta ronda: sin IA (parser determinístico) no hay ninguna clave que proteger, y el
+importador pasó a ser PRO exclusivo (ver arriba) — no hay ningún límite que hacer cumplir del lado
+servidor. Sin esos dos motivos, lo único que quedaba era "consistencia con el diseño viejo", y el
+usuario decidió explícitamente no sumar esa infraestructura: **motivo real, el que más pesó — es un
+solo desarrollador sosteniendo el proyecto, y una pieza en otro lenguaje (Deno/TypeScript) con
+despliegue manual aparte del resto de la app es justo el tipo de cosa que se olvida y después
+falla.**
+
+**Trade-off aceptado explícitamente por el usuario**: si el parser tiene un bug, corregirlo implica
+sacar una versión nueva de la app (compilar y publicar), no redesplegar una función en segundos.
+Para el volumen y la etapa de este proyecto, ese costo es menor que mantener una segunda pieza de
+infraestructura sin necesidad real.
+
+**Dónde queda la Edge Function**: el archivo `supabase/functions/importar-excel/index.ts` **no se
+borró** — queda escrito y sin desplegar, con un comentario de cabecera nuevo marcándolo "NO SE USA
+EN ESTA RONDA", como punto de partida de referencia para la segunda tanda (PDF/foto). Ahí sí los
+dos motivos originales vuelven a aplicar de verdad: un modelo de visión necesita una clave real que
+proteger y tiene un costo por documento que controlar — recién ahí un servidor se justifica de
+nuevo.
+
+**Lo que se construyó en su lugar, escrito pero sin verificar en emulador todavía**:
+- `lib/services/excel_parser.dart` (`ExcelParser`, con el paquete `excel` de pub.dev) — mismo
+  parser determinístico por encabezado reconocido que tenía la Edge Function (mismos sinónimos de
+  columna, sin IA), reescrito en Dart puro, corriendo en el cliente. `listarHojas(bytes)` es
+  instantáneo (sin red) apenas se elige el archivo, antes de subir nada — el usuario sigue eligiendo
+  la hoja ANTES de leer el contenido (Capa 1, decisión D, sin cambios).
+- `lib/data/models/importacion.dart`/`importacion_item.dart`, `lib/services/importaciones_repository.dart`
+  (sube el archivo original a Storage igual que antes — sigue siendo respaldo/trazabilidad, Capa 1
+  decisión F, independiente de quién parsea —, guarda lo que `ExcelParser` ya extrajo en memoria,
+  resuelve/desresuelve filas, llama a `confirmar_importacion`), y dos métodos nuevos de catálogo
+  agregados a `SubitemsRepository` (`getTodos`, buscador global para "elegir del catálogo" —
+  `RubrosRepository`/`SubitemsRepository` ya tenían `crearPersonalizado`, reusados tal cual para
+  "crear como propia").
+- `lib/presentation/obra_detalle/screens/importar_excel_screen.dart` (elegir archivo → hojas listadas
+  al instante → elegir cuál(es) leer → subir y procesar) y `revisar_importacion_screen.dart` (una
+  fila por partida extraída, 3 acciones -- elegir del catálogo/crear como propia/descartar -- y
+  "Confirmar importación"). Entrada nueva en `RubrosTab`: botón "Importar Excel" junto a "Nuevo
+  Rubro", mismo gate PRO al tocar (antes de abrir, no al guardar) que el resto de las funciones PRO
+  de esa pantalla.
+- `pubspec.yaml` suma `file_picker: ^8.1.2` (elegir el archivo, primera vez que se usa en el
+  proyecto; el AGP ya es 9.0.1, por encima del piso 8.11.1 que este archivo marcaba como condición
+  para el problema histórico de Gradle con ese paquete) y `excel: ^4.0.6` (parseo de `.xlsx`/`.xls`
+  en Dart puro, sin dependencias nativas).
+
+**Simplificación real sobre el diseño, encontrada al escribir el código**: `docs/importador_capa2_diseno_datos.md`
+§6 (aviso de moneda) asumía una columna `obras.moneda` que **no existe** -- ni en la tabla `obras`
+ni en `ObraModel` hay ningún campo de moneda hoy (grep sin resultados). La pantalla de revisión
+muestra la moneda efectiva de cada fila (`item.moneda` o el `moneda_default` del header) tal cual,
+sin comparar contra la de la obra -- el aviso de "no coincide" de §6 queda sin construir hasta que
+esa columna exista de verdad en algún lado (dato nuevo para el roadmap, no estaba anotado antes).
+
+**"Descartar" es puramente de la pantalla de revisión, no de la base** (como preveía el diseño §3):
+`RevisarImportacionScreen` mantiene un `Set` local de filas descartadas solo para el chip visual de
+esta sesión de revisión -- se pierde si se sale y se vuelve a entrar. No es un bug: una fila nunca
+resuelta ya cuenta como descartada para `confirmar_importacion` sin necesitar ese estado, la marca
+visual es una comodidad de la pantalla, no una fuente de verdad nueva.
+
+**Para retomar**: sin ningún despliegue pendiente esta vez (esa era justo la infraestructura que se
+sacó) -- alcanza con `flutter run` y recorrer el flujo completo en el emulador con un Excel real:
+elegir archivo, ver las hojas listadas al instante, elegir cuál(es) leer, revisar las filas
+extraídas, probar las 3 acciones, confirmar, y chequear que `obra_subitems` quedó bien cargado y que
+`subitems_screen.dart` (ver el fix de arriba) muestra el precio importado. Ningún paso de esto se
+verificó todavía por falta de acceso a un emulador desde este entorno.
 
 ### Confianza en los precios: frescura, aviso legal y mecanismo colaborativo — diseño cerrado, sin implementar (2026-09-05/06)
 
