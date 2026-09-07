@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../../data/models/apu_precio_subitem.dart';
 import '../../../data/models/obra_model.dart';
 import '../../../data/models/rubro_catalogo.dart';
 import '../../../services/rubros_repository.dart';
@@ -19,6 +20,10 @@ class RubrosTab extends StatefulWidget {
   // que es quien realmente decide qué mostrar (ver el gate ahí). RubrosTab no muestra ningún monto
   // por sí mismo, así que no lo usa directamente.
   final bool puedeVerMontosYAPU;
+  // Vínculo Cómputo -> APU (ver PresupuestosScreen._abrirComposicionDesdeComputo) -- solo se
+  // reenvía a SubitemsScreen, RubrosTab no lo usa directamente.
+  final void Function(String subitemId, String subitemCodigo, String subitemDescripcion, ApuPrecioSubitem precio)?
+      onAbrirComposicion;
 
   const RubrosTab({
     Key? key,
@@ -26,6 +31,7 @@ class RubrosTab extends StatefulWidget {
     required this.obraId,
     required this.puedeEditarComputo,
     required this.puedeVerMontosYAPU,
+    this.onAbrirComposicion,
   }) : super(key: key);
 
   @override
@@ -532,6 +538,7 @@ class _RubrosTabState extends State<RubrosTab> {
                     puedeEditarComputo: widget.puedeEditarComputo,
                     puedeVerMontosYAPU: widget.puedeVerMontosYAPU,
                     numeroPosicion: numeroMostrado,
+                    onAbrirComposicion: widget.onAbrirComposicion,
                   ),
                 ),
               );

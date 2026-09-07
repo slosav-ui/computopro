@@ -65,6 +65,23 @@ class ObraSubitemsRepository {
         .toList();
   }
 
+  /// Filas de `obra_subitems` tildadas (`es_aplicable = true`) de TODA la obra, sin acotar a un
+  /// rubro -- para el listado de la Solapa APU (`ApuListadoTab`), que agrupa por rubro pero parte
+  /// de una sola consulta a nivel obra, no de N consultas por rubro. Mismo filtro que
+  /// `getTildadosDeRubro` (y misma precondición temporal `sector is null`), sin el `.eq('rubro_id',
+  /// ...)`.
+  Future<List<ObraSubitem>> getTildadosDeObra(String obraId) async {
+    final data = await _client
+        .from('obra_subitems')
+        .select()
+        .eq('obra_id', obraId)
+        .eq('es_aplicable', true)
+        .isFilter('sector', null);
+    return (data as List)
+        .map((row) => _fromRow(row as Map<String, dynamic>))
+        .toList();
+  }
+
   /// Cuántos subitems están tildados (`es_aplicable = true`) por rubro, para
   /// una obra puntual — el indicador "N de M" de RubrosTab. Misma consulta
   /// plana agrupada en Dart que `getConteoOficialPorRubro` de

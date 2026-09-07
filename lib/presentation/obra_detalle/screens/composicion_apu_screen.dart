@@ -7,6 +7,7 @@ import '../../../services/auth_service.dart';
 import '../../../services/insumos_repository.dart';
 import '../../../services/perfil_repository.dart';
 import '../../shared/pro_gate_dialog.dart';
+import '../tabs/bloque_factor_k_partida.dart';
 import '../tabs/panel_agregar_item_apu.dart';
 import '../tabs/panel_crear_equipo_apu.dart';
 import '../tabs/panel_editar_item_apu.dart';
@@ -186,6 +187,11 @@ class _ComposicionApuScreenState extends State<ComposicionApuScreen> {
         ),
         const SizedBox(height: 8),
         _buildTotal(),
+        // Factor K, Paso B -- primero qué lleva la partida (arriba), después los coeficientes
+        // hasta el precio final. Widget propio con su propia carga (no depende de `_items`), se
+        // recarga solo con su clave por defecto -- no hace falta pasarle el resultado de esta
+        // pantalla.
+        BloqueFactorKPartida(obraId: widget.obraId, subitemId: widget.subitemId),
       ],
     );
   }

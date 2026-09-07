@@ -58,5 +58,15 @@ Precio orientativo: USD 15/mes. El equivalente en pesos no se fija como un segun
 
 
 
+9\. Desglose de Factor K es exclusivo de PRO (decisión 2026-09-07)
+
+Free ve la composición de una partida completa — mano de obra con rendimientos, materiales con precio unitario y subtotal, el total de la partida, y el precio final ya armado en Cómputo. Lo que Free NO ve es el desglose de cómo se llega a ese precio: la cascada del Factor K, los porcentajes de cada concepto, las bases de cálculo, ni las líneas de impuesto por separado.
+
+Motivo textual de Seba: "si no, lo que le estamos dando es que el Free se hace sus planillas y se va de acá, y no paga". El desglose del Factor K (Gastos Generales, Imprevistos, EPP, Costo Financiero, Beneficio, impuestos línea por línea, con sus bases explicadas) es exactamente la estructura de formación de precio que un profesional pagaría por replicar en su propia planilla si la tuviera completa y gratis. Que un PRO copie lo suyo a un Excel propio está bien — pagó por tenerlo.
+
+**Corrige un criterio ya cerrado**: `docs/factor_k_apu_decisiones.md` §4 documentaba "Free ve todo, el panel de edición no agrega información nueva, el gate va solo en Editar" — ese criterio queda descartado para el desglose de Factor K específicamente (no para el resto de la app, donde "no ocultar la función, gatear la acción" sigue siendo la regla general). Aplica tanto al bloque de cabecera de la Solapa APU (`BloqueFactorK`, Paso A — porcentajes y bases sin monto) como al desglose por partida (`BloqueFactorKPartida`, Paso B — con montos reales). Free ve un aviso de función PRO en el lugar de cada uno, nunca un hueco sin explicación.
+
+
+
 Pendientes legales transversales: ToS/Privacidad propios, Ley 25.326 (datos de ejecutores/CV), deslinde por variación de costos, esquema de facturación si la app intermedia cobros.
 

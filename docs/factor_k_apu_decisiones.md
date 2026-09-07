@@ -68,7 +68,18 @@ modos. Lo que sí cambia, solo visible con "Comp. Solo MO" activo:
   de quién compra los materiales."* Antepone la explicación antes de que el usuario llegue a ver el
   monto real en una partida (Paso B) y le parezca un error.
 
-## 4. Gate de PRO en el botón "Editar", no al abrir el panel — CERRADO
+## 4. Gate de PRO — CORREGIDO 2026-09-07, ver docs/monetizacion.md §9
+
+**Lo que sigue de esta sección es el criterio ORIGINAL, ya no vigente — queda como registro
+histórico de cómo se llegó al criterio actual, no como la decisión de hoy.** El cambio real:
+**Free ya no ve los 6/7 conceptos ni sus porcentajes/bases** — antes se mostraban completos y solo
+se gateaba el botón "Editar". Motivo de negocio, no técnico: si Free viera la estructura completa
+de formación de precio, podría armarse su propia planilla con esa estructura y nunca pagar (cita
+textual de Seba y fundamento completo en `docs/monetizacion.md`, "Desglose de Factor K es exclusivo
+de PRO"). El gate pasó de "solo Editar" a "todo el contenido desplegado" — Free ve únicamente un
+aviso de función PRO en el lugar de las líneas.
+
+Texto original (histórico, no vigente):
 
 Distinto del panel de cargas sociales de mano de obra (que se abre para cualquiera y gatea recién en
 Guardar). La diferencia no es una inconsistencia: la regla general del proyecto es "no ocultar la
@@ -83,7 +94,9 @@ El botón muestra el ícono PRO (`Icons.workspace_premium`, ámbar — mismo que
 montarse. El chequeo que decide si el guardado procede es en vivo, recién al tocar "Editar" — no se
 reusa ese valor cargado para la decisión real, mismo principio que el resto de esta pieza (no
 confiar en una foto vieja). Mientras responde esa consulta, el botón queda deshabilitado con texto
-"Verificando..." — mismo patrón ya usado en los paneles de mano de obra.
+"Verificando..." — mismo patrón ya usado en los paneles de mano de obra. **Esta parte (el chequeo en
+vivo al tocar Editar, sin confiar en una foto vieja) sigue vigente sin cambios para el PRO que sí
+llega a ver el bloque** — lo que cambió es que ahora hace falta ser PRO para llegar a verlo.
 
 ## 5. El séptimo campo del panel de edición no se pisa — CERRADO
 
@@ -105,10 +118,65 @@ de un flag — mismo criterio ya aplicado cuando se conectó Rubros de verdad (s
 nada real). En su lugar, un estado vacío que describe la ausencia sin prometer un camino que no
 existe: no hay ninguna pantalla hoy donde cargar cómputo métrico real.
 
-## Pendiente — Paso B, sin empezar
+**El estado vacío que reemplazó al mock terminó siendo, a su vez, el problema que corrige §7 más
+abajo** — describía la ausencia correctamente, pero el criterio de "no armar un listado acá" que
+llevó a dejarlo vacío en vez de construir algo real quedó mal. Ver §7.
 
-Conectar el desglose de 15 líneas con montos reales de una partida puntual. Necesita, en orden:
-cómputo métrico real (`obra_subitems` con cantidades, no existe ninguna fila hoy en ninguna obra),
-después `calcular_precio_apu_subitems` para el Costo-Costo, y una función SQL nueva que aplique la
-cascada completa de 6 conceptos (mismo criterio que `calcular_valor_hora_mano_obra`: la cuenta vive
-en un solo lugar, no se duplica entre Dart y SQL, no puede desincronizarse).
+## 7. Listado de la Solapa APU — CORREGIDO 2026-09-07, ver §6
+
+**Decisión original (ya no vigente):** no armar un listado de rubros/partidas propio en la Solapa
+APU "para no duplicar Rubros/Cómputo" — se entraba siempre desde ahí (ver §6 arriba, mismo texto
+que documentaba esto en `_buildTabApu()`). Con eso construido, la Solapa APU quedaba casi vacía:
+`BloqueFactorK` (sin montos) y un texto mandando a Cómputo. Todo el trabajo real de precios se
+terminaba haciendo desde la solapa equivocada — Seba lo planteó directo: si el análisis de precios
+se abre desde Cómputo, para qué existe la Solapa APU.
+
+**Corrección:** no era duplicación, son dos vistas distintas de la misma obra — Cómputo es cuánto
+hay (tildar partidas, cargar cantidades), la Solapa APU es cuánto cuesta (precio unitario por
+partida). Misma separación que `PLANILLA_BASE_2_0_v3_CORREGIDA.ods`: la hoja APU es una planilla por
+partida que le pasa el precio unitario a la hoja RUBROS, donde están las cantidades — dos hojas
+comunicadas por un solo número, no la misma información repetida dos veces.
+
+**Lo que se construyó:** `ApuListadoTab` (nuevo) lista las partidas tildadas (`obra_subitems.
+es_aplicable = true`) de rubros con `usa_apu = true`, agrupadas por rubro, con su precio unitario —
+tocar una abre `ComposicionApuScreen`, sin rehacerla. No es función PRO — el listado y el precio se
+ven igual que la composición (mismo criterio que ya cerró el punto de Free de esta pieza, ver
+`docs/monetizacion.md` §9): lo que sigue siendo PRO es editar y ver el desglose del Factor K, no ver
+qué cuesta cada partida.
+
+**El vínculo cruzado, Cómputo -> APU:** tocar el precio de una partida en `SubitemsScreen` (Cómputo)
+ya no abre la composición ahí mismo — hace `pop` de sí misma primero y le pasa los datos a un
+callback que vive en `PresupuestosScreen` (`onAbrirComposicion`, enhebrado a través de `RubrosTab`),
+que cambia la solapa activa a APU (`_tabController.animateTo(1)`) y recién ahí pushea
+`ComposicionApuScreen`. Así "atrás" desde la composición vuelve al listado de la Solapa APU, no a
+Cómputo — la partida queda alojada en la solapa que le corresponde sin importar por dónde se entró.
+Un solo Navigator raíz para toda la app (sin Navigators anidados, ver `main.dart`), así que el
+`pop` de `SubitemsScreen` y el `push` posterior de `ComposicionApuScreen` encadenan sobre la misma
+pila sin necesitar nada más.
+
+## Paso B — CERRADO 2026-09-07, de punta a punta
+
+Terminó siendo más chico de lo que este documento anticipaba: no hizo falta cómputo métrico real ni
+`calcular_precio_apu_subitems` — el desglose se armó sobre el precio unitario de la partida
+(`calcular_composicion_detalle_subitem`, ya existente), no sobre un total multiplicado por cantidad.
+Vive en `ComposicionApuScreen`, debajo de la composición, no en el bloque de cabecera de la Solapa
+APU.
+
+`calcular_factor_k_subitem` (`supabase/migrations/0077_calcular_factor_k_subitem.sql`, redondeo en
+`0078`) hace la cascada completa de 6 conceptos + impuestos en una sola función SQL, `language sql`
+(no `plpgsql`, a propósito, para no repetir la clase de bug de ambigüedad de columna que salió en la
+pieza anterior). Devuelve las dos vistas (con/sin materiales) siempre juntas -- sin materiales
+necesita los montos absolutos de GG/EPP/Costo Financiero de la vista completa para copiarlos, así
+que calcularlas por separado no evitaría el cálculo doble. El chequeo de cierre (`cierra_ok`) es una
+comparación real entre dos fórmulas derivadas de forma independiente (suma acumulada vs. producto de
+factores), no una tautología.
+
+`BloqueFactorKPartida` (Dart) consume esa función y decide qué mostrar: **función PRO** (ver
+`docs/monetizacion.md` §9 -- corrige el §4 de este documento, ver ahí) y **una sola vista a la vez**,
+la que está elegida en `SelectorTipoPresupuesto` (`obra_presupuesto_config.tipoPresupuesto`) — a
+propósito no se ven las dos juntas, para que comparar "con materiales" contra "sin materiales" no
+quede servido en la misma pantalla, hay que cambiar el selector.
+
+Verificado en el emulador con la partida 8.1: Costo-Costo 95.822,14, Costo Total del Trabajo
+127.954,57, Precio Final 160.582,98, Gestión de materiales de terceros al 4% sobre ~63.092,66 de
+materiales de la vista completa — todo cerrando.

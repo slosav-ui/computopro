@@ -27,6 +27,14 @@ class SubitemsScreen extends StatefulWidget {
   // RubrosTab._mezclarOrden) — no rubro.codigo, que queda interno desde esta
   // etapa (docs/rubros_orden_diseno_datos.md §3).
   final int numeroPosicion;
+  // Vínculo Cómputo -> APU (ver PresupuestosScreen._abrirComposicionDesdeComputo, docs/
+  // factor_k_apu_decisiones.md) -- si viene provisto, _abrirComposicion se hace pop de esta
+  // pantalla y lo llama en vez de pushear ComposicionApuScreen acá mismo, para que la composición
+  // quede alojada en la Solapa APU (y "atrás" desde ahí vuelva al listado de APU, no a Cómputo).
+  // Null en el fallback defensivo (no debería pasar en el camino normal, RubrosTab siempre lo
+  // reenvía).
+  final void Function(String subitemId, String subitemCodigo, String subitemDescripcion, ApuPrecioSubitem precio)?
+      onAbrirComposicion;
 
   const SubitemsScreen({
     Key? key,
@@ -35,6 +43,7 @@ class SubitemsScreen extends StatefulWidget {
     required this.puedeEditarComputo,
     required this.puedeVerMontosYAPU,
     required this.numeroPosicion,
+    this.onAbrirComposicion,
   }) : super(key: key);
 
   @override
@@ -1135,7 +1144,20 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
   /// Abre el detalle de composición de esta partida — solo se llega acá con
   /// puedeVerMontosYAPU == true (ver _buildContenido: la fila entera con precio/subtotal, la única
   /// que ofrece este tap, no se renderiza sin ese permiso).
+  ///
+  /// Con `onAbrirComposicion` provisto (camino normal, ver el campo): esta pantalla se cierra
+  /// primero (`pop`) y el callback -- que vive en `PresupuestosScreen` -- cambia a la Solapa APU y
+  /// recién ahí pushea `ComposicionApuScreen`. Capturar `subitem`/`resultado` antes del `pop` es
+  /// obligatorio: `context` deja de ser válido apenas se llama, así que no puede usarse después.
+  /// Sin el callback (fallback defensivo, no debería darse en el camino normal): comportamiento
+  /// viejo, pushea acá mismo.
   Future<void> _abrirComposicion(SubitemCatalogo subitem, ApuPrecioSubitem resultado) async {
+    final onAbrirComposicion = widget.onAbrirComposicion;
+    if (onAbrirComposicion != null) {
+      Navigator.of(context).pop();
+      onAbrirComposicion(subitem.id, subitem.codigo, subitem.descripcion, resultado);
+      return;
+    }
     await Navigator.push(
       context,
       MaterialPageRoute(

@@ -8,13 +8,21 @@ import '../../shared/pro_gate_dialog.dart';
 import 'panel_editar_factor_k.dart';
 
 /// Bloque de cabecera de la Solapa APU (Paso A — ver docs/factor_k_apu_decisiones.md) — plegable,
-/// primer elemento debajo del selector de tipo de presupuesto. Muestra los 6 conceptos del Factor
-/// K con su % y su base explicada en texto, **nunca un monto**: no existe un Costo-Costo único de
-/// la obra (cada partida tiene el suyo), así que un monto acá sería inventado — ver §1 del doc.
+/// primer elemento debajo del selector de tipo de presupuesto. Para PRO, muestra los 6 conceptos
+/// del Factor K con su % y su base explicada en texto, **nunca un monto**: no existe un Costo-Costo
+/// único de la obra (cada partida tiene el suyo), así que un monto acá sería inventado — ver §1 del
+/// doc.
+///
+/// Función PRO -- Free solo ve un aviso, no los porcentajes ni las bases. Corrección de negocio
+/// sobre el criterio original de §4 del doc ("Free ve todo, el panel no agrega información nueva")
+/// -- ver `docs/monetizacion.md`, "Desglose de Factor K es exclusivo de PRO": si Free viera la
+/// estructura completa de formación de precio, podría armarse su propia planilla con esa estructura
+/// y nunca pagar. Mismo criterio aplicado en `BloqueFactorKPartida` (Paso B).
 ///
 /// Plegable con persistencia por obra en SharedPreferences, mismo mecanismo que el aviso de orden
 /// de `rubros_tab.dart` — no un mecanismo nuevo. Empieza desplegado (fail-closed hacia mostrar la
-/// información, no hacia ocultarla).
+/// información, no hacia ocultarla) -- eso sigue valiendo para PRO; para Free no hay nada que
+/// desplegar más allá del aviso.
 class BloqueFactorK extends StatefulWidget {
   final String obraId;
 
@@ -139,36 +147,52 @@ class _BloqueFactorKState extends State<BloqueFactorK> {
           ),
           if (!_plegado) ...[
             const SizedBox(height: 8),
-            _buildLinea('Gastos Generales', config.ggPct, 'Costo-Costo'),
-            _buildLinea('Imprevistos', config.imprevistosPct, 'Costo-Costo + GG'),
-            _buildLinea('EPP-Seguridad', config.eppPct, 'Costo-Costo + GG + Imprevistos'),
-            _buildLinea('Costo Financiero', config.costoFinancieroPct, 'Costo-Costo + GG + Imprevistos + EPP'),
-            _buildLinea('Beneficio', config.beneficioPct, 'todo lo anterior'),
-            if (sinMateriales) ...[
-              _buildLinea(
-                'Gestión de materiales de terceros',
-                config.gestionMaterialesTercerosPct,
-                'Materiales de la vista con materiales',
-              ),
-              const SizedBox(height: 4),
-              const Text(
-                'Gastos Generales, EPP-Seguridad y Costo Financiero se aplican igual que en '
-                'Materiales + Mano de obra — no dependen de quién compra los materiales.',
-                style: TextStyle(fontSize: 9, color: Colors.black45),
+            if (!_esPro)
+              // Corrección de negocio sobre el criterio original de este bloque (ver
+              // docs/factor_k_apu_decisiones.md §4 y docs/monetizacion.md): Free ya no ve los
+              // porcentajes ni las bases -- es la estructura de formación de precio que un
+              // profesional paga por tener. Antes se mostraba todo y solo se gateaba "Editar".
+              Row(
+                children: [
+                  Icon(Icons.workspace_premium, size: 14, color: Colors.amber[800]),
+                  const SizedBox(width: 6),
+                  const Expanded(
+                    child: Text(
+                      'Ver los porcentajes y bases del Factor K es una función PRO.',
+                      style: TextStyle(fontSize: 11, color: Colors.black54, fontStyle: FontStyle.italic),
+                    ),
+                  ),
+                ],
+              )
+            else ...[
+              _buildLinea('Gastos Generales', config.ggPct, 'Costo-Costo'),
+              _buildLinea('Imprevistos', config.imprevistosPct, 'Costo-Costo + GG'),
+              _buildLinea('EPP-Seguridad', config.eppPct, 'Costo-Costo + GG + Imprevistos'),
+              _buildLinea('Costo Financiero', config.costoFinancieroPct, 'Costo-Costo + GG + Imprevistos + EPP'),
+              _buildLinea('Beneficio', config.beneficioPct, 'todo lo anterior'),
+              if (sinMateriales) ...[
+                _buildLinea(
+                  'Gestión de materiales de terceros',
+                  config.gestionMaterialesTercerosPct,
+                  'Materiales de la vista con materiales',
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Gastos Generales, EPP-Seguridad y Costo Financiero se aplican igual que en '
+                  'Materiales + Mano de obra — no dependen de quién compra los materiales.',
+                  style: TextStyle(fontSize: 9, color: Colors.black45),
+                ),
+              ],
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed: _verificandoPro ? null : _onEditar,
+                  style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                  child: Text(_verificandoPro ? 'Verificando...' : 'Editar'),
+                ),
               ),
             ],
-            const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton.icon(
-                onPressed: _verificandoPro ? null : _onEditar,
-                icon: !_esPro
-                    ? const Icon(Icons.workspace_premium, size: 14, color: Colors.amber)
-                    : const SizedBox.shrink(),
-                label: Text(_verificandoPro ? 'Verificando...' : 'Editar'),
-                style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
-              ),
-            ),
           ],
         ],
       ),

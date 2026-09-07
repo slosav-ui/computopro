@@ -1,13 +1,16 @@
 import 'package:flutter/material.dart';
+import '../../../data/models/apu_precio_subitem.dart';
 import '../../../data/models/obra_model.dart';
 import '../../../core/segurity/user_context.dart';
 import '../../../services/auth_service.dart';
 import '../../../services/obra_members_repository.dart';
+import '../tabs/apu_listado_tab.dart';
 import '../tabs/rubros_tab.dart';
 import '../tabs/gestion_obra_tab.dart';
 import '../tabs/mat_y_mo_tab.dart';
 import '../tabs/selector_tipo_presupuesto.dart';
 import '../tabs/bloque_factor_k.dart';
+import 'composicion_apu_screen.dart';
 
 class PresupuestosScreen extends StatefulWidget {
   final dynamic obra;
@@ -184,6 +187,7 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> with SingleTick
                   obraId: _obraId!,
                   puedeEditarComputo: _userContext?.puedeEditarComputo == true,
                   puedeVerMontosYAPU: _userContext?.puedeVerMontosYAPU == true,
+                  onAbrirComposicion: _abrirComposicionDesdeComputo,
                 )
               : const Center(child: Text('No se pudo determinar la obra.')),
           _buildTabApu(),
@@ -228,26 +232,44 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> with SingleTick
               onCambio: () => setState(() => _factorKReloadTick++),
             ),
           if (_obraId != null) BloqueFactorK(key: ValueKey(_factorKReloadTick), obraId: _obraId!),
-          // ACTUALIZADO — el texto anterior ("esta obra no tiene cómputo cargado, nada en la app
-          // escribe obra_subitems todavía") quedó desactualizado sin que nadie lo tocara: desde
-          // Gestión de Obra pieza 3, SubitemsScreen sí escribe obra_subitems.cantidad en
-          // producción. No se construye un listado de rubros propio para esta solapa (duplicaría
-          // Rubros/Cómputo) — se entra a la composición de una partida desde ahí, reusando esa
-          // navegación (ver diagnóstico de la pieza "conectar Solapa APU").
-          const Expanded(
-            child: Center(
-              child: Padding(
-                padding: EdgeInsets.all(24),
-                child: Text(
-                  'Para ver la composición y el precio de una partida, andá a la solapa '
-                  'Cómputo y tocá el precio de una partida con APU cargado (chip "APU").',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.black54),
-                ),
-              ),
-            ),
-          ),
+          // CORREGIDO 2026-09-07 (ver docs/factor_k_apu_decisiones.md) — el criterio anterior decía
+          // acá "no se construye un listado de rubros propio para esta solapa (duplicaría
+          // Rubros/Cómputo), se entra a la composición desde ahí". Eso dejaba la Solapa APU casi
+          // vacía (este bloque + un texto que mandaba a Cómputo) y todo el trabajo de precios
+          // terminaba haciéndose desde la solapa equivocada. No es duplicación: Cómputo es cuánto
+          // hay (cantidades), esto es cuánto cuesta (precios) -- misma separación que la planilla
+          // real (hojas RUBROS y APU, comunicadas por precio unitario). `ApuListadoTab` es el
+          // listado que faltaba.
+          if (_obraId != null) Expanded(child: ApuListadoTab(obraId: _obraId!)),
         ],
+      ),
+    );
+  }
+
+  /// Vínculo Cómputo -> APU, sentido cruzado (ver docs/factor_k_apu_decisiones.md): tocar el precio
+  /// de una partida en Cómputo (`SubitemsScreen`, vía `RubrosTab`) ya no abre `ComposicionApuScreen`
+  /// ahí mismo -- primero vuelve a esta pantalla (`SubitemsScreen` se hace `pop` a sí misma antes de
+  /// llamar acá, ver su `_abrirComposicion`) y cambia a la solapa APU, para que la composición se
+  /// vea alojada en la solapa que le corresponde y "atrás" desde ahí vuelva al listado de APU, no a
+  /// Cómputo. Recién después hace el `push` de la composición -- mismo Navigator raíz que ya usa
+  /// toda la app (sin Navigators anidados), así que pop+push en la misma función encadenan limpio.
+  Future<void> _abrirComposicionDesdeComputo(
+    String subitemId,
+    String subitemCodigo,
+    String subitemDescripcion,
+    ApuPrecioSubitem precio,
+  ) async {
+    _tabController.animateTo(1); // índice de la solapa APU
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ComposicionApuScreen(
+          obraId: _obraId!,
+          subitemId: subitemId,
+          subitemCodigo: subitemCodigo,
+          subitemDescripcion: subitemDescripcion,
+          precioAgregado: precio,
+        ),
       ),
     );
   }
