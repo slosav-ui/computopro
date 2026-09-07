@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../../data/models/obra_impuesto.dart';
 import '../../../data/models/obra_presupuesto_config.dart';
 import '../../../services/auth_service.dart';
+import '../../../services/obra_impuestos_repository.dart';
 import '../../../services/obra_presupuesto_config_repository.dart';
 import '../../../services/perfil_repository.dart';
 import '../../shared/pro_gate_dialog.dart';
 import 'panel_editar_factor_k.dart';
+import 'panel_editar_impuestos.dart';
 
 /// Bloque de cabecera de la Solapa APU (Paso A — ver docs/factor_k_apu_decisiones.md) — plegable,
 /// primer elemento debajo del selector de tipo de presupuesto. Para PRO, muestra los 6 conceptos
@@ -18,6 +21,14 @@ import 'panel_editar_factor_k.dart';
 /// -- ver `docs/monetizacion.md`, "Desglose de Factor K es exclusivo de PRO": si Free viera la
 /// estructura completa de formación de precio, podría armarse su propia planilla con esa estructura
 /// y nunca pagar. Mismo criterio aplicado en `BloqueFactorKPartida` (Paso B).
+///
+/// También lista los 4 impuestos (IVA/IIBB/Tasas/el cuarto con nombre libre, `obra_impuestos`),
+/// misma base en texto para los 4 ("Costo Total del Trabajo") y sin monto, mismo criterio que los 6
+/// conceptos. Edición en un panel aparte (`PanelEditarImpuestos`, botón "Editar impuestos" propio) —
+/// no en `PanelEditarFactorK`: tabla distinta, concepto distinto (obligación fiscal externa, no
+/// estructura de costos del contratista), mismo motivo que ya separó el costo de mano de obra en
+/// dos ventanas. Ese botón, a diferencia de "Editar" (conceptos), gatea PRO al Guardar adentro del
+/// panel, no acá -- ver el comentario de `_onEditarImpuestos`.
 ///
 /// Plegable con persistencia por obra en SharedPreferences, mismo mecanismo que el aviso de orden
 /// de `rubros_tab.dart` — no un mecanismo nuevo. Empieza desplegado (fail-closed hacia mostrar la
@@ -34,11 +45,13 @@ class BloqueFactorK extends StatefulWidget {
 
 class _BloqueFactorKState extends State<BloqueFactorK> {
   final ObraPresupuestoConfigRepository _configRepository = ObraPresupuestoConfigRepository();
+  final ObraImpuestosRepository _impuestosRepository = ObraImpuestosRepository();
   final PerfilRepository _perfilRepository = PerfilRepository();
   final AuthService _authService = AuthService();
 
   bool _cargando = true;
   ObraPresupuestoConfig? _config;
+  List<ObraImpuesto> _impuestos = [];
   // Cargado junto con la config, solo para pintar el ícono PRO del botón "Editar" — la decisión
   // real de si se puede guardar se vuelve a verificar en vivo en _onEditar, nunca contra esto.
   bool _esPro = false;
@@ -57,13 +70,16 @@ class _BloqueFactorKState extends State<BloqueFactorK> {
   Future<void> _cargar() async {
     final usuarioId = _authService.usuarioActual?.id;
     final configFuture = _configRepository.getConfig(widget.obraId);
+    final impuestosFuture = _impuestosRepository.getImpuestos(widget.obraId);
     final esProFuture = usuarioId != null ? _perfilRepository.esPro(usuarioId) : Future.value(false);
 
     final config = await configFuture;
+    final impuestos = await impuestosFuture;
     final esPro = await esProFuture;
     if (!mounted) return;
     setState(() {
       _config = config;
+      _impuestos = impuestos;
       _esPro = esPro;
       _cargando = false;
     });
@@ -102,6 +118,20 @@ class _BloqueFactorKState extends State<BloqueFactorK> {
     final guardado = await showDialog<bool>(
       context: context,
       builder: (_) => PanelEditarFactorK(obraId: widget.obraId),
+    );
+    if (guardado == true) await _cargar();
+  }
+
+  /// Gate al Guardar, adentro del panel -- no acá, a diferencia de _onEditar (conceptos). Decisión
+  /// explícita de esta pieza (ver PanelEditarImpuestos): el criterio que justificaba gatear antes
+  /// de abrir ("Free ya ve todo el bloque, el panel no agrega información") dejó de aplicar cuando
+  /// Free pasó a no ver ni conceptos ni impuestos -- no se tocó el gate de _onEditar en esta pieza
+  /// (no era lo que se pedía), pero el panel nuevo sigue el patrón general del resto de la app en
+  /// vez de repetir esa excepción.
+  Future<void> _onEditarImpuestos() async {
+    final guardado = await showDialog<bool>(
+      context: context,
+      builder: (_) => PanelEditarImpuestos(obraId: widget.obraId),
     );
     if (guardado == true) await _cargar();
   }
@@ -190,6 +220,27 @@ class _BloqueFactorKState extends State<BloqueFactorK> {
                   onPressed: _verificandoPro ? null : _onEditar,
                   style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
                   child: Text(_verificandoPro ? 'Verificando...' : 'Editar'),
+                ),
+              ),
+              const Divider(height: 20),
+              const Text(
+                'IMPUESTOS',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 10, color: Color(0xFF1B365D)),
+              ),
+              const SizedBox(height: 4),
+              for (final impuesto in _impuestos)
+                // El cuarto impuesto ("otro") solo se muestra si tiene nombre -- "uno solo, no se
+                // borra": vaciar el nombre es la forma de sacarlo, así que sin nombre no hay línea
+                // que mostrar, mismo criterio que "no hay renglones vacíos" del resto de la app.
+                if (impuesto.tipo != TipoImpuesto.otro || (impuesto.nombreOtro?.isNotEmpty ?? false))
+                  _buildLinea(impuesto.nombre, impuesto.porcentaje, 'Costo Total del Trabajo'),
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed: _onEditarImpuestos,
+                  style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                  child: const Text('Editar impuestos'),
                 ),
               ),
             ],
