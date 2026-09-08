@@ -328,14 +328,7 @@ class _RubrosTabState extends State<RubrosTab> {
                 // apilaban en dos filas apenas se descartaba. El propio WrapAlignment.end ya empuja
                 // los botones contra el borde derecho, así que alcanza con darle todo el ancho
                 // restante después del ícono -- no hace falta un Spacer aparte.
-                Expanded(
-                  child: Wrap(
-                    alignment: WrapAlignment.end,
-                    spacing: 8,
-                    runSpacing: 4,
-                    children: [_buildBotonImportarExcel(), _buildBotonNuevoRubro()],
-                  ),
-                ),
+                Expanded(child: _buildBotonesAccion()),
               ],
             ),
           )
@@ -349,12 +342,7 @@ class _RubrosTabState extends State<RubrosTab> {
           // floatingActionButton.
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-            child: Wrap(
-              alignment: WrapAlignment.end,
-              spacing: 8,
-              runSpacing: 4,
-              children: [_buildBotonImportarExcel(), _buildBotonNuevoRubro()],
-            ),
+            child: _buildBotonesAccion(),
           ),
         ],
         Expanded(
@@ -367,27 +355,77 @@ class _RubrosTabState extends State<RubrosTab> {
     );
   }
 
-  /// Botón "Importar Excel" — mismo criterio que "Nuevo Rubro": siempre visible, para PRO y para
-  /// Free (Free ve el diálogo de función PRO al tocarlo, ver _onImportarExcel), extraído por el
-  /// mismo motivo (dos filas posibles según _avisoOrdenDescartado, ver build()).
-  Widget _buildBotonImportarExcel() {
-    return OutlinedButton.icon(
-      onPressed: _cargando ? null : _onImportarExcel,
-      icon: const Icon(Icons.upload_file, size: 18),
-      label: const Text('Importar Excel'),
-      style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF1B365D)),
+  /// Fila de "Importar" + "Nuevo rubro" -- compartida entre las dos ramas de build() (cartel de
+  /// aviso abierto/cerrado).
+  ///
+  /// Tercer intento. El primero medía el ancho disponible con LayoutBuilder y pasaba a versión
+  /// compacta por debajo de un umbral fijo -- no servía porque el ancho disponible en la fila
+  /// nunca bajaba del umbral (teléfono de ancho normal), pero el CONTENIDO (ícono + etiqueta
+  /// agrandada por la fuente) sí lo superaba -- comparar "espacio disponible" contra una constante
+  /// no tenía en cuenta la fuente. El segundo sacó el texto por completo (solo ícono + tooltip) --
+  /// entraba siempre, pero sin ninguna pista visual de qué hace cada botón.
+  ///
+  /// Esta versión trae de vuelta la etiqueta, corta ("Importar" / "Nuevo rubro"), envuelta en
+  /// `MediaQuery.withNoTextScaling` -- fuerza esa porción del árbol de widgets a ignorar la escala
+  /// de fuente del sistema (`textScaler`), sin afectar el resto de la pantalla. El ícono nunca
+  /// escalaba con la fuente; ahora el texto tampoco, así que el ancho real del botón queda fijo sin
+  /// importar la configuración de accesibilidad del dispositivo -- ya no hace falta ningún umbral
+  /// ni medir nada en tiempo de layout.
+  Widget _buildBotonesAccion() {
+    return Wrap(
+      alignment: WrapAlignment.end,
+      spacing: 8,
+      runSpacing: 4,
+      children: [_buildBotonImportarExcel(), _buildBotonNuevoRubro()],
     );
   }
 
-  /// Botón "Nuevo Rubro" — extraído para no duplicarlo entre la fila
-  /// combinada con el ícono de aviso (descartado) y la fila propia debajo
-  /// del banner completo (sin descartar), ver build().
+  /// Botón compacto ícono + etiqueta corta con fuente fija (ver _buildBotonesAccion) -- compartido
+  /// por "Importar" y "Nuevo rubro", los dos únicos usos de este patrón en la pantalla.
+  Widget _buildBotonAccion({
+    required IconData icono,
+    required String etiqueta,
+    required VoidCallback? onPressed,
+  }) {
+    return OutlinedButton(
+      onPressed: onPressed,
+      style: OutlinedButton.styleFrom(
+        foregroundColor: const Color(0xFF1B365D),
+        side: const BorderSide(color: Color(0xFF1B365D)),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        minimumSize: Size.zero,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
+      child: MediaQuery.withNoTextScaling(
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icono, size: 16),
+            const SizedBox(width: 4),
+            Text(etiqueta, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Botón "Importar" — siempre visible, para PRO y para Free (Free ve el diálogo de función PRO
+  /// al tocarlo, ver _onImportarExcel).
+  Widget _buildBotonImportarExcel() {
+    return _buildBotonAccion(
+      icono: Icons.upload_file,
+      etiqueta: 'Importar',
+      onPressed: _cargando ? null : _onImportarExcel,
+    );
+  }
+
+  /// Botón "Nuevo rubro" — extraído para no duplicarlo entre la fila combinada con el ícono de
+  /// aviso (descartado) y la fila propia debajo del banner completo (sin descartar), ver build().
   Widget _buildBotonNuevoRubro() {
-    return OutlinedButton.icon(
+    return _buildBotonAccion(
+      icono: Icons.add,
+      etiqueta: 'Nuevo rubro',
       onPressed: _cargando ? null : _onNuevoRubro,
-      icon: const Icon(Icons.add, size: 18),
-      label: const Text('Nuevo Rubro'),
-      style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF1B365D)),
     );
   }
 
