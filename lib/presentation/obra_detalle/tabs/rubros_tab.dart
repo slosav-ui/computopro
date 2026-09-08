@@ -321,12 +321,14 @@ class _RubrosTabState extends State<RubrosTab> {
                   constraints: const BoxConstraints(),
                   onPressed: _restaurarAviso,
                 ),
-                const Spacer(),
-                // Wrap, no Row, para los dos botones -- en pantallas angostas (~360dp) "Importar
-                // Excel" + "Nuevo Rubro" con sus labels completos no entran en una sola línea (ver
-                // docs de la pieza de overflow, memoria del proyecto); Wrap los baja a una segunda
-                // línea en vez de desbordar.
-                Flexible(
+                // Expanded, no Spacer + Flexible: un Spacer con su flex:1 default competía en
+                // partes iguales con el Flexible del Wrap por el ancho de la fila, dejándole a los
+                // botones menos de la mitad del espacio real disponible -- entraban en una sola
+                // línea con el cartel abierto (ver rama de abajo, sin nada compitiendo) pero se
+                // apilaban en dos filas apenas se descartaba. El propio WrapAlignment.end ya empuja
+                // los botones contra el borde derecho, así que alcanza con darle todo el ancho
+                // restante después del ícono -- no hace falta un Spacer aparte.
+                Expanded(
                   child: Wrap(
                     alignment: WrapAlignment.end,
                     spacing: 8,
