@@ -75,14 +75,25 @@ class SubitemsRepository {
     await _client.from('subitems').delete().eq('id', subitemId);
   }
 
-  /// Total de subitems del catálogo oficial por rubro, para el indicador
-  /// "N de M tildados" de RubrosTab. Una sola consulta plana agrupada acá en
-  /// Dart, no una consulta por rubro (serían 20 roundtrips).
-  Future<Map<String, int>> getConteoOficialPorRubro() async {
-    final data = await _client
-        .from('subitems')
-        .select('rubro_id')
-        .isFilter('creador_usuario_id', null);
+  /// Total de subitems visibles por rubro (oficiales + propios de
+  /// `usuarioId`), para el denominador "N de M tildados" de RubrosTab. Una
+  /// sola consulta plana agrupada acá en Dart, no una consulta por rubro
+  /// (serían 20 roundtrips). Mismo patrón `.or()` que `getSubitemsDeRubro`:
+  /// sin `usuarioId` (o sin sesión), solo cuenta el catálogo oficial.
+  ///
+  /// Bug real corregido acá (Seba, importador): esta consulta solo filtraba
+  /// `creador_usuario_id is null`, así que un rubro con partidas propias
+  /// cargadas por el importador (ej. Tareas Preliminares 10 oficiales + 2
+  /// propias) mostraba el denominador viejo (10) aunque las 12 partidas
+  /// existieran y se pudieran tildar — con las 12 tildadas, el badge llegaba
+  /// a mostrar "12/10".
+  Future<Map<String, int>> getConteoOficialPorRubro({String? usuarioId}) async {
+    final data = usuarioId == null
+        ? await _client.from('subitems').select('rubro_id').isFilter('creador_usuario_id', null)
+        : await _client
+            .from('subitems')
+            .select('rubro_id')
+            .or('creador_usuario_id.is.null,creador_usuario_id.eq.$usuarioId');
     final conteo = <String, int>{};
     for (final row in data as List) {
       final rubroId = (row as Map<String, dynamic>)['rubro_id'].toString();

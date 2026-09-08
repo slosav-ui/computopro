@@ -132,7 +132,7 @@ class _RubrosTabState extends State<RubrosTab> {
           ? _rubrosRepository.getCatalogoCompleto(usuarioId)
           : _rubrosRepository.getCatalogoOficial();
       final esProFuture = usuarioId != null ? _perfilRepository.esPro(usuarioId) : Future.value(false);
-      final totalesFuture = _subitemsRepository.getConteoOficialPorRubro();
+      final totalesFuture = _subitemsRepository.getConteoOficialPorRubro(usuarioId: usuarioId);
       final tildadosFuture = _obraSubitemsRepository.getConteoTildadosPorObra(widget.obraId);
       final overridesFuture = _obraRubrosOrdenRepository.getOverridesDeObra(widget.obraId);
 
@@ -261,7 +261,8 @@ class _RubrosTabState extends State<RubrosTab> {
   /// pull-to-refresh o reingreso a la pantalla.
   Future<void> _cargarConteos() async {
     try {
-      final totales = await _subitemsRepository.getConteoOficialPorRubro();
+      final usuarioId = _authService.usuarioActual?.id;
+      final totales = await _subitemsRepository.getConteoOficialPorRubro(usuarioId: usuarioId);
       final tildados = await _obraSubitemsRepository.getConteoTildadosPorObra(widget.obraId);
       if (!mounted) return;
       setState(() {
