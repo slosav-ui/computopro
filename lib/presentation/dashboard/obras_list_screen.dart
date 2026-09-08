@@ -48,9 +48,20 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
     });
     try {
       final obras = await _obrasRepository.getObras();
+      // Presupuesto vivo por obra, en paralelo -- una RPC por obra (2 a 10 obras simultáneas es el
+      // uso real del proyecto, ver CLAUDE.md, así que no hace falta una función batch todavía).
+      // Resuelto acá, no dejado en manos de cada card: todas las obras necesitan el mismo dato antes
+      // de poder ordenarse/mostrarse, no tiene sentido que cada una lo pida por su cuenta con un
+      // FutureBuilder propio. Fail-safe a 0 por obra individual -- un fallo puntual (red, RLS) no
+      // tiene que tumbar el resto de la lista, mismo criterio que el resto del proyecto.
+      final presupuestos = await Future.wait([
+        for (final o in obras) _presupuestoVivoSeguro(o['id'] as String),
+      ]);
       if (!mounted) return;
       setState(() {
-        _obras = obras.map(_conMontosCalculados).toList();
+        _obras = [
+          for (var i = 0; i < obras.length; i++) _conMontosCalculados(obras[i], presupuestos[i]),
+        ];
         _cargando = false;
       });
     } catch (e) {
@@ -62,6 +73,14 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
     }
   }
 
+  Future<double> _presupuestoVivoSeguro(String obraId) async {
+    try {
+      return await _obrasRepository.calcularPresupuestoVivo(obraId);
+    } catch (_) {
+      return 0.0;
+    }
+  }
+
   // --- Conversión de Moneda (a partir del monto base persistido) ---
   double _convertirMonto(double monto, String monedaOrigen, String monedaDestino) {
     if (monedaOrigen == monedaDestino) return monto;
@@ -70,13 +89,19 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
         : monto * _cotizacionUsdEfectiva;
   }
 
-  Map<String, dynamic> _conMontosCalculados(Map<String, dynamic> obra) {
-    final double montoTotal = (obra['montoTotal'] as num?)?.toDouble() ?? 0.0;
-    final String moneda = obra['moneda'] as String? ?? 'ARS';
+  /// `montoVivoArs`: presupuesto vivo recién calculado (ver _cargarObras) -- SIEMPRE en ARS, sin
+  /// importar `obra['moneda']`. Antes (fórmula de superficie, ya sacada en 0087) el monto persistido
+  /// podía estar en la moneda elegida al alta, y por eso esta función miraba `moneda` para decidir
+  /// si convertir o no. Con el presupuesto vivo eso ya no aplica -- viene de calcular_precio_final_
+  /// apu_subitems, que trabaja siempre en pesos (ni insumos ni mano de obra tienen precio en USD en
+  /// ningún lado del sistema) -- así que acá se convierte siempre desde ARS, sin condicional.
+  /// `moneda` sigue importando para otra cosa, sin cambios: qué campo de los dos (Ars/Usd) elige
+  /// mostrar la card como principal (ver el uso de esRs más abajo en build()).
+  Map<String, dynamic> _conMontosCalculados(Map<String, dynamic> obra, double montoVivoArs) {
     return {
       ...obra,
-      'montoEstimadoArs': moneda == 'ARS' ? montoTotal : _convertirMonto(montoTotal, 'USD', 'ARS'),
-      'montoEstimadoUsd': moneda == 'USD' ? montoTotal : _convertirMonto(montoTotal, 'ARS', 'USD'),
+      'montoEstimadoArs': montoVivoArs,
+      'montoEstimadoUsd': _convertirMonto(montoVivoArs, 'ARS', 'USD'),
     };
   }
 
@@ -128,13 +153,21 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
   }
 
   // --- Navegación a la Solapa de Presupuesto ---
-  void _abrirPresupuesto(Map<String, dynamic> obra) {
-    Navigator.push(
+  //
+  // Bug real corregido acá (Seba, 2026-09-08): el push no esperaba el pop ni refrescaba nada al
+  // volver -- el dashboard es la ruta raíz, su State nunca se destruye mientras PresupuestosScreen
+  // está encima, así que sin este await+recarga el presupuesto vivo de la card quedaba con el valor
+  // de cuando se entró a la obra, sin importar cuánto cómputo se cargara adentro. No hay
+  // RefreshIndicator en esta pantalla como alternativa manual -- hacía falta esto sí o sí.
+  Future<void> _abrirPresupuesto(Map<String, dynamic> obra) async {
+    await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => PresupuestosScreen(obra: obra),
       ),
     );
+    if (!mounted) return;
+    _cargarObras();
   }
 
   // --- Diálogo: Mapa de Obras Registradas ---
@@ -443,10 +476,6 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                           );
                           return;
                         }
-                        final double montoArs = monedaSeleccionada == 'ARS' ? sup * 1000000.0 : (sup * 750.0) * _cotizacionUsdEfectiva;
-                        final double montoUsd = monedaSeleccionada == 'USD' ? sup * 750.0 : (sup * 1000000.0) / _cotizacionUsdEfectiva;
-                        final double montoTotal = monedaSeleccionada == 'ARS' ? montoArs : montoUsd;
-
                         setModalState(() => guardando = true);
                         try {
                           final creada = await _obrasRepository.crearObra({
@@ -458,7 +487,14 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                             'estado': 'Cotización',
                             'moneda': monedaSeleccionada,
                             'aplicaCac': monedaSeleccionada == 'ARS',
-                            'montoTotal': montoTotal,
+                            // Una obra nueva arranca sin cómputo -- el monto tiene que ser 0, nunca
+                            // una estimación derivada de la superficie. Bug real (Seba, 2026-09-08):
+                            // acá había una fórmula "sup * 1.000.000 ARS/m² (o sup * 750 USD/m²)
+                            // como estimación de arranque" que terminaba guardando la superficie
+                            // como si fuera un monto real -- una obra de 200m² quedaba con
+                            // monto_total = 200.000.000. El monto real se carga solo cuando hay
+                            // cómputo cargado (calcular_presupuesto_vivo_obra, 0091), nunca acá.
+                            'montoTotal': 0.0,
                             'mesBaseCac': 'Agosto 2026',
                             'revision': 'Rev. 00',
                             'tipoRol': 'Director de Obra',
@@ -466,7 +502,10 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                             'idAdminCreador': _authService.usuarioActual?.id,
                           });
                           if (!context.mounted) return;
-                          setState(() => _obras.add(_conMontosCalculados(creada)));
+                          // 0.0 directo, no una llamada a calcularPresupuestoVivo: una obra recién
+                          // creada no tiene ningún obra_subitems todavía, la función de base daría
+                          // 0 igual -- ahorra el viaje de red.
+                          setState(() => _obras.add(_conMontosCalculados(creada, 0.0)));
                           Navigator.pop(ctx);
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(content: Text('Nueva obra registrada exitosamente.')),

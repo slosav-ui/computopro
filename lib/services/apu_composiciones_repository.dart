@@ -12,20 +12,18 @@ import '../data/models/apu_composicion_item_detalle.dart';
 class ApuComposicionesRepository {
   final SupabaseClient _client = Supabase.instance.client;
 
-  /// Descubre sola, en vivo, si `calcular_precio_apu_subitems` (migración
-  /// 0034, reemplaza a la 0029 original que nunca se aplicó) ya está
-  /// aplicada -- no una bandera fija que alguien tendría que acordarse de
-  /// sacar. `null` = todavía no se intentó en esta sesión de la app; se
-  /// prueba normalmente. `false` = ya se confirmó con el código de error
-  /// específico de Postgrest para "función no encontrada" (PGRST202) que
-  /// la RPC no existe -- se saltea la llamada mientras dure la sesión, sin
-  /// gastar red en algo que sabemos que va a fallar. `true` = ya se
-  /// confirmó que funciona.
+  /// Descubre sola, en vivo, si `calcular_precio_final_apu_subitems` (migración 0090, reemplaza a
+  /// `calcular_precio_apu_subitems` como fuente del precio de lista -- ver esa migración para el
+  /// porqué) ya está aplicada -- no una bandera fija que alguien tendría que acordarse de sacar.
+  /// `null` = todavía no se intentó en esta sesión de la app; se prueba normalmente. `false` = ya
+  /// se confirmó con el código de error específico de Postgrest para "función no encontrada"
+  /// (PGRST202) que la RPC no existe -- se saltea la llamada mientras dure la sesión, sin gastar
+  /// red en algo que sabemos que va a fallar. `true` = ya se confirmó que funciona.
   ///
   /// static, no de instancia: SubitemsScreen crea un repositorio nuevo por
   /// cada rubro que se abre, así que una bandera de instancia se perdería
   /// entre pantallas. Arranca en `null` en cada arranque en frío de la
-  /// app -- con 0034 ya aplicada, el primer intento de cada sesión la
+  /// app -- con 0090 ya aplicada, el primer intento de cada sesión la
   /// encuentra funcionando y queda en `true`, sin que nadie edite este
   /// archivo.
   static bool? _rpcCalcularPreciosDisponible;
@@ -45,19 +43,29 @@ class ApuComposicionesRepository {
     };
   }
 
-  /// Paso 3: precio derivado de la composición, batch (una sola llamada
-  /// para todos los subitemIds de la pantalla, ver
-  /// `calcular_precio_apu_subitems` en
-  /// 0034_calcular_precio_apu_subitem.sql). Solo tiene sentido llamarlo con
-  /// subitemIds que ya se sabe que tienen composición (ver
-  /// getSubitemIdsConComposicion) — para el resto, sin filas en el
-  /// resultado, no se muestra nada.
+  /// Paso 3: precio derivado de la composición, batch (una sola llamada para todos los subitemIds
+  /// de la pantalla, ver `calcular_precio_final_apu_subitems` en
+  /// 0090_precio_final_apu_subitems_respeta_selector.sql). Solo tiene sentido llamarlo con
+  /// subitemIds que ya se sabe que tienen composición (ver getSubitemIdsConComposicion) — para el
+  /// resto, sin filas en el resultado, no se muestra nada.
   ///
-  /// `obraId` (agregado en 0034): la función usa el precio cargado a mano
-  /// para esa obra en `obra_insumo_precios` antes que el promedio de
-  /// corralón -- sin esto no tiene forma de saber qué obra está pidiendo el
-  /// cálculo, y siempre caería al promedio (siempre null para mano de obra,
-  /// ver el comentario de la migración).
+  /// `obraId`: la función usa el precio cargado a mano para esa obra en `obra_insumo_precios`
+  /// antes que el promedio de corralón, y lee `obra_presupuesto_config` de esa misma obra para
+  /// saber qué vista mostrar (con o sin materiales) -- sin esto no tendría ninguna de las dos cosas.
+  ///
+  /// El precio que devuelve (`precioTotal`, pese al nombre heredado) es el `precio_final` de la
+  /// cascada completa de `calcular_factor_k_subitem` para la vista que el selector
+  /// `SelectorTipoPresupuesto` de esa obra tiene elegida (`obra_presupuesto_config.
+  /// tipo_presupuesto`) -- Gastos Generales/EPP/Costo Financiero arrastrados, Imprevistos/Beneficio
+  /// recalculados sobre la base reducida y Gestión de materiales de terceros al 4% cuando la vista
+  /// es "sin materiales" (ver docs/factor_k_apu_decisiones.md). No es un cálculo propio: la función
+  /// de base llama a `calcular_factor_k_subitem` por dentro, para no duplicar esa cascada en dos
+  /// lugares -- decisión explícita de Seba después de que un primer intento (0089) solo restaba las
+  /// líneas de material de la suma, sin aplicar la cascada, dando un precio distinto al que ya
+  /// mostraba el bloque de Factor K para la misma partida.
+  ///
+  /// A diferencia de versiones anteriores de este método, Dart ya NO decide ni manda la vista --
+  /// es un dato de la obra, se resuelve del lado del servidor.
   ///
   /// Mismo contrato de siempre para quien llama (SubitemsScreen no cambia
   /// nada de su try/catch): mientras la RPC no exista, esto sigue tirando
@@ -70,12 +78,12 @@ class ApuComposicionesRepository {
     if (subitemIds.isEmpty) return {};
     if (_rpcCalcularPreciosDisponible == false) {
       throw const PostgrestException(
-        message: 'calcular_precio_apu_subitems no disponible (confirmado antes en esta sesión)',
+        message: 'calcular_precio_final_apu_subitems no disponible (confirmado antes en esta sesión)',
         code: 'PGRST202',
       );
     }
     try {
-      final data = await _client.rpc('calcular_precio_apu_subitems', params: {
+      final data = await _client.rpc('calcular_precio_final_apu_subitems', params: {
         'p_obra_id': obraId,
         'p_subitem_ids': subitemIds,
       });
@@ -84,7 +92,7 @@ class ApuComposicionesRepository {
       for (final row in data as List) {
         final map = row as Map<String, dynamic>;
         resultado[map['subitem_id'].toString()] = ApuPrecioSubitem(
-          precioTotal: (map['precio_total'] as num?)?.toDouble() ?? 0,
+          precioTotal: (map['precio_final'] as num?)?.toDouble() ?? 0,
           insumosConPrecio: (map['insumos_con_precio'] as num?)?.toInt() ?? 0,
           insumosTotal: (map['insumos_total'] as num?)?.toInt() ?? 0,
         );

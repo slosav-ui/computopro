@@ -183,18 +183,21 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
               subitems.map((s) => s.id).toList(),
             )
           : <String>{};
-      // Paso 3: precio derivado, solo para los que ya sabemos que tienen
-      // composición — no tiene sentido pedirlo para el resto. Aislado en su
-      // propio try/catch: calcular_precio_apu_subitems (migración 0034) ya
-      // está aplicada, pero un fallo acá (de red, de RLS, lo que sea) no
-      // puede tumbar la carga de subitems/cantidades, que funcionan sin
-      // depender de esto -- ver ApuComposicionesRepository para el
-      // cortocircuito autocorrectivo si la función alguna vez faltara.
+      // Paso 3: precio derivado de la composición, ya con la cascada completa de Factor K aplicada
+      // según el selector de la obra (con/sin materiales) -- se resuelve del lado del servidor, ver
+      // ApuComposicionesRepository.calcularPreciosSubitems y
+      // 0090_precio_final_apu_subitems_respeta_selector.sql. Aislado en su propio try/catch: un
+      // fallo acá (de red, de RLS, lo que sea) no puede tumbar la carga de subitems/cantidades, que
+      // funcionan sin depender de esto -- ver ApuComposicionesRepository para el cortocircuito
+      // autocorrectivo si la función alguna vez faltara.
       var precios = <String, ApuPrecioSubitem>{};
       var precioApuNoDisponible = false;
       if (conComposicion.isNotEmpty) {
         try {
-          precios = await _apuComposicionesRepository.calcularPreciosSubitems(widget.obraId, conComposicion.toList());
+          precios = await _apuComposicionesRepository.calcularPreciosSubitems(
+            widget.obraId,
+            conComposicion.toList(),
+          );
         } catch (e) {
           precioApuNoDisponible = true;
         }

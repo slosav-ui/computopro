@@ -31,10 +31,16 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> with SingleTick
   double _beneficioPorcentaje = 10.0;
   double _ivaPorcentaje = 21.0;
 
-  // Fuerza el remonte de BloqueFactorK cuando el selector cambia de modo (con/sin materiales) —
-  // el bloque necesita mostrar/ocultar la línea de Gestión de materiales de terceros. Cambiar la
-  // Key es más simple que exponer un método de recarga entre hermanos que no comparten estado.
-  int _factorKReloadTick = 0;
+  // Fuerza el remonte de todo lo que muestra precios en la Solapa APU cuando el selector cambia de
+  // modo (con/sin materiales) -- BloqueFactorK necesita mostrar/ocultar la línea de Gestión de
+  // materiales de terceros, y ApuListadoTab necesita recalcular cada precio de la lista con la
+  // vista nueva. Cambiar la Key es más simple que exponer un método de recarga entre hermanos que
+  // no comparten estado.
+  //
+  // Bug real corregido acá (Seba, 2026-09-08): antes solo BloqueFactorK tenía la Key -- cambiar el
+  // selector actualizaba ese bloque pero dejaba ApuListadoTab con los precios de la vista vieja
+  // hasta salir de la solapa y volver a entrar (lo que sí fuerza un remonte del widget completo).
+  int _preciosReloadTick = 0;
 
   // Etapa 3: permisos reales de la obra (obra_members -> UserContext).
   // null mientras carga o si no se pudo determinar -> fail-closed (sin acceso a APU).
@@ -229,9 +235,9 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> with SingleTick
           if (_obraId != null)
             SelectorTipoPresupuesto(
               obraId: _obraId!,
-              onCambio: () => setState(() => _factorKReloadTick++),
+              onCambio: () => setState(() => _preciosReloadTick++),
             ),
-          if (_obraId != null) BloqueFactorK(key: ValueKey(_factorKReloadTick), obraId: _obraId!),
+          if (_obraId != null) BloqueFactorK(key: ValueKey(_preciosReloadTick), obraId: _obraId!),
           // CORREGIDO 2026-09-07 (ver docs/factor_k_apu_decisiones.md) — el criterio anterior decía
           // acá "no se construye un listado de rubros propio para esta solapa (duplicaría
           // Rubros/Cómputo), se entra a la composición desde ahí". Eso dejaba la Solapa APU casi
@@ -240,7 +246,8 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> with SingleTick
           // hay (cantidades), esto es cuánto cuesta (precios) -- misma separación que la planilla
           // real (hojas RUBROS y APU, comunicadas por precio unitario). `ApuListadoTab` es el
           // listado que faltaba.
-          if (_obraId != null) Expanded(child: ApuListadoTab(obraId: _obraId!)),
+          if (_obraId != null)
+            Expanded(child: ApuListadoTab(key: ValueKey(_preciosReloadTick), obraId: _obraId!)),
         ],
       ),
     );

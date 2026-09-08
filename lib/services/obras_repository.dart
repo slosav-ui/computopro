@@ -45,6 +45,19 @@ class ObrasRepository {
     await _client.from('obras').delete().eq('id', id);
   }
 
+  /// Presupuesto vivo de la obra -- suma de todas las partidas tildadas, cantidad × precio final,
+  /// con la cascada de Factor K aplicada y respetando el selector de vista de esa obra (con/sin
+  /// materiales). Ver `calcular_presupuesto_vivo_obra`, 0091_presupuesto_vivo_obra.sql. Siempre en
+  /// ARS -- todo el sistema de precios (insumos, mano de obra) es en pesos, sin importar en qué
+  /// moneda se haya dado de alta la obra; quien llama no tiene que convertir nada antes de usarlo.
+  ///
+  /// Sin cómputo cargado todavía (obra recién creada, o sin ninguna partida tildada), la función
+  /// de base devuelve 0 -- no null, no excepción -- así que esto no necesita ningún caso especial.
+  Future<double> calcularPresupuestoVivo(String obraId) async {
+    final data = await _client.rpc('calcular_presupuesto_vivo_obra', params: {'p_obra_id': obraId});
+    return (data as num?)?.toDouble() ?? 0.0;
+  }
+
   Map<String, dynamic> _fromRow(Map<String, dynamic> row) {
     return {
       'id': row['id']?.toString() ?? '',
