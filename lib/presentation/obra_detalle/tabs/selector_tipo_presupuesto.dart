@@ -30,11 +30,12 @@ import '../../shared/pro_gate_dialog.dart';
 class SelectorTipoPresupuesto extends StatefulWidget {
   final String obraId;
 
-  /// Se llama después de guardar un cambio de tipo (nunca por el toggle de impuestos, que no le
-  /// importa a nadie más de la solapa hoy) — el bloque de Factor K necesita enterarse para mostrar
-  /// u ocultar la línea de Gestión de materiales de terceros. Cada widget de la solapa lee su
-  /// propia copia de la config (no se pasa un snapshot entre hermanos), así que esto es solo un
-  /// aviso de "algo cambió, volvé a leer" — no manda el valor nuevo.
+  /// Se llama después de guardar un cambio de tipo O de impuestos — el bloque de Factor K y el
+  /// listado de la Solapa APU necesitan enterarse los dos: tipo cambia qué vista (con/sin
+  /// materiales) se muestra, impuestos cambia si el precio final incluye o no la cascada de
+  /// impuestos (ver 0092_precio_final_apu_subitems_respeta_impuestos.sql). Cada widget de la solapa
+  /// lee su propia copia de la config (no se pasa un snapshot entre hermanos), así que esto es solo
+  /// un aviso de "algo cambió, volvé a leer" — no manda el valor nuevo.
   final VoidCallback? onCambio;
 
   const SelectorTipoPresupuesto({Key? key, required this.obraId, this.onCambio}) : super(key: key);
@@ -104,6 +105,7 @@ class _SelectorTipoPresupuestoState extends State<SelectorTipoPresupuesto> {
     );
     if (!mounted) return;
     setState(() => _config = actualizado);
+    widget.onCambio?.call();
   }
 
   @override

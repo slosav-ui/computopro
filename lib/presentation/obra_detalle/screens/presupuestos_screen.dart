@@ -31,15 +31,19 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> with SingleTick
   double _beneficioPorcentaje = 10.0;
   double _ivaPorcentaje = 21.0;
 
-  // Fuerza el remonte de todo lo que muestra precios en la Solapa APU cuando el selector cambia de
-  // modo (con/sin materiales) -- BloqueFactorK necesita mostrar/ocultar la línea de Gestión de
-  // materiales de terceros, y ApuListadoTab necesita recalcular cada precio de la lista con la
-  // vista nueva. Cambiar la Key es más simple que exponer un método de recarga entre hermanos que
-  // no comparten estado.
+  // Fuerza el remonte de todo lo que muestra precios en la Solapa APU cuando cambia el selector de
+  // vista (con/sin materiales) O el toggle de impuestos -- BloqueFactorK necesita mostrar/ocultar la
+  // línea de Gestión de materiales de terceros (y cortar en Costo Total del Trabajo sin impuestos),
+  // y ApuListadoTab necesita recalcular cada precio de la lista con lo que haya cambiado. Cambiar la
+  // Key es más simple que exponer un método de recarga entre hermanos que no comparten estado.
   //
   // Bug real corregido acá (Seba, 2026-09-08): antes solo BloqueFactorK tenía la Key -- cambiar el
   // selector actualizaba ese bloque pero dejaba ApuListadoTab con los precios de la vista vieja
   // hasta salir de la solapa y volver a entrar (lo que sí fuerza un remonte del widget completo).
+  //
+  // Ampliado (2026-09-09): SelectorTipoPresupuesto.onCambio ahora también se dispara al tocar el
+  // toggle de impuestos, no solo al cambiar de vista -- mismo mecanismo, sin agregar un segundo
+  // tick ni un segundo callback.
   int _preciosReloadTick = 0;
 
   // Etapa 3: permisos reales de la obra (obra_members -> UserContext).
