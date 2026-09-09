@@ -110,11 +110,17 @@ El manejo por `--dart-define-from-file` evita el hardcodeo, pero el APK igual la
 
 Se discutió con Gemini y nunca se escribió. **Mismo problema que el split de Factor K viviendo solo en la planilla.** Y bloquea el plan Estudio.
 
-### 3.5 · Verificar si el histórico de precios se inserta o se pisa
+### 3.5 · Histórico de precios: VERIFICADO 2026-09-09 — pisa, no existe serie histórica todavía
 
-Si las actualizaciones hacen UPDATE en vez de INSERT con fecha, la serie histórica de Bariloche no existe — **y esa serie es el único activo que un competidor con más plata no puede replicar.**
+No se pudo verificar consultando la base (cada precio tiene una sola fila porque se cargó una sola vez — no hay caso donde ya se haya pisado un cambio real). Se verificó revisando el código y las 93 migraciones: **la tabla `precios` no tiene ningún camino de escritura desde la app** — cero código en `lib/` la toca. Las 221 filas actuales se cargaron a mano por migración SQL (0058-0086), corralón por corralón.
 
-Consulta de cinco minutos. Cada día sin verificarlo, si está mal, es un día de serie perdido para siempre.
+**El problema está en cómo se escriben esas migraciones, no en la app.** Cada vez que hubo que corregir un precio ya cargado (0066, 0068, 0069, 0070, 0083, 0086), se hizo `UPDATE precios SET valor = X` — el valor anterior se pierde en el mismo statement. Dos de esas migraciones (0068, 0083) encontraron filas duplicadas para el mismo (insumo, corralón) y las promediaron y borraron, tratándolas como ruido de importación — por lo que se pudo reconstruir de los comentarios, eran duplicados de una fusión de insumos sinónimos (0066), no historia real perdida, pero el criterio usado destruiría una serie histórica genuina si existiera.
+
+**No hace falta tocar el esquema** — no hay ningún `UNIQUE (insumo_id, corralon_id)` en `precios`, nada impide insertar una segunda fila con fecha nueva hoy mismo. Lo que sí hace falta, y es más de lo que parece: cuatro funciones activas hoy hacen `avg(valor) from precios where insumo_id = X` sin filtrar por fecha ni por fila más reciente por corralón — `calcular_composicion_detalle_subitem` (Factor K/APU), `calcular_precio_apu_subitems` (certificación), `consolidado_insumos_obra` (Mat y MO) y `calcular_precio_promedio_insumo` (sin uso en vivo). Empezar a insertar filas nuevas sin tocar las cuatro en el mismo golpe contamina el precio "automático" de toda la app con precios viejos, en silencio. Falta además un criterio para distinguir "el corralón cambió el precio" (amerita fila nueva) de "corregimos un error de tipeo/unidad, nunca fue un precio real" (amerita seguir corrigiendo en el lugar) — hoy no existe esa marca, y sin ella la próxima limpieza de duplicados puede repetir el mismo problema.
+
+Detalle completo en `docs/relevamiento_sincronizacion_config_precios.md` (Hallazgo #6, actualizado). **La serie histórica de Bariloche todavía no existe — pero tampoco se perdió nada real hasta ahora, según lo que se pudo reconstruir.** El punto 6 del orden de ejecución (tests de regresión de la cascada) es buen momento para meter este cambio junto, porque toca las mismas cuatro funciones.
+
+**Criterio decidido, sin el cual lo de arriba no es viable:** el corralón cambió su precio real → fila nueva con fecha nueva (`INSERT`). Corregimos un error nuestro —conversión de unidad, tipeo, precio del paquete cargado como si fuera el de la unidad de uso— → se corrige en el lugar (`UPDATE`), nunca fue un precio real. Sin esta distinción escrita, la próxima limpieza de duplicados repite el mismo patrón que 0068/0083 y vuelve a borrar historia sin poder distinguirla de ruido de importación. Detalle en el relevamiento, Hallazgo #6.
 
 ### 3.6 · El importador está del lado equivocado del muro
 
@@ -189,7 +195,7 @@ De `docs/relevamiento_sincronizacion_config_precios.md`. Todos del mismo patrón
 ## 6 · Orden de ejecución
 
 1. **Corregir la certificación** aplicando la cascada a los montos certificados.
-2. **Verificar INSERT contra UPDATE en el histórico de precios.** Cinco minutos, y define si el activo principal existe. Va acá por urgencia, no por esfuerzo.
+2. ~~Verificar INSERT contra UPDATE en el histórico de precios.~~ **VERIFICADO 2026-09-09 — pisa, ver §3.5.** Pendiente real que queda: cambiar la práctica de escritura de las migraciones de precio a INSERT con fecha nueva, y ajustar las 4 funciones que promedian `precios.valor` para que tomen la fila más reciente por corralón. Se puede meter junto con el punto 6 (tocan las mismas funciones).
 3. **Auditar el .ods**: la fórmula corrida cinco filas en las 97 partidas, y extraer el criterio del split hacia `CLAUDE.md`.
 4. **Escribir la spec de roles combinables.**
 5. **Verificar ART y horas por mes** contra póliza y convenio reales.
