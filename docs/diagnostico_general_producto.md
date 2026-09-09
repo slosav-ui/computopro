@@ -194,7 +194,13 @@ De `docs/relevamiento_sincronizacion_config_precios.md`. Todos del mismo patrón
 
 ## 6 · Orden de ejecución
 
-1. **Corregir la certificación** aplicando la cascada a los montos certificados.
+1. **Corregir la certificación** aplicando la cascada a los montos certificados. Diagnóstico
+   previo en `docs/certificacion_correccion_diagnostico.md`. **Migración escrita 2026-09-09**
+   (`supabase/migrations/0094_certificacion_usa_precio_final.sql`): cambia
+   `calcular_monto_obra_subitems` para usar `calcular_precio_final_apu_subitems`, y fuerza el
+   recálculo de cualquier borrador con avance ya cargado (decisión: la migración lo resuelve sola,
+   no queda para avisar y tocar a mano). El único borrador de prueba existente (Obra de Prueba,
+   certificado N°1, 3 filas) se borra antes de aplicar. Falta correr y verificar.
 2. ~~Verificar INSERT contra UPDATE en el histórico de precios.~~ **VERIFICADO 2026-09-09 — pisa, ver §3.5.** Pendiente real que queda: cambiar la práctica de escritura de las migraciones de precio a INSERT con fecha nueva, y ajustar las 4 funciones que promedian `precios.valor` para que tomen la fila más reciente por corralón. Se puede meter junto con el punto 6 (tocan las mismas funciones).
 3. **Auditar el .ods**: la fórmula corrida cinco filas en las 97 partidas, y extraer el criterio del split hacia `CLAUDE.md`.
 4. **Escribir la spec de roles combinables.**
