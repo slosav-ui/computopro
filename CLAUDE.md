@@ -27,6 +27,12 @@ Responder siempre en español al trabajar en este repositorio, sin importar el i
 
 Flutter app (`mi_primera_app` in `pubspec.yaml`) for managing construction projects ("obras") and their budgets ("presupuestos") in the Argentine construction market. UI, domain terms, and comments are in Spanish (rioplatense/Argentine): APU = Análisis de Precios Unitarios (unit price analysis), CAC = índice de la Cámara Argentina de la Construcción (cost adjustment index), IRAM = Argentine technical standards body, UOCRA = construction workers' union (referenced for cargas sociales / payroll charges).
 
+**Diagnóstico general del producto** (fortalezas, debilidades, riesgos, backlog y orden de
+ejecución — estado al 2026-09-09) en `docs/diagnostico_general_producto.md`. Mantenerlo
+actualizado cuando algo relevante cambie, no dejarlo envejecer. La estrategia comercial va aparte,
+en `docs/monetizacion.md`; el relevamiento de qué config/función quedó desconectada de qué, en
+`docs/relevamiento_sincronizacion_config_precios.md`.
+
 ## Especificación funcional y de negocio (resumen de `docs/especificacion_funcional*.md`)
 
 Fuentes: `especificacion_funcional.md`, `_2.md` y `_3.md` (transcripciones de conversaciones de diseño con el usuario, se repiten bastante entre sí) más `especificacion_funcional_completa.md` y `_parte2_fundacional.md` (spec histórica extraída de meses de trabajo previo con Gemini, anterior a la migración a Claude Code — no specs formales tampoco). Esto es la referencia funcional/de producto permanente del proyecto — el código actual todavía no implementa la mayoría de estos puntos, son el objetivo a futuro.
