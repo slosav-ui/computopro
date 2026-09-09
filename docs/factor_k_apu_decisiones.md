@@ -68,6 +68,32 @@ modos. Lo que sí cambia, solo visible con "Comp. Solo MO" activo:
   de quién compra los materiales."* Antepone la explicación antes de que el usuario llegue a ver el
   monto real en una partida (Paso B) y le parezca un error.
 
+**Re-verificado 2026-09-09** (punto 3 del orden de ejecución de
+`docs/diagnostico_general_producto.md`), contra el `.ods` real, no contra lo que decía la
+conversación que trajo el pedido: la fórmula de `GASTOS GENERALES` en `APU_SIN_MATERIALES` sigue
+siendo exactamente `=[$APU.G34]-[$APU.G33]` (extraída de la vista completa, sin recalcular),
+`EPP-SEGURIDAD` es `=[$APU.G36]`, `COSTO FINANCIERO` es `=[$APU.G37]` — las tres, referencias
+directas a la hoja `APU`, ninguna depende de la base sin materiales. `IMPREVISTOS` es
+`=[.G9]*[.E10]` y `BENEFICIO` es `=SUM([.G9:.G12])*[.E13]` — las dos, fórmulas locales sobre la
+base reducida de esa misma hoja. Confirma al pie de la letra el criterio de arriba y el de
+`CLAUDE.md` §"Vista sin materiales" — sin diferencias entre lo escrito y lo que dicen las celdas.
+
+De paso, verificación completa del punto 3, parte 2 (auditoría de la fórmula "MANO DE OBRA TOTAL
+(A)" de la hoja `APU`, ver `docs/diagnostico_general_producto.md` §2.1/§2.3):
+`bug_formula_mano_obra_total_apu` (memoria del proyecto) decía RESUELTO 2026-09-03 sobre las 125
+partidas — re-confirmado ahora programáticamente (parseando `content.xml` del `.ods` directamente,
+sin LibreOffice ni edición manual de por medio): las 125 filas `TOTAL (A)` de la hoja `APU`
+apuntan, cada una, a la fila `SUBTOTAL MANO DE OBRA (A)` de su propio bloque (offset constante de
+22 filas), cero excepciones. Barrido bilingüe de errores de fórmula (`#VALOR!`/`#VALUE!` y el
+resto de los tokens, ver [[verificacion-errores-formula-bilingue]]) sobre las 3 hojas
+(`RUBROS`/`APU`/`APU_SIN_MATERIALES`): cero celdas con error. Y el error, aunque hubiera existido,
+no tenía camino a producción: `0022_seed_insumos_apu_rubros_2_17.sql` y
+`0023_seed_apu_composiciones_rubros_2_17.sql` (las que cargan `apu_composiciones`/
+`apu_composicion_items`, 97 partidas/770 ítems, rubros 2-17) citan como fuente
+`docs/seed/catalogo_apu_completo_rubros_2_17.xlsx` — un archivo distinto, nunca la hoja `APU` de
+esta planilla. Solo `RUBROS` alimentó migraciones (0015/0016/0020), y esa hoja no tiene esta
+fórmula. Sin necesidad de tocar ni regenerar el `.ods` — no había nada que corregir.
+
 ## 4. Gate de PRO — CORREGIDO 2026-09-07, ver docs/monetizacion.md §9
 
 **Lo que sigue de esta sección es el criterio ORIGINAL, ya no vigente — queda como registro

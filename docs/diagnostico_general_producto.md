@@ -24,29 +24,66 @@ Freemium: Free ve datos y composiciones pero **no la estructura de precios** —
 
 ## 2 · Debilidades
 
-### 2.1 · Certificación subfacturando — LA MÁS GRAVE
+### 2.1 · Certificación subfacturando — RESUELTO 2026-09-09
 
-Los certificados se calculan sobre **costo desnudo**: sin gastos generales, imprevistos, beneficio ni impuestos.
+**Era la más grave de esta lista — ya no aplica.** Los certificados se calculaban sobre **costo
+desnudo**: sin gastos generales, imprevistos, beneficio ni impuestos.
 
-`calcular_monto_obra_subitems` sigue llamando a la función sin cascada, y de ahí cuelga todo lo monetario de Gestión de Obra. Se conectó el 2 de septiembre a lo único que existía y nadie la actualizó cuando se construyó el Factor K.
+`calcular_monto_obra_subitems` llamaba a la función sin cascada, y de ahí colgaba todo lo
+monetario de Gestión de Obra. Se conectó el 2 de septiembre a lo único que existía y nadie la
+actualizó cuando se construyó el Factor K.
 
-**No es un bug de cálculo cualquiera: le hace perder plata al usuario sin que se entere.** Es la peor categoría de error en un producto de costos.
+Confirmado por Seba el 8 de septiembre: el certificado tiene que facturar el precio final con la
+cascada completa. **Corregido y verificado el 9 de septiembre**
+(`supabase/migrations/0094_certificacion_usa_precio_final.sql`, diagnóstico previo completo en
+`docs/certificacion_correccion_diagnostico.md`): la certificación ya usa
+`calcular_precio_final_apu_subitems`, la misma función con la cascada completa que ya usan
+Cómputo/Solapa APU/dashboard. Certificados ya emitidos quedaron intocados (congelados a propósito,
+confirmado por código). Borradores con avance ya cargado en el momento de aplicar se
+recalcularon solos, sin necesitar que el usuario retoque cada fila a mano.
 
-Confirmado por Seba el 8 de septiembre: el certificado tiene que facturar el precio final con la cascada completa.
+### 2.2 · Los parámetros UOCRA con placeholders sin verificar — el de horas ya se corrigió
 
-Dato que reduce el alcance del arreglo: la vista previa y la emisión comparten la misma función, así que no hay una segunda cuenta divergente. El problema está solo en la raíz.
+**El de horas por mes ya no aplica** — VERIFICADO 2026-09-09 contra `supabase/migrations/
+0046_horas_mensuales_190_67.sql`: el default de `horas_mensuales` pasó de 176 a 190,67 (44 hs
+semanales del convenio × 52,14 semanas/año ÷ 12) desde el 2026-09-03, con backfill incluido sobre
+las filas que todavía tenían el valor viejo. Ese ~8% ya no está.
 
-### 2.2 · Los parámetros UOCRA tienen 8% de error conocido
+**Los dos que siguen sin verificar, confirmado por el propio comentario de columna en la base**
+(`comment on column obra_presupuesto_config.art_pct`, `0040_pendiente_seguridad_social_art.sql`):
+ART al 10,23% sigue siendo un placeholder "SIN VERIFICAR contra una póliza real", viene del PDF de
+la liquidadora, no de la ART contratada por el usuario — pendiente abierto, explícito en la base.
+FCL al 12% sigue conservador, sin verificar tampoco.
 
-ART al 10,23% es un placeholder sin verificar contra póliza. FCL al 12% es conservador. Horas por mes en 176 contra 190,67 reales.
+**La mano de obra es la mitad del presupuesto.** Un profesional que compare contra su número y
+encuentre una diferencia por ART/FCL no vuelve, y no avisa por qué se fue.
 
-**La mano de obra es la mitad del presupuesto.** Un profesional que compare contra su número y vea 8% de diferencia no vuelve, y no avisa por qué se fue.
+### 2.3 · El .ods como punto único de falla — VERIFICADO 2026-09-09, las dos cosas ya estaban resueltas
 
-### 2.3 · El .ods es un punto único de falla
+Las dos afirmaciones de esta sección venían de otra conversación y estaban desactualizadas.
+Verificado contra el archivo real (`docs/seed/PLANILLA_BASE_2_0_v3_CORREGIDA.ods`), no asumido:
 
-`PLANILLA_BASE_2_0_v3_CORREGIDA.ods` contiene el criterio del split de Factor K, que **no está en ningún `.md` del repositorio.**
+**El criterio del split SÍ está escrito, con su razonamiento**, desde una sesión anterior —
+`CLAUDE.md` §"Vista sin materiales" (línea 712) y `docs/factor_k_apu_decisiones.md` §3, los dos
+lugares que se pidieron. Incluye la cita textual de la celda A2 de `APU_SIN_MATERIALES`, la prueba
+por fórmula (`GASTOS GENERALES` = `[$APU.G34]-[$APU.G33]`, extraído tal cual de la vista completa,
+no recalculado) y el razonamiento de por qué GG/EPP/Costo Financiero son costos de estructura de
+la empresa (no dependen de quién compra los materiales) mientras Imprevistos/Beneficio siguen el
+riesgo y el margen reales de lo que efectivamente se ejecuta y cobra. Re-verificado carácter por
+carácter contra el archivo actual: la fórmula citada sigue siendo exacta.
 
-Y la fórmula de "MANO DE OBRA TOTAL (A)" apunta cinco filas de más, confirmado en dos partidas sobre 97 sin auditar.
+**La fórmula de "MANO DE OBRA TOTAL (A)" ya no apunta mal en ninguna partida** — se corrigió el
+2026-09-03 (memoria del proyecto), y quedó re-verificado programáticamente ahora sobre las 125
+partidas completas de la hoja `APU` (no una muestra de 2 sobre 97): las 125 tienen la fórmula de
+la fila "TOTAL (A)" apuntando exactamente a la fila "SUBTOTAL MANO DE OBRA (A)" de su propio
+bloque, offset constante de 22 filas, cero excepciones. Sin errores de fórmula en ningún idioma
+(`#VALOR!`/`#VALUE!` y el resto de los tokens, en las 3 hojas). **El error nunca llegó a
+producción, con doble margen de seguridad**: además de estar corregido en el archivo, las hojas
+`APU`/`APU_SIN_MATERIALES` nunca alimentaron ninguna migración — `0022`/`0023` (las que cargan
+`apu_composiciones`/`apu_composicion_items` de rubros 2-17, 97 partidas/770 ítems) citan como
+fuente `docs/seed/catalogo_apu_completo_rubros_2_17.xlsx`, un archivo distinto. Solo la hoja
+`RUBROS` alimentó migraciones (0015/0016/0020), y esa hoja no tiene la fórmula en cuestión.
+Detalle completo de la verificación en `docs/factor_k_apu_decisiones.md` (nota al pie de §3).
 
 ### 2.4 · Sin tests sobre el motor de cálculo
 
@@ -56,7 +93,9 @@ En un producto cuyo valor entero es que la aritmética esté bien, los tests est
 
 ### 2.5 · Deriva entre repositorio y base — ya no es teórica
 
-Las migraciones se escriben en un lado y se aplican a mano. Con 93 acumuladas, no hay forma de verificar que el esquema de producción coincide con el del repositorio.
+Las migraciones se escriben en un lado y se aplican a mano. Con 94 numeradas acumuladas al
+2026-09-09 (93 archivos reales — la 0029 nunca se llegó a escribir, quedó el número saltado), no
+hay forma de verificar que el esquema de producción coincide con el del repositorio.
 
 **Dejó de ser incertidumbre:** el 9 de septiembre la 0091 ya estaba aplicada cuando fuimos a correrla, y la 0089 quedó reemplazada por la 0090 sin saber si llegó a aplicarse.
 
@@ -112,7 +151,7 @@ Se discutió con Gemini y nunca se escribió. **Mismo problema que el split de F
 
 ### 3.5 · Histórico de precios: VERIFICADO 2026-09-09 — pisa, no existe serie histórica todavía
 
-No se pudo verificar consultando la base (cada precio tiene una sola fila porque se cargó una sola vez — no hay caso donde ya se haya pisado un cambio real). Se verificó revisando el código y las 93 migraciones: **la tabla `precios` no tiene ningún camino de escritura desde la app** — cero código en `lib/` la toca. Las 221 filas actuales se cargaron a mano por migración SQL (0058-0086), corralón por corralón.
+No se pudo verificar consultando la base (cada precio tiene una sola fila porque se cargó una sola vez — no hay caso donde ya se haya pisado un cambio real). Se verificó revisando el código y las migraciones: **la tabla `precios` no tiene ningún camino de escritura desde la app** — cero código en `lib/` la toca. Las 221 filas actuales se cargaron a mano por migración SQL (0058-0086), corralón por corralón.
 
 **El problema está en cómo se escriben esas migraciones, no en la app.** Cada vez que hubo que corregir un precio ya cargado (0066, 0068, 0069, 0070, 0083, 0086), se hizo `UPDATE precios SET valor = X` — el valor anterior se pierde en el mismo statement. Dos de esas migraciones (0068, 0083) encontraron filas duplicadas para el mismo (insumo, corralón) y las promediaron y borraron, tratándolas como ruido de importación — por lo que se pudo reconstruir de los comentarios, eran duplicados de una fusión de insumos sinónimos (0066), no historia real perdida, pero el criterio usado destruiría una serie histórica genuina si existiera.
 
@@ -194,15 +233,14 @@ De `docs/relevamiento_sincronizacion_config_precios.md`. Todos del mismo patrón
 
 ## 6 · Orden de ejecución
 
-1. **Corregir la certificación** aplicando la cascada a los montos certificados. Diagnóstico
-   previo en `docs/certificacion_correccion_diagnostico.md`. **Migración escrita 2026-09-09**
-   (`supabase/migrations/0094_certificacion_usa_precio_final.sql`): cambia
-   `calcular_monto_obra_subitems` para usar `calcular_precio_final_apu_subitems`, y fuerza el
-   recálculo de cualquier borrador con avance ya cargado (decisión: la migración lo resuelve sola,
-   no queda para avisar y tocar a mano). El único borrador de prueba existente (Obra de Prueba,
-   certificado N°1, 3 filas) se borra antes de aplicar. Falta correr y verificar.
+1. ~~Corregir la certificación aplicando la cascada a los montos certificados.~~ **CERRADO
+   2026-09-09** — `supabase/migrations/0094_certificacion_usa_precio_final.sql`, aplicada y
+   verificada por Seba: la certificación ya usa `calcular_precio_final_apu_subitems` (precio final
+   con la cascada completa), en vez de la versión sin cascada. Incluye el recálculo forzado de
+   borradores con avance ya cargado. Diagnóstico previo completo en
+   `docs/certificacion_correccion_diagnostico.md`, ver §2.1 más abajo.
 2. ~~Verificar INSERT contra UPDATE en el histórico de precios.~~ **VERIFICADO 2026-09-09 — pisa, ver §3.5.** Pendiente real que queda: cambiar la práctica de escritura de las migraciones de precio a INSERT con fecha nueva, y ajustar las 4 funciones que promedian `precios.valor` para que tomen la fila más reciente por corralón. Se puede meter junto con el punto 6 (tocan las mismas funciones).
-3. **Auditar el .ods**: la fórmula corrida cinco filas en las 97 partidas, y extraer el criterio del split hacia `CLAUDE.md`.
+3. ~~Auditar el .ods: la fórmula corrida cinco filas, y extraer el criterio del split hacia CLAUDE.md.~~ **VERIFICADO 2026-09-09 — las dos cosas ya estaban resueltas, ver §2.3.** Criterio del split ya escrito con su razonamiento (sesión anterior, re-verificado ahora contra el archivo real). Fórmula ya corregida el 2026-09-03, re-verificada ahora sobre las 125 partidas completas (no una muestra), cero errores en los dos idiomas, y confirmado que nunca alimentó ninguna migración.
 4. **Escribir la spec de roles combinables.**
 5. **Verificar ART y horas por mes** contra póliza y convenio reales.
 6. **Tests de regresión de la cascada**, con dos o tres obras de referencia y totales esperados. Es lo que después permite tocar el motor sin miedo.
@@ -225,5 +263,15 @@ La tentación con un producto que tiene tanto diseño acumulado sin implementar 
 El original venía de otra conversación y decía que el Factor K estaba "cero conectado a Dart/UI" y que la solapa APU era "enteramente mock". **Eso era cierto hasta el 6 de septiembre y dejó de serlo.**
 
 Entre el 7 y el 9 se conectó la cadena completa: el listado de la solapa APU, el bloque de Factor K con montos reales, el precio con cascada en Cómputo, y el total del dashboard derivado del cómputo. Verificado en emulador con la obra Galpón Mix.
+
+**Segunda pasada de verificación, 2026-09-09**: repasadas las secciones 2 y 3 completas contra el
+código y las migraciones reales, no contra lo que decía el documento original. Cuatro puntos
+adicionales estaban desactualizados y se corrigieron: §2.1 (certificación, corregida y verificada
+hoy mismo — ya no es la debilidad más grave, era la más grave y dejó de aplicar), §2.2 (horas
+mensuales, corregidas desde el 2026-09-03, ART/FCL siguen sin verificar), §2.3 (criterio del split
+y fórmula de mano de obra, las dos ya resueltas de sesiones anteriores) y §2.5/§3.5 (conteo de
+migraciones actualizado). El resto de las secciones 2 y 3 se verificó punto por punto (grep sobre
+`lib/`, migraciones, git branches, `pubspec.yaml`, carpetas de plataforma) y sigue reflejando el
+estado real — no se tocó lo que ya era correcto.
 
 Actualizá este documento cuando algo cambie, en vez de dejarlo envejecer.
