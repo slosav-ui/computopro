@@ -84,10 +84,13 @@ class RubrosRepository {
   /// ya restringe esto a `creador_usuario_id = auth.uid()` — un intento de
   /// borrar un rubro ajeno o el catálogo oficial no encuentra fila para
   /// borrar, sin necesidad de chequear el dueño acá también. RubrosTab valida
-  /// antes de llamar acá que el rubro no tenga uso en `obra_subitems` (ver
-  /// ObraSubitemsRepository.getNombresObrasConUso), pero quien realmente lo
-  /// impide a nivel de base es la FK `obra_subitems.rubro_id` (sin cascade,
-  /// ver 0019_obra_subitems.sql) si esa validación quedó desactualizada.
+  /// antes de llamar acá que el rubro no tenga uso en `obra_subitems` solo
+  /// para decidir qué diálogo de confirmación mostrar -- a nivel de base ya
+  /// no bloquea nada (`obra_subitems.rubro_id` tiene `on delete cascade`
+  /// desde 0028_obra_subitems_cascade_propio.sql). Lo que sí puede bloquear
+  /// el DELETE es `importaciones_items.rubro_id` si el rubro vino del
+  /// importador y esa FK no tiene cascade/set null todavía -- ver
+  /// 0093_fix_delete_rubros_propios_importados.sql.
   Future<void> eliminar(String rubroId) async {
     await _client.from('rubros').delete().eq('id', rubroId);
   }

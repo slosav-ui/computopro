@@ -180,3 +180,47 @@ quede servido en la misma pantalla, hay que cambiar el selector.
 Verificado en el emulador con la partida 8.1: Costo-Costo 95.822,14, Costo Total del Trabajo
 127.954,57, Precio Final 160.582,98, Gestión de materiales de terceros al 4% sobre ~63.092,66 de
 materiales de la vista completa — todo cerrando.
+
+## Cadena completa (Cómputo / Solapa APU / Dashboard) — CERRADA y VERIFICADA 2026-09-09
+
+Hasta acá, `calcular_factor_k_subitem` (Paso B, arriba) solo alimentaba `BloqueFactorKPartida`
+dentro de `ComposicionApuScreen`. El resto de la app seguía mostrando un precio distinto para la
+misma partida: la lista de Cómputo y el listado de la Solapa APU usaban `calcular_precio_apu_subitems`
+(sin la cascada), y el total del dashboard era un campo estático sin relación con el cómputo real.
+
+**`calcular_precio_final_apu_subitems`** (`0090_precio_final_apu_subitems_respeta_selector.sql`,
+corregida en `0092_precio_final_apu_subitems_respeta_impuestos.sql`) cierra esto sin duplicar la
+cascada: llama a `calcular_factor_k_subitem` vía `LATERAL`, una vez por subítem del array pero en un
+solo viaje de red, y lee ella misma dos datos de la obra (nunca del cliente) para decidir qué
+columna devolver:
+
+- `obra_presupuesto_config.tipo_presupuesto` — `mano_obra_sola` usa la vista `sin_materiales`, el
+  resto usa `con_materiales` (0090).
+- `obra_presupuesto_config.aplica_impuestos` — si está apagado devuelve `costo_total_trabajo` en vez
+  de `precio_final`, la misma columna en la que corta la UI de `BloqueFactorKPartida` (0092; antes
+  de esto el toggle guardaba bien pero no afectaba ningún precio de Cómputo, APU ni dashboard).
+
+`calcular_precio_apu_subitems` (`0059`, sin la cascada) queda reservado para `calcular_monto_obra_subitems`
+(certificación/avance de obra) — **bug real, aparte, sin tocar**: ver "Bug certificación sin Factor K"
+en `CLAUDE.md` / memoria del proyecto, confirmado por Seba 2026-09-08.
+
+**`calcular_presupuesto_vivo_obra`** (`0091_presupuesto_vivo_obra.sql`) es el total del dashboard:
+suma de todas las partidas tildadas, cantidad × precio final, llamando a
+`calcular_precio_final_apu_subitems` por dentro — se arregla solo con cualquier corrección de esa
+función, no tiene lógica de impuestos/vista propia.
+
+**Refresco en vivo**: un solo mecanismo (tick + `ValueKey`, `PresupuestosScreen._preciosReloadTick`)
+remonta `BloqueFactorK` y `ApuListadoTab` cuando cambia cualquiera de los dos selectores de la
+Solapa APU. `SelectorTipoPresupuesto.onCambio` se dispara tanto al cambiar tipo de presupuesto como
+al tocar el toggle de impuestos — un solo callback, sin un segundo tick. El total del dashboard usa
+su propio mecanismo, ya existente y sin relación con este tick: `ObrasListScreen._abrirPresupuesto`
+espera el `pop` de `PresupuestosScreen` y vuelve a pedir `calcular_presupuesto_vivo_obra`.
+
+**VERIFICADO por Seba (2026-09-09), obra "Galpón Mix", partida 8.11**: el precio de Cómputo coincide
+con el de Factor K, el total del dashboard refleja el cómputo cargado, y los tres toggles que tocan
+el precio de una partida (impuestos, tipo de presupuesto, cargas sociales — este último ya cerrado
+en `docs/costo_mano_de_obra_decisiones.md` §14) actualizan al instante sin salir de la solapa.
+
+Con esto quedan cerrados 3 de los 4 puntos "sin verificar" que había dejado abiertos el commit
+`883b4d7`. El cuarto — borrar un subítem propio del importador de punta a punta en `SubitemsScreen`
+(`0088`) — sigue sin verificarse, no tiene relación con esta cadena.

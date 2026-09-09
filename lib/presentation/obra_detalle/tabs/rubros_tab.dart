@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../data/models/apu_precio_subitem.dart';
 import '../../../data/models/obra_model.dart';
 import '../../../data/models/rubro_catalogo.dart';
@@ -696,6 +697,12 @@ class _RubrosTabState extends State<RubrosTab> {
   /// esa migración aplicada, obra_subitems.rubro_id tiene `on delete
   /// cascade` — borrar el rubro se lleva puesto su cómputo en cualquier
   /// obra donde estuviera cargado.
+  ///
+  /// Un rubro propio creado por el importador tenía además un segundo bloqueo, real, que este
+  /// chequeo de uso no detecta porque no mira `obra_subitems`: `importaciones_items.rubro_id`
+  /// sin `on delete cascade`/`set null` (mismo bug que 0088 ya había corregido para `subitem_id`
+  /// en esta misma tabla, sin tocar la columna hermana) — corregido en
+  /// 0093_fix_delete_rubros_propios_importados.sql.
   Future<void> _onEliminarRubro(RubroCatalogo rubro, int numeroMostrado) async {
     setState(() => _procesandoEliminacion.add(rubro.id));
     List<String> obrasConUso;
@@ -720,10 +727,20 @@ class _RubrosTabState extends State<RubrosTab> {
       await _rubrosRepository.eliminar(rubro.id);
       if (!mounted) return;
       await _cargarCatalogo();
+    } on PostgrestException catch (e) {
+      // El mensaje que ve el usuario queda genérico a propósito -- el motivo real (típicamente
+      // 23503, una FK que todavía no tiene cascade/set null hacia rubros -- ver el comentario de
+      // _onEliminarRubro para el caso ya conocido de importaciones_items) va a la consola para
+      // poder diagnosticarlo sin adivinar. Mismo patrón que panel_crear_equipo_apu.dart.
+      debugPrint(
+        'Error eliminando rubro (Postgrest) -- code=${e.code} message=${e.message} '
+        'details=${e.details} hint=${e.hint}',
+      );
+      if (!mounted) return;
+      setState(() => _procesandoEliminacion.remove(rubro.id));
+      _mostrarSnackError('No se pudo eliminar el rubro. Probá de nuevo.');
     } catch (e) {
-      // Ya no distingue 23503 como caso especial (esa era la señal de "está
-      // en uso", y ahora eso ya no bloquea) — cualquier error acá es
-      // inesperado de verdad.
+      debugPrint('Error eliminando rubro: $e');
       if (!mounted) return;
       setState(() => _procesandoEliminacion.remove(rubro.id));
       _mostrarSnackError('No se pudo eliminar el rubro. Probá de nuevo.');
