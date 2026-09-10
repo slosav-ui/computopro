@@ -44,10 +44,11 @@ panel de miembros con revocar/sacar) — Tanda 1 verificada de punta a punta, Ta
 correr en emulador: `docs/invitaciones_diseno_datos.md`. Es el punto 4 del orden de ejecución y la
 dependencia real de la licitación privada de arriba.
 
-**Nombre y teléfono en `perfiles`** (visibles entre compañeros de obra, nunca `es_pro`; pedidos en
-el registro, editables después) — `docs/perfiles_nombre_telefono_diseno.md`. Resuelve el gap de
-"la pantalla de miembros no tenía nada legible para mostrar" encontrado al construir la Tanda 2 de
-arriba.
+**Nombre, teléfono y matrícula en `perfiles`** (visibles entre compañeros de obra, nunca `es_pro`;
+pedidos en el registro, editables después) — `docs/perfiles_nombre_telefono_diseno.md`. Resuelve
+el gap de "la pantalla de miembros no tenía nada legible para mostrar" encontrado al construir la
+Tanda 2 de arriba. La matrícula tiene que ir en el encabezado/pie del futuro PDF de salida, junto
+con el nombre — diagnóstico §6 punto 11.
 
 ## Especificación funcional y de negocio (resumen de `docs/especificacion_funcional*.md`)
 

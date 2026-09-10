@@ -3,7 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../data/models/perfil_basico.dart';
 
 /// Acceso a la tabla `perfiles` de Supabase (flag Free/PRO `es_pro`, y desde
-/// `0099_perfiles_nombre_telefono.sql`, nombre/teléfono).
+/// `0099_perfiles_nombre_telefono.sql`/`0100_perfiles_matricula.sql`, nombre/teléfono/matrícula).
 ///
 /// Ver `supabase/migrations/0014_perfiles.sql`: RLS solo `SELECT`, cada usuario ve únicamente su
 /// propia fila -- eso no cambió. `es_pro` sigue sin ningún camino de escritura del lado del
@@ -49,33 +49,36 @@ class PerfilRepository {
     }
   }
 
-  /// Nombre propio (obligatorio en el formulario) y teléfono (opcional). Nunca toca `es_pro` --
-  /// la función del lado del servidor ni lo acepta como parámetro.
-  Future<void> actualizarMiPerfil({required String nombre, String? telefono}) {
+  /// Nombre propio (obligatorio en el formulario), teléfono y matrícula profesional (los dos
+  /// opcionales). Nunca toca `es_pro` -- la función del lado del servidor ni lo acepta como
+  /// parámetro.
+  Future<void> actualizarMiPerfil({required String nombre, String? telefono, String? matricula}) {
     return _conLog('actualizarMiPerfil', () async {
       await _client.rpc('actualizar_mi_perfil', params: {
         'p_nombre': nombre,
         'p_telefono': telefono,
+        'p_matricula': matricula,
       });
     });
   }
 
-  /// Mi propia fila completa (incluye `nombre`/`telefono` para precargar "Editar mi perfil") --
-  /// a diferencia de `esPro`, sin fail-closed silencioso: quien llama a esto ya sabe que hay
-  /// sesión activa y necesita el error real si algo falla.
+  /// Mi propia fila completa (incluye `nombre`/`telefono`/`matricula` para precargar "Editar mi
+  /// perfil") -- a diferencia de `esPro`, sin fail-closed silencioso: quien llama a esto ya sabe
+  /// que hay sesión activa y necesita el error real si algo falla.
   Future<PerfilBasico?> getMiPerfil(String usuarioId) {
     return _conLog('getMiPerfil', () async {
       final row = await _client
           .from('perfiles')
-          .select('usuario_id, nombre, telefono')
+          .select('usuario_id, nombre, telefono, matricula')
           .eq('usuario_id', usuarioId)
           .maybeSingle();
       return row == null ? null : PerfilBasico.fromRow(row);
     });
   }
 
-  /// Nombre/teléfono de los compañeros activos de una obra -- ver `get_perfiles_de_obra`
-  /// (nunca expone `es_pro`, y falla si quien pregunta no es miembro de esa obra).
+  /// Nombre/teléfono/matrícula de los compañeros activos de una obra -- ver
+  /// `get_perfiles_de_obra` (nunca expone `es_pro`, y falla si quien pregunta no es miembro de
+  /// esa obra).
   Future<List<PerfilBasico>> getPerfilesDeObra(String obraId) {
     return _conLog('getPerfilesDeObra', () async {
       final data = await _client.rpc('get_perfiles_de_obra', params: {'p_obra_id': obraId});

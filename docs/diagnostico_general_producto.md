@@ -283,7 +283,7 @@ De `docs/relevamiento_sincronizacion_config_precios.md`. Todos del mismo patrón
 8. **Selector de zona UOCRA.** Sin esto no hay mercado fuera de Zona B.
 9. **Estrategia offline** para la obra activa.
 10. **Obra tipo precargada** de 80 o 120 m², para que el primer uso muestre un presupuesto completo.
-11. **Calidad del PDF de salida.** Es lo único que ve el cliente del profesional, lo que circula por WhatsApp, y la mejor publicidad del producto.
+11. **Calidad del PDF de salida.** Es lo único que ve el cliente del profesional, lo que circula por WhatsApp, y la mejor publicidad del producto. **Anotado 2026-09-10** (`docs/perfiles_nombre_telefono_diseno.md` §6): la matrícula profesional tiene que ir en el encabezado o el pie, junto con el nombre — es lo que le da validez profesional al documento. El dato ya existe en `perfiles`/`get_perfiles_de_obra`, listo para leer cuando se construya esta pieza.
 
 ## 7 · La regla que ordena todo
 

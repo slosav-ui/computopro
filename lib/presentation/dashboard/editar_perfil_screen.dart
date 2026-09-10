@@ -3,11 +3,11 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../services/auth_service.dart';
 import '../../services/perfil_repository.dart';
 
-/// Cargar/corregir el propio nombre y teléfono -- ver
-/// `supabase/migrations/0099_perfiles_nombre_telefono.sql`. Cubre el caso que el registro no
-/// resuelve: usuarios que ya existían antes de esta pieza (sin nombre, sin forma de inferirlo) y
-/// cualquiera que se haya equivocado al tipear la primera vez. Reachable desde el menú de
-/// `ObrasListScreen`.
+/// Cargar/corregir el propio nombre, teléfono y matrícula profesional -- ver
+/// `supabase/migrations/0099_perfiles_nombre_telefono.sql`/`0100_perfiles_matricula.sql`. Cubre
+/// el caso que el registro no resuelve: usuarios que ya existían antes de esta pieza (sin nombre,
+/// sin forma de inferirlo) y cualquiera que se haya equivocado al tipear la primera vez.
+/// Reachable desde el menú de `ObrasListScreen`.
 class EditarPerfilScreen extends StatefulWidget {
   const EditarPerfilScreen({super.key});
 
@@ -21,6 +21,7 @@ class _EditarPerfilScreenState extends State<EditarPerfilScreen> {
   final _perfilRepository = PerfilRepository();
   final _nombreCtrl = TextEditingController();
   final _telefonoCtrl = TextEditingController();
+  final _matriculaCtrl = TextEditingController();
 
   bool _cargando = true;
   bool _guardando = false;
@@ -36,6 +37,7 @@ class _EditarPerfilScreenState extends State<EditarPerfilScreen> {
   void dispose() {
     _nombreCtrl.dispose();
     _telefonoCtrl.dispose();
+    _matriculaCtrl.dispose();
     super.dispose();
   }
 
@@ -51,6 +53,7 @@ class _EditarPerfilScreenState extends State<EditarPerfilScreen> {
       setState(() {
         _nombreCtrl.text = perfil?.nombre ?? '';
         _telefonoCtrl.text = perfil?.telefono ?? '';
+        _matriculaCtrl.text = perfil?.matricula ?? '';
         _cargando = false;
       });
     } catch (e) {
@@ -78,6 +81,7 @@ class _EditarPerfilScreenState extends State<EditarPerfilScreen> {
       await _perfilRepository.actualizarMiPerfil(
         nombre: _nombreCtrl.text.trim(),
         telefono: _telefonoCtrl.text.trim(),
+        matricula: _matriculaCtrl.text.trim(),
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Perfil actualizado.')));
@@ -139,6 +143,16 @@ class _EditarPerfilScreenState extends State<EditarPerfilScreen> {
                           keyboardType: TextInputType.phone,
                           decoration: const InputDecoration(
                             labelText: 'Teléfono (opcional)',
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        TextFormField(
+                          controller: _matriculaCtrl,
+                          decoration: const InputDecoration(
+                            labelText: 'Matrícula profesional (opcional)',
+                            helperText: 'Va en los presupuestos y certificados que emitas.',
                             border: OutlineInputBorder(),
                             isDense: true,
                           ),

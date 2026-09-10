@@ -264,7 +264,7 @@ class _MiembrosObraScreenState extends State<MiembrosObraScreen> {
 
   Widget _buildMiembroCard(ObraMember miembro) {
     final esUnoMismo = miembro.usuarioId == _authService.usuarioActual?.id;
-    final telefono = _perfiles[miembro.usuarioId]?.telefono;
+    final perfil = _perfiles[miembro.usuarioId];
     final invitadoPorId = miembro.invitadoPorUsuarioId;
     final permisos = <String>[
       if (miembro.permisosEspeciales.puedeInvitarTerceros) 'invita terceros',
@@ -273,7 +273,8 @@ class _MiembrosObraScreenState extends State<MiembrosObraScreen> {
     ];
     final lineaSecundaria = <String>[
       etiquetaRol(miembro.rol),
-      ?telefono,
+      if (perfil?.matricula != null) 'mat. ${perfil!.matricula}',
+      ?perfil?.telefono,
       if (permisos.isNotEmpty) permisos.join(', '),
       if (invitadoPorId != null) 'invitado por ${_nombreMostrado(invitadoPorId)}',
     ].join(' · ');

@@ -1,10 +1,11 @@
-# Nombre y teléfono en `perfiles` — diseño y estado (2026-09-10)
+# Nombre, teléfono y matrícula en `perfiles` — diseño y estado (2026-09-10)
 
-**Estado: aplicado en código, sin verificar en el emulador ni aplicar la migración.** Resuelve un
-gap real encontrado al construir la Tanda 2 de invitaciones
+**Estado: aplicado en código, sin verificar en el emulador ni aplicar las migraciones.** Resuelve
+un gap real encontrado al construir la Tanda 2 de invitaciones
 (`docs/invitaciones_diseno_datos.md` §10): la pantalla de miembros mostraba un UUID acortado
 porque no había ningún dato legible para mostrar — "un identificador cortado en vez de un nombre
-no le sirve al usuario, no sabe quién es quién" (Seba).
+no le sirve al usuario, no sabe quién es quién" (Seba). Matrícula profesional sumada el mismo día,
+mismo mecanismo — `0100_perfiles_matricula.sql`, ver §6.
 
 ## 1. Por qué no alcanza con una columna nueva y una política de lectura
 
@@ -60,7 +61,7 @@ mecanismo de escritura acotada (`actualizar_mi_perfil`) y lectura acotada
 cualquier usuario del sistema. Opcional en el registro y en "Mi perfil": no todos van a querer
 compartirlo, y no hay razón para bloquear el alta por eso.
 
-## 5. Archivos
+## 5. Archivos (nombre/teléfono, `0099`)
 
 Nuevos:
 - `supabase/migrations/0099_perfiles_nombre_telefono.sql`
@@ -78,5 +79,33 @@ Tocados:
   pedido original de la Tanda 2 y había quedado afuera de la primera versión de la pantalla; se
   corrige de paso acá, aprovechando que ya se resuelve el nombre.
 
-`flutter analyze` limpio (49 infos preexistentes, ninguna nueva). **Sin aplicar la migración,
-sin correr en el emulador todavía.**
+## 6. Matrícula profesional (`0100`, mismo día)
+
+**Opcional, mismo mecanismo y mismo criterio de privacidad que nombre/teléfono.** Pedido de Seba:
+un profesional la necesita porque forma parte de su identificación en los documentos que emite —
+presupuestos y certificados llevan matrícula. `actualizar_mi_perfil` y `get_perfiles_de_obra`
+ganan un parámetro/columna más; como eso cambia sus firmas, `0100_perfiles_matricula.sql` las
+recrea con `DROP FUNCTION` + `CREATE` en vez de `CREATE OR REPLACE` (que no alcanza cuando cambia
+el número de parámetros o el tipo de retorno — quedaría un overload viejo colgado, no un
+reemplazo). Se pide en el registro (opcional) y se edita después en "Mi perfil", igual que
+teléfono.
+
+**Nota para cuando exista el generador de PDF de presupuestos/certificados** (hoy no existe — `pdf`/
+`printing` en `pubspec.yaml` siguen sin usarse en ningún archivo de `lib/`, ver
+`docs/diagnostico_general_producto.md` §6 punto 11, "Calidad del PDF de salida"): **la matrícula
+tiene que ir en el encabezado o el pie del documento, junto con el nombre del profesional que lo
+emite — es lo que le da validez profesional.** `get_perfiles_de_obra`/`getMiPerfil` ya devuelven el
+dato, listo para usar cuando se construya esa pieza; no hace falta ningún cambio de datos
+adicional, solo que quien arme el PDF se acuerde de leerlo de ahí.
+
+## 7. Archivos (matrícula, `0100`)
+
+Nuevos:
+- `supabase/migrations/0100_perfiles_matricula.sql`
+
+Tocados: los mismos siete de §5, sumando el campo `matricula` (modelo, repositorio, `AuthService`,
+`LoginScreen`, `EditarPerfilScreen`, `MiembrosObraScreen`) — ningún archivo nuevo aparte de la
+migración.
+
+`flutter analyze` limpio (49 infos preexistentes, ninguna nueva) en las dos rondas (`0099` y
+`0100`). **Sin aplicar ninguna de las dos migraciones, sin correr en el emulador todavía.**

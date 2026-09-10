@@ -18,6 +18,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordCtrl = TextEditingController();
   final _nombreCtrl = TextEditingController();
   final _telefonoCtrl = TextEditingController();
+  final _matriculaCtrl = TextEditingController();
 
   bool _modoRegistro = false;
   bool _cargando = false;
@@ -29,6 +30,7 @@ class _LoginScreenState extends State<LoginScreen> {
     _passwordCtrl.dispose();
     _nombreCtrl.dispose();
     _telefonoCtrl.dispose();
+    _matriculaCtrl.dispose();
     super.dispose();
   }
 
@@ -68,6 +70,7 @@ class _LoginScreenState extends State<LoginScreen> {
           password: _passwordCtrl.text,
           nombre: _nombreCtrl.text.trim(),
           telefono: _telefonoCtrl.text.trim(),
+          matricula: _matriculaCtrl.text.trim(),
         );
       } else {
         await _authService.iniciarSesion(
@@ -118,11 +121,13 @@ class _LoginScreenState extends State<LoginScreen> {
                       style: const TextStyle(fontSize: 13, color: Colors.black54),
                     ),
                     const SizedBox(height: 24),
-                    // Nombre/teléfono solo en modo registro -- ver AuthService.registrarse: se
-                    // guardan en auth.users como metadata del signup, y el trigger de perfiles
-                    // los lee de ahí (0099_perfiles_nombre_telefono.sql). Es el único momento en
-                    // que la app puede capturarlos sin una pantalla de edición aparte -- por eso
-                    // nombre es obligatorio acá, no opcional para completar después.
+                    // Nombre/teléfono/matrícula solo en modo registro -- ver
+                    // AuthService.registrarse: se guardan en auth.users como metadata del signup,
+                    // y el trigger de perfiles los lee de ahí (0099_perfiles_nombre_telefono.sql/
+                    // 0100_perfiles_matricula.sql). Es el único momento en que la app puede
+                    // capturarlos sin una pantalla de edición aparte -- por eso nombre es
+                    // obligatorio acá, no opcional para completar después (teléfono y matrícula
+                    // sí quedan opcionales, se pueden cargar después desde "Mi perfil").
                     if (_modoRegistro) ...[
                       TextFormField(
                         controller: _nombreCtrl,
@@ -144,6 +149,16 @@ class _LoginScreenState extends State<LoginScreen> {
                         decoration: const InputDecoration(
                           labelText: 'Teléfono (opcional)',
                           helperText: 'En obra se llama por teléfono, no se manda mail.',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _matriculaCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'Matrícula profesional (opcional)',
+                          helperText: 'Va en los presupuestos y certificados que emitas.',
                           border: OutlineInputBorder(),
                           isDense: true,
                         ),
