@@ -16,7 +16,7 @@ revisó y está bien conectado.
 |---|----------|----------|--------|
 | 1 | Certificación calcula sin Factor K | Alta — plata real | Confirmado, YA CONOCIDO (2026-09-08), pendiente |
 | 2 | FK `certificado_subitems_avance.obra_subitem_id` bloquea borrado de rubro/subítem propio ya certificado | Alta — bloquea una operación con datos reales de por medio | Confirmado por esquema, no reproducido en vivo |
-| 3 | "Ajuste Económico y Moneda" sigue escribiendo `obras.monto_total` estático | Media — escritura muerta, no se lee para mostrar nada hoy | Confirmado |
+| 3 | "Ajuste Económico y Moneda" sigue escribiendo (y leyendo) `obras.monto_total` estático | Era Media, en los hechos Alta — no era solo escritura muerta, la propia pantalla la releía y la conversión de moneda daba 0 | **RESUELTO 2026-09-10** |
 | 4 | Toggle `obras.aplicaCac` no aplica ningún ajuste — es 100% cosmético | Media — puede inducir al usuario a creer que su presupuesto se actualiza solo | Confirmado |
 | 5 | `obra_presupuesto_config.tipo_suelo` / `zona_sismorresistente` sin lector | Baja — pieza nunca construida, no una que se rompió | Confirmado |
 | 6 | Fórmula de precio promedio de insumo duplicada (función + inline) | Baja — no divergió todavía | Confirmado, bajo riesgo |
@@ -97,11 +97,12 @@ Columna por columna de `obra_presupuesto_config`, `obras` y `perfiles` — quié
 
 | Columna | Quién escribe | Quién lee | Estado |
 |---|---|---|---|
-| `monto_total` | Alta de obra (siempre 0.0, 0087), **y el diálogo "Ajuste Económico y Moneda" de `ObrasListScreen`** | Nadie (el dashboard usa `calcular_presupuesto_vivo_obra`, no esta columna) | **Hallazgo #3 — escritura muerta** |
-| `aplica_cac` | Diálogo "Ajuste Económico y Moneda" | Solo el propio `ObrasListScreen` (para pintar la advertencia y un badge) — ninguna función SQL, ningún cálculo de precio | **Hallazgo #4 — cosmético, no hace nada** |
+| `monto_total` | Alta de obra (siempre 0.0, 0087), **y el diálogo "Ajuste Económico y Moneda" de `ObrasListScreen`** | **El propio diálogo la releía como base de conversión** — no "nadie", como decía la primera versión de esta fila (verificado en vivo al reproducir el bug) | **Hallazgo #3 — RESUELTO 2026-09-10**, ver detalle abajo |
+| `aplica_cac` | Diálogo "Ajuste Económico y Moneda" | `ObrasListScreen` (advertencia/badge) + **`factor_cac_obra`/`calcular_saldo_pendiente_hitos` (0102) para Modelo B** | **Hallazgo #4 — parcialmente resuelto 2026-09-10**: conectado en Modelo B, Modelo A sigue sin efecto (`docs/indices_cac_cotizacion_dolar_diseno.md` §4) |
+| `mes_base_cac` | Alta de obra — antes string literal fijo `'Agosto 2026'` en toda obra nueva (bug encontrado 2026-09-10, corregido), ahora `date`, mes real de creación | `factor_cac_obra` (0102) | Conectado (era otra escritura muerta / directamente incorrecta hasta esta corrección) |
 | `anticipo_pct` / `fondo_reparo_pct` / `dias_plazo_pago_certificados` | Sin pantalla de edición encontrada (deuda ya documentada en otra pieza) | `emitir_certificado` / `calcular_totales_certificado` | Conectado del lado de lectura; falta UI de escritura (fuera de este relevamiento) |
-| `monto_total_contratado` | `aprobar_ajuste_contrato` (0008) | `calcular_avance_hitos` (Modelo B) | Conectado |
-| `id_admin_creador`, `moneda`, `mes_base_cac`, `revision`, `superficie_m2`, `ubicacion`, `propietario`, `nombre`, `tipo_obra`, `perfil_creador`, `estado` | `ObrasListScreen` (alta/edición) | Mostrados directamente, sin cálculo derivado | Conectado (son datos descriptivos, no calculados) |
+| `monto_total_contratado` | `aprobar_ajuste_contrato` (0008) | `calcular_avance_hitos` (Modelo B), **`calcular_saldo_pendiente_hitos` (0102)** | Conectado |
+| `id_admin_creador`, `moneda`, `revision`, `superficie_m2`, `ubicacion`, `propietario`, `nombre`, `tipo_obra`, `perfil_creador`, `estado` | `ObrasListScreen` (alta/edición) | Mostrados directamente, sin cálculo derivado | Conectado (son datos descriptivos, no calculados) |
 
 ### `perfiles`
 
@@ -118,7 +119,15 @@ la pieza de "cálculo sismorresistente" del diseño original de Rubros/APU que n
 Las columnas existen con su default desde 0020, sin consecuencia real porque nadie las tocó nunca
 en ninguna dirección.
 
-### Hallazgo #4 — `obras.aplicaCac` no aplica ningún ajuste — **CONFIRMADO, gravedad media**
+### Hallazgo #4 — `obras.aplicaCac` no aplica ningún ajuste — **PARCIALMENTE RESUELTO 2026-09-10**
+
+**Actualización**: ver `docs/indices_cac_cotizacion_dolar_diseno.md`. Ya existe `indices_cac`
+(serie CAMARCO 2026 real) y `factor_cac_obra`/`calcular_saldo_pendiente_hitos` conecta el toggle
+al **Modelo B** (hitos, `monto_total_contratado`). El diagnóstico de abajo sigue vigente tal cual
+para el **Modelo A** (avance medido, la cascada de Factor K) — que es el que usa Seba, y sigue sin
+ajuste real porque no tiene ningún monto congelado contra el cual calcular el cociente
+(`calcular_presupuesto_vivo_obra` recalcula en vivo). Ese congelamiento es la pieza siguiente del
+orden de ejecución (`docs/diagnostico_general_producto.md` §6 punto 5), no resuelta acá.
 
 El toggle vive en el diálogo "Ajuste Económico y Moneda" de `ObrasListScreen`. Cuando está
 apagado, muestra esta advertencia (texto real del código, `obras_list_screen.dart`):
@@ -140,24 +149,24 @@ que existe hoy es el que ya documentó `precio_congelado_vs_recalculado` (memori
 precio se recalcula solo si cambian los insumos/mano de obra subyacentes, nunca por un coeficiente
 CAC — ese mecanismo de coeficiente pactado nunca se construyó.
 
-**Relacionado, no es el mismo bug pero es la misma familia:** la cotización de dólar que usa
-`ObrasListScreen` para las conversiones ARS/USD (`_dolarBnaCompra`/`_dolarBnaVenta = 1340/1390`,
-etiquetada "Agosto 2026 (BNA)") y los indicadores CAC que se muestran en el dashboard
-(`_variacionCacUltimoMes = 3.8`, `_ultimoMesPublicadoCac = 'Julio 2026'`) son **constantes
-hardcodeadas en Dart**, no datos vivos ni columnas de ninguna tabla. No es un caso de
-desincronización (nunca estuvieron conectados a nada real) — es mock conocido, se anota acá solo
-para que no se confunda con el toggle de CAC si se decide encarar cualquiera de las dos piezas.
+**Relacionado, no era el mismo bug pero sí la misma familia — RESUELTO 2026-09-10**: la cotización
+de dólar que usa `ObrasListScreen` para las conversiones ARS/USD y los indicadores CAC del
+dashboard eran **constantes hardcodeadas en Dart** (`_dolarBnaCompra`/`_dolarBnaVenta`,
+`_variacionCacUltimoMes`, `_ultimoMesPublicadoCac`), no datos vivos ni columnas de ninguna tabla —
+no era desincronización (nunca estuvieron conectados a nada real), era mock puro. Ahora viven en
+`cotizacion_dolar_bna`/`indices_cac` (`0102_indices_cac_cotizacion_dolar.sql`) y la pantalla los
+carga al iniciar — ver `docs/indices_cac_cotizacion_dolar_diseno.md`.
 
 ---
 
 ## 3 · Valores mostrados que no se recalculan
 
-### Hallazgo #3 — `obras.monto_total` sigue recibiendo escrituras estáticas — **CONFIRMADO, gravedad media**
+### Hallazgo #3 — `obras.monto_total` sigue recibiendo escrituras estáticas — **RESUELTO 2026-09-10, la gravedad real era mayor a la estimada acá**
 
 Ya se corrigió una vez (0087: tres obras con `monto_total` contaminado por una fórmula de
 superficie; 0091: el dashboard pasó a usar `calcular_presupuesto_vivo_obra` en vez de esta
-columna). Pero el diálogo **"Ajuste Económico y Moneda"** de `ObrasListScreen` (el mismo que
-edita moneda/CAC) todavía hace esto al guardar:
+columna). El diálogo **"Ajuste Económico y Moneda"** de `ObrasListScreen` (el mismo que edita
+moneda/CAC) hacía esto al guardar:
 
 ```dart
 final double montoTotalAnterior = (obra['montoTotal'] as num?)?.toDouble() ?? 0.0;
@@ -171,15 +180,23 @@ await _obrasRepository.actualizarObra(obra['id'] as String, {
 });
 ```
 
-Convierte el total (que en memoria ya es el presupuesto vivo recién calculado, no el viejo
-estático) y lo persiste de nuevo en `obras.monto_total` — la misma columna que 0091 dejó de usar
-como fuente de verdad. Hoy no tiene consecuencia visible porque nada vuelve a leer esa columna
-para mostrar algo (el próximo `_cargarObras()` la pisa con el valor en vivo otra vez) — pero es
-exactamente el mismo patrón de fondo que causó el bug original del dashboard: una pieza (este
-diálogo) se escribió cuando `monto_total` todavía era la fuente de verdad, y nadie la revisó
-cuando eso cambió en 0091. Si algún día alguna función SQL empieza a leer `monto_total`
-directamente (una migración futura, una consulta administrativa, un reporte), va a recibir un
-número potencialmente viejo sin ningún aviso.
+**Corrección a la lectura original de este hallazgo** (verificado al reproducirlo en vivo, no solo
+por inspección): la suposición de que "en memoria ya es el presupuesto vivo recién calculado, no
+el viejo estático" estaba **equivocada**. `_conMontosCalculados` (0091) solo mantiene al día
+`montoEstimadoArs`/`montoEstimadoUsd` — nunca reescribe `obra['montoTotal']` en memoria, que queda
+clavado en `0.0` desde el alta de la obra (0087) para cualquier obra con cómputo real. Este
+diálogo **sí releía esa columna** — `montoTotalAnterior` la usaba como base de la conversión —
+así que no era una escritura muerta sin consecuencia: para toda obra con cómputo cargado, la base
+de la conversión de moneda ya era 0 antes de multiplicar por lo que fuera. **Bug real con
+consecuencia visible inmediata, no solo un riesgo latente para el futuro**: cambiar de USD a ARS
+convertía a 0 (encontrado por Seba, 2026-09-10, al verificar la carga de la cotización BNA —
+`docs/indices_cac_cotizacion_dolar_diseno.md`).
+
+**Corregido**: la base de la conversión pasa a `montoEstimadoArs`/`montoEstimadoUsd` (los campos
+vivos, recalculados en cada `_cargarObras()`), nunca `obra['montoTotal']`. La escritura a
+`obras.monto_total` en sí se mantuvo sin tocar — sigue siendo el mismo patrón de fondo que ya
+señalaba este hallazgo (una pieza apuntando a una columna que otra pieza dejó de mantener), ahora
+con el consumidor real corregido en vez de solo documentado como riesgo.
 
 **No revisado en este relevamiento, fuera de foco:** si hay otras pantallas que también escriban
 `montoTotal` sin pasar por `calcular_presupuesto_vivo_obra`. La búsqueda de escrituras (`git grep

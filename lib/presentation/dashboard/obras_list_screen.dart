@@ -217,8 +217,25 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
   }
 
   // --- Conversión de Moneda (a partir del monto base persistido) ---
+  //
+  // Guarda agregada 2026-09-10 (pedido de Seba, tras el bug real de la conversión dando 0): sin
+  // una cotización válida, esto tiene que avisar, no calcular con un divisor roto en silencio.
+  // `_cotizacionUsdEfectiva` en la práctica nunca debería llegar acá en 0/negativa -- arranca en
+  // el placeholder de `_dolarBnaCompra`/`_dolarBnaVenta` (inicializados síncronos, antes de
+  // cualquier `await`) y `_cargarIndicadoresEconomicos` solo la pisa con un valor real -- pero
+  // la guarda queda igual, para no volver a depender de que esa garantía se sostenga para
+  // siempre sin que nadie la verifique. El error real va a la consola antes de tirar la
+  // excepción -- antes esto no decía nada, ver el comentario de más abajo sobre la causa real
+  // del bug reportado.
   double _convertirMonto(double monto, String monedaOrigen, String monedaDestino) {
     if (monedaOrigen == monedaDestino) return monto;
+    if (_cotizacionUsdEfectiva <= 0) {
+      debugPrint(
+        '_convertirMonto: cotización USD inválida ($_cotizacionUsdEfectiva) -- no se puede '
+        'convertir $monto de $monedaOrigen a $monedaDestino.',
+      );
+      throw StateError('La cotización del dólar todavía no está disponible. Probá de nuevo en un momento.');
+    }
     return monedaOrigen == 'ARS'
         ? monto / _cotizacionUsdEfectiva
         : monto * _cotizacionUsdEfectiva;
@@ -1122,7 +1139,20 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                 style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1B365D)),
                 onPressed: () async {
                   final String monedaAnterior = obra['moneda'] as String;
-                  final double montoTotalAnterior = (obra['montoTotal'] as num?)?.toDouble() ?? 0.0;
+                  // Bug real encontrado 2026-09-10 (Seba, al verificar la carga de la
+                  // cotización): esto leía `obra['montoTotal']`, la columna `obras.monto_total`
+                  // -- que ninguna otra parte de la app mantiene al día desde que existe el
+                  // presupuesto vivo (`calcular_presupuesto_vivo_obra`, 0091). Se escribe en 0.0
+                  // al crear la obra y nunca más, salvo acá mismo -- así que para cualquier obra
+                  // con cómputo real cargado, `montoTotalAnterior` daba 0 siempre, sin importar
+                  // la cotización. No era una carrera contra `_cargarIndicadoresEconomicos` (la
+                  // cotización ya está disponible en un valor no nulo desde el primer frame, ver
+                  // `_convertirMonto`) -- el dato de origen estaba mal, no el momento en que se
+                  // usaba. El monto vivo real ya está en `montoEstimadoArs`/`montoEstimadoUsd`
+                  // (`_conMontosCalculados`, recalculado en cada carga) -- es la fuente correcta.
+                  final double montoTotalAnterior = monedaAnterior == 'ARS'
+                      ? (obra['montoEstimadoArs'] as num?)?.toDouble() ?? 0.0
+                      : (obra['montoEstimadoUsd'] as num?)?.toDouble() ?? 0.0;
                   final double nuevoMontoTotal = monedaSeleccionada == monedaAnterior
                       ? montoTotalAnterior
                       : _convertirMonto(montoTotalAnterior, monedaAnterior, monedaSeleccionada);
@@ -1146,10 +1176,20 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text('Configuración económica guardada.')),
                     );
-                  } catch (e) {
+                  } catch (e, st) {
+                    // El error real a la consola -- antes esto no decía nada, y un StateError de
+                    // _convertirMonto (cotización inválida) se mostraba igual que cualquier otro
+                    // fallo de guardado, sin poder distinguir la causa.
+                    debugPrint('_configurarAjusteEconomico: guardar falló: $e\n$st');
                     if (!context.mounted) return;
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('No se pudo guardar la configuración. Intente nuevamente.')),
+                      SnackBar(
+                        content: Text(
+                          e is StateError
+                              ? e.message
+                              : 'No se pudo guardar la configuración. Intente nuevamente.',
+                        ),
+                      ),
                     );
                   }
                 },

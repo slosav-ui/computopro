@@ -101,6 +101,17 @@ después. Esa parte de la lectura de Seba era correcta.
   mes a mes, para certificar. Mat y MO sigue su propio camino con los precios reales del mercado,
   pero eso no toca el presupuesto ya presentado. Son dos cosas separadas."*
 
+  **Aclaración de Seba, para que quede escrita antes de diseñar el snapshot**: el índice CAC
+  actualiza los precios de lo que falta ejecutar, nunca lo ya ejecutado y certificado hasta la
+  fecha de ese índice — un certificado emitido quedó pago a su valor y no se toca (coincide con
+  lo ya verificado arriba: `emitir_certificado` congela el monto). **El ajuste se aplica sobre el
+  saldo pendiente, no sobre el total de la obra** — mismo principio que ya rige
+  `calcular_saldo_pendiente_hitos` en el Modelo B (arriba: `monto_total_contratado − hitos
+  finalizados`, nunca el total bruto). Cuando se diseñe el snapshot del Modelo A, el "monto
+  original" congelado tiene que ser por partida (o por lo que quede sin certificar de cada
+  partida), no un número único de toda la obra — para que "lo ya certificado" pueda excluirse
+  partida por partida, igual que hace el Modelo B a nivel de hito.
+
 **Consecuencia para el corte**: se construyó lo que ya es correcto hoy (tabla de índices,
 cotización, conexión al Modelo B) y se deja anotado — como la pieza siguiente, no como una idea
 para después — el snapshot del Modelo A que el punto 3 necesita.
