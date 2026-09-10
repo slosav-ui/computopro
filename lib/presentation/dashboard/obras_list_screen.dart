@@ -4,6 +4,7 @@ import '../../core/utils/parser_numero_ar.dart';
 import '../../data/models/invitacion.dart';
 import '../obra_detalle/screens/presupuestos_screen.dart';
 import '../auth/aceptar_invitacion_screen.dart';
+import 'editar_perfil_screen.dart';
 import '../../services/obras_repository.dart';
 import '../../services/auth_service.dart';
 import '../../services/invitaciones_repository.dart';
@@ -1598,6 +1599,18 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                     Icon(Icons.key_outlined, size: 18, color: Color(0xFF1B365D)),
                     SizedBox(width: 10),
                     Text('Ingresar código de invitación'),
+                  ],
+                ),
+              ),
+              PopupMenuItem<VoidCallback>(
+                value: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const EditarPerfilScreen()),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.person_outline, size: 18, color: Color(0xFF1B365D)),
+                    SizedBox(width: 10),
+                    Text('Mi perfil'),
                   ],
                 ),
               ),

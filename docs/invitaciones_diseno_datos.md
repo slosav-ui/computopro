@@ -279,13 +279,12 @@ sobre la Tanda 1: el ícono que antes abría `InvitarMiembroScreen` directo (gat
 como corresponde a "ver miembros" — y "Invitar" pasa a vivir *adentro* de esa pantalla, gateado ahí.
 Un solo punto de entrada para toda la gestión de gente, no dos íconos.
 
-**Gap real encontrado, no resuelto acá:** no hay ninguna forma de mostrar un nombre o email
-legible — ni de un miembro ni de quien invitó a alguien. `perfiles` (`0014_perfiles.sql`) solo
-tiene `usuario_id`/`es_pro`, y el cliente no puede leer `auth.users.email` de otra persona (no hay
-RLS que lo permita, ni debería sin acotar a quién). La pantalla muestra el UUID acortado como
-identificador — sirve para distinguir filas, no para reconocer a alguien por nombre. Agregar un
-campo de nombre/email visible a `perfiles`, con una forma acotada de resolverlo para compañeros de
-obra (no para cualquier usuario autenticado), es una pieza aparte, más grande que esta tanda.
+**Gap real encontrado — RESUELTO el mismo día, ver `docs/perfiles_nombre_telefono_diseno.md`.**
+No había ninguna forma de mostrar un nombre legible, ni de un miembro ni de quien invitó a
+alguien — `perfiles` (`0014_perfiles.sql`) solo tenía `usuario_id`/`es_pro`. Se agregaron
+`nombre`/`telefono` (`0099_perfiles_nombre_telefono.sql`), pedidos en el registro y editables
+después (`EditarPerfilScreen`), visibles entre compañeros de obra vía `get_perfiles_de_obra` —
+nunca `es_pro`, que sigue siendo estrictamente privado de cada uno.
 
 ## 11. Archivos (Tanda 2) — CERRADO 2026-09-10
 
@@ -356,8 +355,8 @@ directo).
 ## 13. Qué queda para después
 
 - **Verificación en el emulador de la Tanda 2** — nunca se probó (Tanda 1 sí, de punta a punta).
-- **Nombre/email visible** para miembros e invitadores — gap real encontrado al construir la
-  Tanda 2, ver §10. Pieza aparte, más grande que agregar una columna.
+- **Verificación de nombre/teléfono** (`docs/perfiles_nombre_telefono_diseno.md`) — migración
+  0099 sin aplicar, sin correr en el emulador.
 - **Agregar/quitar roles individuales** a alguien que ya está en la obra — mecánicamente simple
   (§10), pero fuera del pedido explícito de esta tanda.
 - El **Panel de Delegación de Firma** (`cliente_principal` gestionando su `invitado_apoderado`) —

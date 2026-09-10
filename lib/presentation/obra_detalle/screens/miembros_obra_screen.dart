@@ -4,9 +4,11 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/segurity/user_context.dart';
 import '../../../data/models/invitacion.dart';
 import '../../../data/models/obra_member.dart';
+import '../../../data/models/perfil_basico.dart';
 import '../../../services/auth_service.dart';
 import '../../../services/invitaciones_repository.dart';
 import '../../../services/obra_members_repository.dart';
+import '../../../services/perfil_repository.dart';
 import 'invitar_miembro_screen.dart';
 
 /// Invitaciones, Tanda 2 — ver `docs/invitaciones_diseno_datos.md`. Miembros activos de la obra,
@@ -29,9 +31,14 @@ class _MiembrosObraScreenState extends State<MiembrosObraScreen> {
   final _authService = AuthService();
   final _obraMembersRepository = ObraMembersRepository();
   final _invitacionesRepository = InvitacionesRepository();
+  final _perfilRepository = PerfilRepository();
 
   List<ObraMember> _miembros = [];
   List<Invitacion> _invitaciones = [];
+  // usuario_id -> nombre/teléfono, de get_perfiles_de_obra (0099_perfiles_nombre_telefono.sql).
+  // Mapa vacío en vez de null cuando falla -- degrada a mostrar el UUID acortado (ver _idCorto),
+  // nunca rompe la pantalla por un problema en un dato secundario.
+  Map<String, PerfilBasico> _perfiles = {};
   bool _cargando = true;
   String? _error;
 
@@ -57,13 +64,18 @@ class _MiembrosObraScreenState extends State<MiembrosObraScreen> {
       final invitacionesFuture = _puedeVerInvitaciones
           ? _invitacionesRepository.getTodasLasInvitaciones(widget.obraId)
           : Future.value(<Invitacion>[]);
+      // Nombre/teléfono son un dato secundario acá -- si get_perfiles_de_obra falla por lo que
+      // sea, la pantalla sigue funcionando con el UUID acortado en vez de romperse entera.
+      final perfilesFuture = _perfilRepository.getPerfilesDeObra(widget.obraId).catchError((_) => <PerfilBasico>[]);
 
       final miembros = await miembrosFuture;
       final invitaciones = await invitacionesFuture;
+      final perfiles = await perfilesFuture;
       if (!mounted) return;
       setState(() {
         _miembros = miembros;
         _invitaciones = invitaciones;
+        _perfiles = {for (final p in perfiles) p.usuarioId: p};
         _cargando = false;
       });
     } catch (e) {
@@ -91,7 +103,7 @@ class _MiembrosObraScreenState extends State<MiembrosObraScreen> {
         content: Text(
           esUnoMismo
               ? '¿Salir de esta obra como ${etiquetaRol(miembro.rol)}? Vas a perder el acceso.'
-              : '¿Sacar a este integrante (${etiquetaRol(miembro.rol)}) de la obra?\n\n'
+              : '¿Sacar a ${_nombreMostrado(miembro.usuarioId)} (${etiquetaRol(miembro.rol)}) de la obra?\n\n'
                   'Se le quita el acceso. Lo que ya cargó -- avance, partidas -- no se borra: '
                   'queda igual, atribuido a esta persona.',
         ),
@@ -242,13 +254,30 @@ class _MiembrosObraScreenState extends State<MiembrosObraScreen> {
     );
   }
 
+  // Nombre si `get_perfiles_de_obra` lo trajo, UUID acortado si no (todavía no lo cargó, o
+  // falló la consulta) -- nunca deja la fila sin ningún identificador.
+  String _nombreMostrado(String usuarioId) {
+    final nombre = _perfiles[usuarioId]?.nombre;
+    if (nombre != null) return nombre;
+    return 'ID: ${_idCorto(usuarioId)}…';
+  }
+
   Widget _buildMiembroCard(ObraMember miembro) {
     final esUnoMismo = miembro.usuarioId == _authService.usuarioActual?.id;
+    final telefono = _perfiles[miembro.usuarioId]?.telefono;
+    final invitadoPorId = miembro.invitadoPorUsuarioId;
     final permisos = <String>[
       if (miembro.permisosEspeciales.puedeInvitarTerceros) 'invita terceros',
       if (miembro.permisosEspeciales.puedeVerApuAjena) 've APU ajena',
       if (miembro.permisosEspeciales.puedeAprobarCertificados) 'aprueba certificados',
     ];
+    final lineaSecundaria = <String>[
+      etiquetaRol(miembro.rol),
+      ?telefono,
+      if (permisos.isNotEmpty) permisos.join(', '),
+      if (invitadoPorId != null) 'invitado por ${_nombreMostrado(invitadoPorId)}',
+    ].join(' · ');
+
     return Card(
       margin: const EdgeInsets.only(bottom: 6),
       child: ListTile(
@@ -256,7 +285,13 @@ class _MiembrosObraScreenState extends State<MiembrosObraScreen> {
         leading: const Icon(Icons.person_outline, color: Color(0xFF1B365D)),
         title: Row(
           children: [
-            Text(etiquetaRol(miembro.rol), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+            Flexible(
+              child: Text(
+                _nombreMostrado(miembro.usuarioId),
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+              ),
+            ),
             if (esUnoMismo) ...[
               const SizedBox(width: 6),
               Container(
@@ -267,11 +302,7 @@ class _MiembrosObraScreenState extends State<MiembrosObraScreen> {
             ],
           ],
         ),
-        subtitle: Text(
-          'ID: ${_idCorto(miembro.usuarioId)}…'
-          '${permisos.isNotEmpty ? ' · ${permisos.join(', ')}' : ''}',
-          style: const TextStyle(fontSize: 11),
-        ),
+        subtitle: Text(lineaSecundaria, style: const TextStyle(fontSize: 11)),
         trailing: _puedeQuitar
             ? IconButton(
                 icon: const Icon(Icons.person_remove_outlined, size: 20, color: Colors.red),

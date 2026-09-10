@@ -16,9 +16,23 @@ class AuthService {
   User? get usuarioActual => _client.auth.currentUser;
   Stream<AuthState> get cambiosDeEstado => _client.auth.onAuthStateChange;
 
-  Future<void> registrarse({required String email, required String password}) async {
+  /// [nombre]/[telefono] viajan como `data` del signup (`raw_user_meta_data` en `auth.users`) --
+  /// el trigger `handle_new_user_perfil` (`0099_perfiles_nombre_telefono.sql`) los lee de ahí al
+  /// crear la fila de `perfiles`. Sin esto acá, no hay otro momento en que la app conozca el
+  /// nombre de alguien que recién se registra (la sesión todavía no existe para llamar
+  /// `actualizar_mi_perfil` antes de este punto).
+  Future<void> registrarse({
+    required String email,
+    required String password,
+    required String nombre,
+    String? telefono,
+  }) async {
     try {
-      final response = await _client.auth.signUp(email: email, password: password);
+      final response = await _client.auth.signUp(
+        email: email,
+        password: password,
+        data: {'nombre': nombre, if (telefono != null && telefono.isNotEmpty) 'telefono': telefono},
+      );
       if (response.user != null && (response.user!.identities?.isEmpty ?? false)) {
         throw const AuthFriendlyException('Ese email ya está registrado. Iniciá sesión en su lugar.');
       }

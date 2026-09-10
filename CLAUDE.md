@@ -39,9 +39,15 @@ negocio cerrado 2026-09-10, sin diseño de datos ni código todavía: `docs/lici
 Depende de que las invitaciones (hoy en cero, diagnóstico §6 punto 4) existan primero.
 
 **Invitaciones a una obra** (tabla `invitaciones`, código pegado a mano por ahora, RPC
-`aceptar_invitacion`, 5 roles invitables sin `admin_maestro`, regla "un permiso no regala PRO") —
-diseño de datos cerrado 2026-09-10, sin código todavía: `docs/invitaciones_diseno_datos.md`. Es el
-punto 4 del orden de ejecución y la dependencia real de la licitación privada de arriba.
+`aceptar_invitacion`, 5 roles invitables sin `admin_maestro`, regla "un permiso no regala PRO",
+panel de miembros con revocar/sacar) — Tanda 1 verificada de punta a punta, Tanda 2 escrita sin
+correr en emulador: `docs/invitaciones_diseno_datos.md`. Es el punto 4 del orden de ejecución y la
+dependencia real de la licitación privada de arriba.
+
+**Nombre y teléfono en `perfiles`** (visibles entre compañeros de obra, nunca `es_pro`; pedidos en
+el registro, editables después) — `docs/perfiles_nombre_telefono_diseno.md`. Resuelve el gap de
+"la pantalla de miembros no tenía nada legible para mostrar" encontrado al construir la Tanda 2 de
+arriba.
 
 ## Especificación funcional y de negocio (resumen de `docs/especificacion_funcional*.md`)
 

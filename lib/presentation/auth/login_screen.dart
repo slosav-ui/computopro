@@ -16,6 +16,8 @@ class _LoginScreenState extends State<LoginScreen> {
   final _authService = AuthService();
   final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
+  final _nombreCtrl = TextEditingController();
+  final _telefonoCtrl = TextEditingController();
 
   bool _modoRegistro = false;
   bool _cargando = false;
@@ -25,6 +27,8 @@ class _LoginScreenState extends State<LoginScreen> {
   void dispose() {
     _emailCtrl.dispose();
     _passwordCtrl.dispose();
+    _nombreCtrl.dispose();
+    _telefonoCtrl.dispose();
     super.dispose();
   }
 
@@ -33,6 +37,14 @@ class _LoginScreenState extends State<LoginScreen> {
     if (v.isEmpty) return 'Ingresá tu email.';
     final regex = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
     if (!regex.hasMatch(v)) return 'Ingresá un email válido.';
+    return null;
+  }
+
+  // Solo se valida en modo registro (ver el TextFormField más abajo, validator condicional) --
+  // en modo login el campo ni se muestra.
+  String? _validarNombre(String? value) {
+    final v = value?.trim() ?? '';
+    if (v.isEmpty) return 'Ingresá tu nombre.';
     return null;
   }
 
@@ -54,6 +66,8 @@ class _LoginScreenState extends State<LoginScreen> {
         await _authService.registrarse(
           email: _emailCtrl.text.trim(),
           password: _passwordCtrl.text,
+          nombre: _nombreCtrl.text.trim(),
+          telefono: _telefonoCtrl.text.trim(),
         );
       } else {
         await _authService.iniciarSesion(
@@ -104,6 +118,38 @@ class _LoginScreenState extends State<LoginScreen> {
                       style: const TextStyle(fontSize: 13, color: Colors.black54),
                     ),
                     const SizedBox(height: 24),
+                    // Nombre/teléfono solo en modo registro -- ver AuthService.registrarse: se
+                    // guardan en auth.users como metadata del signup, y el trigger de perfiles
+                    // los lee de ahí (0099_perfiles_nombre_telefono.sql). Es el único momento en
+                    // que la app puede capturarlos sin una pantalla de edición aparte -- por eso
+                    // nombre es obligatorio acá, no opcional para completar después.
+                    if (_modoRegistro) ...[
+                      TextFormField(
+                        controller: _nombreCtrl,
+                        textCapitalization: TextCapitalization.words,
+                        autofillHints: const [AutofillHints.name],
+                        decoration: const InputDecoration(
+                          labelText: 'Nombre',
+                          helperText: 'Así te van a ver tus compañeros de obra.',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                        validator: _validarNombre,
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _telefonoCtrl,
+                        keyboardType: TextInputType.phone,
+                        autofillHints: const [AutofillHints.telephoneNumber],
+                        decoration: const InputDecoration(
+                          labelText: 'Teléfono (opcional)',
+                          helperText: 'En obra se llama por teléfono, no se manda mail.',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
                     TextFormField(
                       controller: _emailCtrl,
                       keyboardType: TextInputType.emailAddress,
