@@ -202,7 +202,10 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> with SingleTick
               : const Center(child: Text('No se pudo determinar la obra.')),
           _buildTabApu(),
           _obraId != null
-              ? MatYMoTab(obraId: _obraId!)
+              ? MatYMoTab(
+                  obraId: _obraId!,
+                  puedeVerMontosYAPU: _userContext?.puedeVerMontosYAPU == true,
+                )
               : const Center(child: Text('No se pudo determinar la obra.')),
           _buildTabProveedores(),
           _obraId != null

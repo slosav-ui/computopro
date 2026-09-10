@@ -28,7 +28,19 @@ class _SeccionInsumos {
 class MatYMoTab extends StatefulWidget {
   final String obraId;
 
-  const MatYMoTab({Key? key, required this.obraId}) : super(key: key);
+  // Regla de visibilidad 1 de UserContext (Caja Blanca: admin_maestro/profesional) — mismo gate
+  // que ya usan RubrosTab/SubitemsScreen para precio/subtotal. Constructor (Vista Operativa) y
+  // Cliente Principal (Caja Negra Comercial, ve montos de certificados pero no la estructura de
+  // costo interna) quedan afuera igual: acá no hay un permiso aparte para "ve montos de obra pero
+  // no de insumos" — es la misma pregunta que ya resuelve este getter en el resto de la app.
+  //
+  // Sin puedeVerMontosYAPU: cantidad sola por insumo, sin precio/valor hora/cartel de costo de
+  // mano de obra ni lápiz de edición — oculto, no deshabilitado (mismo criterio que
+  // SubitemsScreen). RLS no filtra columnas, solo filas: el consolidado sigue viajando completo
+  // al cliente para estos roles, esto es exclusivamente el gate de la capa de app.
+  final bool puedeVerMontosYAPU;
+
+  const MatYMoTab({Key? key, required this.obraId, required this.puedeVerMontosYAPU}) : super(key: key);
 
   @override
   State<MatYMoTab> createState() => _MatYMoTabState();
@@ -260,7 +272,9 @@ class _MatYMoTabState extends State<MatYMoTab> {
               // que _buildSeccion: sin banner sobre una lista vacía). onCambio sigue apuntando a
               // _cargarConsolidado, que ahora también recarga config y valor hora por categoría —
               // el cartel no se tocó, solo lo que ese callback hace por dentro.
-              if (seccion.titulo == 'Mano de obra' && _insumos.any(seccion.predicado))
+              if (seccion.titulo == 'Mano de obra' &&
+                  _insumos.any(seccion.predicado) &&
+                  widget.puedeVerMontosYAPU)
                 CartelCostoManoObra(obraId: widget.obraId, onCambio: _cargarConsolidado),
               ..._buildSeccion(seccion),
             ],
@@ -333,6 +347,11 @@ class _MatYMoTabState extends State<MatYMoTab> {
   }
 
   Widget _buildTrailing(InsumoConsolidadoObra insumo) {
+    // Gate de privacidad primero, antes de cualquier otro caso — mismo criterio que
+    // SubitemsScreen._buildContenido: sin puedeVerMontosYAPU, nada de precio/valor hora/edición
+    // para esta fila, sin importar si tiene precio cargado o no.
+    if (!widget.puedeVerMontosYAPU) return const SizedBox.shrink();
+
     // "Volver" a la vista, en la propia fila (Paso 5, tanda 2 — ver
     // docs/costo_mano_de_obra_decisiones.md §15): el camino principal para deshacer un override no
     // es el panel del lápiz, es esto — el usuario que fijó un valor hace dos meses no va a abrir
