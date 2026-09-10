@@ -54,6 +54,20 @@ class InvitacionesRepository {
     return (data as List).map((row) => Invitacion.fromRow(row as Map<String, dynamic>)).toList();
   }
 
+  /// De solo lectura, sin efecto — funciona sin sesión activa (ver el grant a `anon` en
+  /// `0096_invitaciones_previsualizar.sql`). `null` significa código inexistente, vencido, o ya
+  /// usado — mismo criterio de mensaje único que `aceptar_invitacion`, no se distingue el motivo.
+  Future<VistaPreviaInvitacion?> previsualizarInvitacion(String codigo) async {
+    final data = await _client.rpc('previsualizar_invitacion', params: {'p_codigo': codigo});
+    final filas = data as List;
+    if (filas.isEmpty) return null;
+    final fila = filas.first as Map<String, dynamic>;
+    return VistaPreviaInvitacion(
+      obraNombre: fila['obra_nombre']?.toString() ?? '',
+      rol: rolDesdeColumna(fila['rol']?.toString()),
+    );
+  }
+
   Future<ResultadoInvitacionAceptada> aceptarInvitacion(String codigo) async {
     final data = await _client.rpc('aceptar_invitacion', params: {'p_codigo': codigo});
     // returns table(...) -> lista de una fila.

@@ -137,6 +137,17 @@ String etiquetaRol(RolProyecto rol) {
   }
 }
 
+/// Lo que devuelve `previsualizar_invitacion` — a diferencia de `aceptar_invitacion`, de solo
+/// lectura, sin efecto: sirve para mostrar a qué obra y con qué rol se va a sumar alguien ANTES
+/// de canjear (ver `docs/invitaciones_diseno_datos.md` §7 — feedback de Seba tras probar el
+/// circuito, evita que un código pendiente se aplique a la cuenta equivocada en silencio).
+class VistaPreviaInvitacion {
+  final String obraNombre;
+  final RolProyecto rol;
+
+  const VistaPreviaInvitacion({required this.obraNombre, required this.rol});
+}
+
 /// Lo que devuelve `aceptar_invitacion` — no es una fila de `invitaciones` (esa la vuelve a leer
 /// quien invitó, no quien acepta), es el resumen para mostrarle a quien se acaba de sumar.
 class ResultadoInvitacionAceptada {

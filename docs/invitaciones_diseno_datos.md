@@ -1,13 +1,19 @@
 # Invitaciones a una obra — diseño de datos (2026-09-10)
 
-**Estado: Tanda 1 aplicada y con Dart escrito, 2026-09-10.** Migración `0095_invitaciones.sql`
-aplicada y verificada por Seba (2 políticas, 3 funciones, código de ejemplo generado sin
-caracteres confusos). Del lado de Dart: modelo, repositorio, las dos pantallas
-(`InvitarMiembroScreen`/`AceptarInvitacionScreen`), el getter `UserContext.puedeInvitarMiembros`,
-y los puntos de entrada (ícono en `PresupuestosScreen` para invitar, ícono en `ObrasListScreen` y
-enlace en `LoginScreen` para ingresar código) — todo escrito, sin verificar en el emulador
-todavía. Tanda 2 (panel de miembros, revocar) sigue sin empezar. Es el punto 4 del orden de
-ejecución
+**Estado: Tanda 1 aplicada y con Dart escrito, 2026-09-10 — ajustada tras la primera prueba de
+Seba.** Migración `0095_invitaciones.sql` aplicada y verificada por Seba (2 políticas, 3
+funciones, código de ejemplo generado sin caracteres confusos). Al probar el circuito de punta a
+punta aparecieron dos problemas reales que corrigió una segunda migración
+(`0096_invitaciones_previsualizar.sql`, función `previsualizar_invitacion`) — ver §7 para el
+detalle: la pantalla de pegar el código no explicaba qué seguía, y el código pendiente se aplicaba
+al primer usuario que iniciara sesión en el dispositivo, sin confirmar que fuera la persona
+correcta. Del lado de Dart: modelo, repositorio, las dos pantallas
+(`InvitarMiembroScreen`/`AceptarInvitacionScreen`, esta última ahora en dos pasos —
+previsualizar y confirmar), el getter `UserContext.puedeInvitarMiembros`, y los puntos de entrada
+(ícono en `PresupuestosScreen` para invitar, menú en `ObrasListScreen` y enlace en `LoginScreen`
+para ingresar código) — escrito, `flutter analyze` limpio, **sin re-verificar en el emulador
+todavía** el circuito corregido. Tanda 2 (panel de miembros, revocar) sigue sin empezar. Es el
+punto 4 del orden de ejecución
 (`docs/diagnostico_general_producto.md`) y la dependencia real de
 `docs/licitacion_privada_presupuestos_diseno.md` ("por invitación desde la app" no se puede
 construir sin esto). Diagnóstico completo hecho contra el código real, no contra la spec —
@@ -157,13 +163,32 @@ el mensaje "Confirmá tu email antes de iniciar sesión"), así que entre "toca 
 con sesión activa" pueden pasar minutos u horas, con la app cerrada en el medio. Nada en memoria
 (`Navigator`, estado de widget) sobrevive eso.
 
-**Diseño**: apenas se pega el código, se guarda en `SharedPreferences` — mismo mecanismo que ya usa
-el proyecto para estado que cruza reinicios (`CartelCostoManoObra`, aviso de zona UOCRA).
-`AuthGate` (ya reactivo a `onAuthStateChange`) chequea si hay un token pendiente cada vez que
-detecta sesión activa: si lo hay, llama a `aceptar_invitacion`, muestra el resultado, borra el
-token guardado. Cubre los tres casos por igual — aceptar en caliente ya logueado, registrarse y
-confirmar por email más tarde, o cerrar la app en el medio — porque no depende de que el flujo en
-memoria siga vivo.
+**Diseño, versión final (ajustada tras probar el circuito, 2026-09-10)**: `SharedPreferences` sigue
+siendo el mecanismo para cruzar el reinicio — mismo patrón que ya usa el proyecto
+(`CartelCostoManoObra`, aviso de zona UOCRA) — pero la primera versión tenía dos problemas reales
+que Seba encontró al probarla:
+
+1. **La pantalla de pegar el código guardaba y volvía sin explicar nada.** Corregido con
+   `previsualizar_invitacion(codigo)` (`0096_invitaciones_previsualizar.sql`), de solo lectura y
+   sin sesión (primer `grant ... to anon` del proyecto — todo lo demás requiere estar logueado).
+   `AceptarInvitacionScreen` pasa a dos pasos: pegar el código → ver "Te invitaron a la obra
+   '{nombre}' como {rol}" con todas las letras → recién ahí, si no hay sesión, se guarda el código
+   y se vuelve a `LoginScreen` (no a una pantalla neutra).
+2. **El código se aplicaba al primer usuario que iniciara sesión en el dispositivo, sin
+   preguntar.** Si el código quedaba guardado y después entraba una cuenta distinta a la que lo
+   pegó (celular prestado, otra persona logueándose en el mismo instalador), se sumaba a quien no
+   correspondía. Corregido: en vez de canjear directo, `ObrasListScreen.initState()` ahora
+   previsualiza el código pendiente y pide confirmación explícita — "Tenés una invitación a la
+   obra '{nombre}' como {rol}. ¿Sumarte ahora?" — antes de llamar a `aceptar_invitacion`. El
+   código pendiente se borra apenas se resuelve la pregunta (confirme o no), para no insistir en
+   cada login siguiente.
+
+`previsualizar_invitacion` no tiene el freno de fuerza bruta de `aceptar_invitacion` (§5) — no
+puede, porque `audit_log.usuario_id` es `not null` y quien previsualiza puede no tener sesión
+todavía. Límite aceptado, no resuelto: revela el nombre de una obra real a quien adivine un código
+válido, sin darle acceso (eso sigue exigiendo `aceptar_invitacion`, con sesión y con freno). El
+espacio de 852.891 millones de combinaciones (§5) sigue siendo la defensa real contra la
+adivinanza a ciegas.
 
 ## 8. Sacar a alguien de la obra — ya resuelto por lo que existe
 
@@ -193,21 +218,27 @@ invitaciones pendientes/vencidas, botón revocar/quitar (usa el UPDATE de `activ
 
 Nuevos:
 - `supabase/migrations/0095_invitaciones.sql` — aplicada y verificada.
+- `supabase/migrations/0096_invitaciones_previsualizar.sql` — `previsualizar_invitacion`, aplicada
+  tras el ajuste de §7.
 - `lib/data/models/invitacion.dart` — `Invitacion`, `ResultadoInvitacionAceptada`,
-  `columnaDesdeRol`/`rolDesdeColumna`, `etiquetaRol`.
+  `VistaPreviaInvitacion`, `columnaDesdeRol`/`rolDesdeColumna`, `etiquetaRol`.
 - `lib/services/invitaciones_repository.dart` — `crearInvitacion`, `getInvitacionesPendientes`
-  (para la Tanda 2), `aceptarInvitacion`, `revocarInvitacion`, y `InvitacionPendiente`
-  (`SharedPreferences`, guardar/leer/borrar el código entre sesión y registro).
+  (para la Tanda 2), `previsualizarInvitacion`, `aceptarInvitacion`, `revocarInvitacion`, y
+  `InvitacionPendiente` (`SharedPreferences`, guardar/leer/borrar el código entre sesión y
+  registro).
 - `lib/presentation/obra_detalle/screens/invitar_miembro_screen.dart`
-- `lib/presentation/auth/aceptar_invitacion_screen.dart`
+- `lib/presentation/auth/aceptar_invitacion_screen.dart` — dos pasos: previsualizar y confirmar.
 
 Tocados:
 - `lib/core/segurity/user_context.dart` — getter nuevo `puedeInvitarMiembros` (regla de
   visibilidad 10), mismo criterio que la política `invitaciones_insert`.
 - `lib/presentation/obra_detalle/screens/presupuestos_screen.dart` — ícono "Invitar" en el AppBar,
   gateado por `puedeInvitarMiembros`.
-- `lib/presentation/dashboard/obras_list_screen.dart` — ícono "Ingresar código" en el AppBar, y
-  `_canjearInvitacionPendiente()` en `initState` (best-effort, silencioso en el fracaso).
+- `lib/presentation/dashboard/obras_list_screen.dart` — `_canjearInvitacionPendiente()` en
+  `initState` (previsualiza y pide confirmación, ver §7), y el punto de entrada de "Ingresar
+  código" plegado en un menú junto con "Ver obras en mapa" (`PopupMenuButton`, un solo ícono) en
+  vez de un botón propio — ajuste de interfaz (feedback de Seba): un cuarto botón en el AppBar
+  tapaba el indicador Free/PRO, que tiene que quedar siempre visible.
 - `lib/presentation/auth/login_screen.dart` — enlace "¿Tenés un código de invitación?" para quien
   todavía no tiene cuenta.
 

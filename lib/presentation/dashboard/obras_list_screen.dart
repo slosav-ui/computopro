@@ -47,19 +47,54 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
   }
 
   /// Si quedó un código guardado (pegado antes de tener sesión -- ver
-  /// `AceptarInvitacionScreen`/`docs/invitaciones_diseno_datos.md` §7), lo canjea acá: es el
-  /// primer momento en que hay sesión activa Y un `BuildContext` con `Scaffold` para avisar.
+  /// `AceptarInvitacionScreen`/`docs/invitaciones_diseno_datos.md` §7), lo revisa acá: es el
+  /// primer momento en que hay sesión activa Y un `BuildContext` con `Scaffold` para preguntar.
   /// `initState` corre una sola vez por sesión real -- `AuthGate` reusa la misma instancia de
   /// `ObrasListScreen` (es `const`) en los rebuilds que no cambian de sesión (ej. refresh de
   /// token), así que esto no reintenta en cada uno de esos.
   ///
-  /// Silencioso en el fracaso a propósito: es un best-effort en segundo plano, no el camino
-  /// principal de error -- si el código venció o ya se usó, la persona todavía lo tiene en su
-  /// WhatsApp y puede reintentar a mano desde "Ingresar código" con el mensaje real.
+  /// Ajuste sobre la primera versión (feedback de Seba, 2026-09-10): antes canjeaba directo, en
+  /// silencio -- si el código quedaba guardado en el dispositivo y después entraba una cuenta
+  /// distinta a la que lo pegó (celular prestado, u otra persona logueándose en el mismo
+  /// instalador), se sumaba a la obra a quien no correspondía, sin que nadie lo pidiera. Ahora
+  /// primero previsualiza (`previsualizar_invitacion`, de solo lectura) y pide confirmación
+  /// mostrando a qué obra y con qué rol -- recién ahí canjea.
+  ///
+  /// El código pendiente se borra apenas se resuelve la pregunta (confirme o no) -- no vuelve a
+  /// preguntar en cada login siguiente. Si la previsualización ya da inválido/vencido, se borra
+  /// en silencio sin diálogo: no hay nada que confirmar, y el mensaje real queda para el
+  /// reintento manual desde "Ingresar código".
   Future<void> _canjearInvitacionPendiente() async {
     final codigo = await InvitacionPendiente.leer();
     if (codigo == null) return;
+
+    VistaPreviaInvitacion? vista;
+    try {
+      vista = await _invitacionesRepository.previsualizarInvitacion(codigo);
+    } catch (_) {
+      vista = null;
+    }
+    if (vista == null) {
+      await InvitacionPendiente.borrar();
+      return;
+    }
+
+    if (!mounted) return;
+    final confirmar = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        title: const Text('Invitación pendiente'),
+        content: Text('Tenés una invitación a la obra "${vista!.obraNombre}" como ${etiquetaRol(vista.rol)}. ¿Sumarte ahora?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Ahora no')),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Sumarme')),
+        ],
+      ),
+    );
     await InvitacionPendiente.borrar();
+    if (confirmar != true) return;
+
     try {
       final resultado = await _invitacionesRepository.aceptarInvitacion(codigo);
       if (!mounted) return;
@@ -67,10 +102,12 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
         SnackBar(content: Text('Te sumaste a la obra "${resultado.obraNombre}" como ${etiquetaRol(resultado.rol)}.')),
       );
       _cargarObras();
-    } on PostgrestException catch (_) {
-      // Ver el comentario de arriba: silencioso, el mensaje real queda para el reintento manual.
+    } on PostgrestException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
     } catch (_) {
-      // Idem.
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No se pudo sumar a la obra.')));
     }
   }
 
@@ -1532,17 +1569,39 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
           style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.2, fontSize: 18, color: Colors.white),
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.key_outlined, color: Colors.white),
-            tooltip: 'Ingresar código de invitación',
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const AceptarInvitacionScreen()),
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.map_outlined, color: Colors.white),
-            tooltip: 'Ver Obras en Mapa',
-            onPressed: _mostrarMapaObras,
+          // Un solo ícono para las dos acciones secundarias (mapa, ingresar código) -- ajuste de
+          // interfaz sobre la primera versión (feedback de Seba, 2026-09-10): el ícono de
+          // invitación como botón propio dejaba 4 acciones en la fila y tapaba el indicador
+          // Free/PRO, que tiene que quedar siempre visible. Con esto la fila vuelve a las 3
+          // acciones de antes (menú, indicador, cerrar sesión).
+          PopupMenuButton<VoidCallback>(
+            icon: const Icon(Icons.more_vert, color: Colors.white),
+            tooltip: 'Más opciones',
+            onSelected: (accion) => accion(),
+            itemBuilder: (context) => [
+              PopupMenuItem<VoidCallback>(
+                value: _mostrarMapaObras,
+                child: const Row(
+                  children: [
+                    Icon(Icons.map_outlined, size: 18, color: Color(0xFF1B365D)),
+                    SizedBox(width: 10),
+                    Text('Ver obras en mapa'),
+                  ],
+                ),
+              ),
+              PopupMenuItem<VoidCallback>(
+                value: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const AceptarInvitacionScreen()),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.key_outlined, size: 18, color: Color(0xFF1B365D)),
+                    SizedBox(width: 10),
+                    Text('Ingresar código de invitación'),
+                  ],
+                ),
+              ),
+            ],
           ),
           InkWell(
             onTap: _mostrarModalPro,
