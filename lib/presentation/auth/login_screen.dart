@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../services/auth_service.dart';
+import 'aceptar_invitacion_screen.dart';
 
 /// Pantalla de Login/Registro (email + contraseña). Se muestra antes de
 /// "Mis Obras" cuando no hay sesión activa de Supabase Auth (ver AuthGate).
@@ -165,6 +166,17 @@ class _LoginScreenState extends State<LoginScreen> {
                             ? '¿Ya tenés cuenta? Iniciá sesión'
                             : '¿No tenés cuenta? Registrate',
                         style: const TextStyle(fontSize: 12),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: _cargando
+                          ? null
+                          : () => Navigator.of(context).push(
+                                MaterialPageRoute(builder: (_) => const AceptarInvitacionScreen()),
+                              ),
+                      child: const Text(
+                        '¿Tenés un código de invitación?',
+                        style: TextStyle(fontSize: 12, color: Colors.black54),
                       ),
                     ),
                   ],

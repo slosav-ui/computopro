@@ -11,6 +11,7 @@ import '../tabs/mat_y_mo_tab.dart';
 import '../tabs/selector_tipo_presupuesto.dart';
 import '../tabs/bloque_factor_k.dart';
 import 'composicion_apu_screen.dart';
+import 'invitar_miembro_screen.dart';
 
 class PresupuestosScreen extends StatefulWidget {
   final dynamic obra;
@@ -165,6 +166,21 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> with SingleTick
             ),
           ],
         ),
+        actions: [
+          // Regla de visibilidad 10 de UserContext -- oculto, no deshabilitado, mismo criterio
+          // que el resto de los gates de esta pantalla (ver _buildTabApu más abajo).
+          if (_userContext?.puedeInvitarMiembros == true)
+            IconButton(
+              icon: const Icon(Icons.person_add_alt, color: Colors.white),
+              tooltip: 'Invitar a la obra',
+              onPressed: () {
+                if (_obraId == null) return;
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => InvitarMiembroScreen(obraId: _obraId!)),
+                );
+              },
+            ),
+        ],
         // Una sola línea, scrollable: probamos dos renglones (etiqueta corta +
         // nombre completo chico) y el renglón chico se truncaba en casi todas
         // las solapas — no aportaba nada. isScrollable: true a propósito para

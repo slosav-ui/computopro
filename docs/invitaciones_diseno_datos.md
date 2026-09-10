@@ -1,7 +1,13 @@
 # Invitaciones a una obra — diseño de datos (2026-09-10)
 
-**Estado: diseño cerrado, sin implementar.** Ningún archivo de `lib/` ni tabla de Supabase fue
-tocado para este documento. Es el punto 4 del orden de ejecución
+**Estado: Tanda 1 aplicada y con Dart escrito, 2026-09-10.** Migración `0095_invitaciones.sql`
+aplicada y verificada por Seba (2 políticas, 3 funciones, código de ejemplo generado sin
+caracteres confusos). Del lado de Dart: modelo, repositorio, las dos pantallas
+(`InvitarMiembroScreen`/`AceptarInvitacionScreen`), el getter `UserContext.puedeInvitarMiembros`,
+y los puntos de entrada (ícono en `PresupuestosScreen` para invitar, ícono en `ObrasListScreen` y
+enlace en `LoginScreen` para ingresar código) — todo escrito, sin verificar en el emulador
+todavía. Tanda 2 (panel de miembros, revocar) sigue sin empezar. Es el punto 4 del orden de
+ejecución
 (`docs/diagnostico_general_producto.md`) y la dependencia real de
 `docs/licitacion_privada_presupuestos_diseno.md` ("por invitación desde la app" no se puede
 construir sin esto). Diagnóstico completo hecho contra el código real, no contra la spec —
@@ -183,25 +189,48 @@ PRO) + pantalla de ingresar código + persistencia del token pendiente en `AuthG
 **Tanda 2** (después, no bloquea la primera): panel de miembros de la obra — listar activos,
 invitaciones pendientes/vencidas, botón revocar/quitar (usa el UPDATE de `activo=false` del §8).
 
-## 10. Archivos (Tanda 1)
+## 10. Archivos (Tanda 1) — CERRADO 2026-09-10
 
 Nuevos:
-- `supabase/migrations/00XX_invitaciones.sql`
-- `lib/data/models/invitacion.dart`
-- `lib/services/invitaciones_repository.dart`
+- `supabase/migrations/0095_invitaciones.sql` — aplicada y verificada.
+- `lib/data/models/invitacion.dart` — `Invitacion`, `ResultadoInvitacionAceptada`,
+  `columnaDesdeRol`/`rolDesdeColumna`, `etiquetaRol`.
+- `lib/services/invitaciones_repository.dart` — `crearInvitacion`, `getInvitacionesPendientes`
+  (para la Tanda 2), `aceptarInvitacion`, `revocarInvitacion`, y `InvitacionPendiente`
+  (`SharedPreferences`, guardar/leer/borrar el código entre sesión y registro).
 - `lib/presentation/obra_detalle/screens/invitar_miembro_screen.dart`
 - `lib/presentation/auth/aceptar_invitacion_screen.dart`
 
 Tocados:
-- `lib/main.dart` — ruta para la pantalla de ingresar código.
-- `lib/presentation/auth/auth_gate.dart` — chequeo de token pendiente en `SharedPreferences`.
-- `lib/services/obra_members_repository.dart` — método para desactivar un miembro (usado recién en
-  Tanda 2, pero sin costo agregarlo si se toca el archivo).
+- `lib/core/segurity/user_context.dart` — getter nuevo `puedeInvitarMiembros` (regla de
+  visibilidad 10), mismo criterio que la política `invitaciones_insert`.
+- `lib/presentation/obra_detalle/screens/presupuestos_screen.dart` — ícono "Invitar" en el AppBar,
+  gateado por `puedeInvitarMiembros`.
+- `lib/presentation/dashboard/obras_list_screen.dart` — ícono "Ingresar código" en el AppBar, y
+  `_canjearInvitacionPendiente()` en `initState` (best-effort, silencioso en el fracaso).
+- `lib/presentation/auth/login_screen.dart` — enlace "¿Tenés un código de invitación?" para quien
+  todavía no tiene cuenta.
 
-## 11. Qué NO se resuelve en este documento
+**Sin usar `lib/main.dart` ni tocar `auth_gate.dart`**, a diferencia de lo que preveía la primera
+versión de este documento: la navegación entre pantallas de esta pieza es `Navigator.push` directo
+(mismo patrón que ya usa `ObrasListScreen` para abrir `PresupuestosScreen`), no rutas con nombre —
+`main.dart` solo registra los dos puntos de entrada de toda la app (`/` y `/presupuesto`), no cada
+pantalla intermedia. Y el chequeo del código pendiente quedó en `ObrasListScreen.initState()` en
+vez de en `AuthGate`: es el primer momento con sesión activa que además tiene un `Scaffold` para
+mostrar la confirmación, y corre una sola vez por sesión real porque `AuthGate` reusa la misma
+instancia (es `const`) en los rebuilds que no cambian de sesión.
 
-- No se diseñó la pantalla de gestión de miembros (Tanda 2) más allá de qué UPDATE dispara.
-- No se resolvió el deep link / Universal Links / App Links real — queda anotado como mejora
-  pendiente en §5, condicionado a que la web esté publicada.
-- No se decidió si `invitaciones` necesita un índice o constraint adicional sobre `token` más allá
-  de la unicidad implícita de `uuid` — a definir al escribir la migración.
+**Sin tocar `obra_members_repository.dart`** — el método para desactivar un miembro es
+exclusivamente de la Tanda 2, no hizo falta adelantarlo.
+
+**Sin verificar en el emulador todavía** — falta correr el circuito de punta a punta (generar
+código, pegarlo sin sesión, registrarse, confirmar que se aplica solo; y con sesión activa,
+directo).
+
+## 11. Qué queda para después
+
+- La pantalla de gestión de miembros (Tanda 2): listar, revocar (`getInvitacionesPendientes` ya
+  existe en el repositorio, `revocarInvitacion` también — falta la pantalla).
+- El deep link / Universal Links / App Links real — mejora pendiente en §5, condicionado a que la
+  web esté publicada.
+- Verificación en el emulador del circuito completo (ver arriba).

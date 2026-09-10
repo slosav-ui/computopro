@@ -121,6 +121,15 @@ class UserContext {
   bool get puedeGestionarAnulacionCertificado =>
       _tieneAlgunRol([RolProyecto.profesional, RolProyecto.constructor]);
 
+  // Regla de visibilidad 10: ¿puede invitar gente a la obra (generar un código de invitación)?
+  // Mismo criterio que la política `invitaciones_insert` (`0095_invitaciones.sql`): admin_maestro,
+  // o cualquier rol con `puedeInvitarTerceros` en `PermisosEspeciales` — a propósito no reusa
+  // `puedeEditarComputo`/`puedeVerMontosYAPU`, porque invitar no depende de la caja blanca, sino
+  // del permiso puntual que cada fila de `obra_members` trae.
+  bool get puedeInvitarMiembros =>
+      _tieneAlgunRol([RolProyecto.adminMaestro]) ||
+      membresias.any((m) => m.permisosEspeciales.puedeInvitarTerceros);
+
   bool _delegacionVigente(ObraMember m) {
     final inicio = m.permisosEspeciales.delegacionTemporalInicio;
     final fin = m.permisosEspeciales.delegacionTemporalFin;

@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/utils/parser_numero_ar.dart';
+import '../../data/models/invitacion.dart';
 import '../obra_detalle/screens/presupuestos_screen.dart';
+import '../auth/aceptar_invitacion_screen.dart';
 import '../../services/obras_repository.dart';
 import '../../services/auth_service.dart';
+import '../../services/invitaciones_repository.dart';
 
 class ObrasListScreen extends StatefulWidget {
   const ObrasListScreen({super.key});
@@ -29,6 +33,7 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
   // --- Acceso a datos ---
   final ObrasRepository _obrasRepository = ObrasRepository();
   final AuthService _authService = AuthService();
+  final InvitacionesRepository _invitacionesRepository = InvitacionesRepository();
   List<Map<String, dynamic>> _obras = [];
   bool _cargando = true;
   String? _error;
@@ -38,6 +43,35 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
     super.initState();
     _cotizacionUsdEfectiva = _dolarOficialPromedio;
     _cargarObras();
+    _canjearInvitacionPendiente();
+  }
+
+  /// Si quedó un código guardado (pegado antes de tener sesión -- ver
+  /// `AceptarInvitacionScreen`/`docs/invitaciones_diseno_datos.md` §7), lo canjea acá: es el
+  /// primer momento en que hay sesión activa Y un `BuildContext` con `Scaffold` para avisar.
+  /// `initState` corre una sola vez por sesión real -- `AuthGate` reusa la misma instancia de
+  /// `ObrasListScreen` (es `const`) en los rebuilds que no cambian de sesión (ej. refresh de
+  /// token), así que esto no reintenta en cada uno de esos.
+  ///
+  /// Silencioso en el fracaso a propósito: es un best-effort en segundo plano, no el camino
+  /// principal de error -- si el código venció o ya se usó, la persona todavía lo tiene en su
+  /// WhatsApp y puede reintentar a mano desde "Ingresar código" con el mensaje real.
+  Future<void> _canjearInvitacionPendiente() async {
+    final codigo = await InvitacionPendiente.leer();
+    if (codigo == null) return;
+    await InvitacionPendiente.borrar();
+    try {
+      final resultado = await _invitacionesRepository.aceptarInvitacion(codigo);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Te sumaste a la obra "${resultado.obraNombre}" como ${etiquetaRol(resultado.rol)}.')),
+      );
+      _cargarObras();
+    } on PostgrestException catch (_) {
+      // Ver el comentario de arriba: silencioso, el mensaje real queda para el reintento manual.
+    } catch (_) {
+      // Idem.
+    }
   }
 
   // --- Carga de Obras desde Supabase ---
@@ -1498,6 +1532,13 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
           style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.2, fontSize: 18, color: Colors.white),
         ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.key_outlined, color: Colors.white),
+            tooltip: 'Ingresar código de invitación',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const AceptarInvitacionScreen()),
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.map_outlined, color: Colors.white),
             tooltip: 'Ver Obras en Mapa',
