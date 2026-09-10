@@ -5,7 +5,14 @@ un gap real encontrado al construir la Tanda 2 de invitaciones
 (`docs/invitaciones_diseno_datos.md` §10): la pantalla de miembros mostraba un UUID acortado
 porque no había ningún dato legible para mostrar — "un identificador cortado en vez de un nombre
 no le sirve al usuario, no sabe quién es quién" (Seba). Matrícula profesional sumada el mismo día,
-mismo mecanismo — `0100_perfiles_matricula.sql`, ver §6.
+mismo mecanismo — `0100_perfiles_matricula.sql`, ver §6. Verificado por Seba en el emulador:
+nombre y matrícula aparecen bien en la pantalla de miembros.
+
+**`0101_invitaciones_perfiles_revoke_anon.sql`**: el linter de Supabase marcó
+`actualizar_mi_perfil`/`get_perfiles_de_obra` con EXECUTE abierto a `anon` (otorgamiento implícito
+de Postgres al crear cualquier función, mismo hallazgo que `0085_hardening_seguridad_linter_supabase.sql`).
+Revocado — las dos dependen de sesión (`auth.uid()`/membresía de obra), no tienen ningún caso de
+uso sin cuenta como sí tiene `previsualizar_invitacion` en la pieza de invitaciones.
 
 ## 1. Por qué no alcanza con una columna nueva y una política de lectura
 

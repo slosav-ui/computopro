@@ -10,8 +10,17 @@ compartir, previsualizar y aceptar funcionan, confirmado por Seba.
 
 **Tanda 2** (`0098_quitar_miembro_obra.sql` + `MiembrosObraScreen`): ver miembros, ver
 invitaciones, copiar código, revocar, y sacar miembro con la guarda del último administrador — ver
-§10/§11 para el diagnóstico y los archivos. `flutter analyze` limpio, **sin correr en el emulador
-todavía**.
+§10/§11 para el diagnóstico y los archivos. Verificada por Seba: nombre y matrícula aparecen bien
+en la pantalla de miembros.
+
+**`0101_invitaciones_perfiles_revoke_anon.sql`**: el linter de Supabase volvió a marcar las
+funciones nuevas de esta pieza (mismo hallazgo que `0085_hardening_seguridad_linter_supabase.sql`
+— toda función nace con EXECUTE otorgado a PUBLIC, que incluye a `anon`). Revocado de
+`aceptar_invitacion`/`revocar_invitacion`/`quitar_miembro_obra` (`from public, anon` en la misma
+sentencia, no alcanza con `public` solo — lección de 0085). `previsualizar_invitacion` queda
+**deliberadamente abierta** a `anon`: es el único momento en que alguien sin cuenta necesita
+consultar algo (§7). También agrega `search_path` fijo a `generar_codigo_invitacion`, que el
+linter marcó aparte.
 
 Es el punto 4 del orden de ejecución (`docs/diagnostico_general_producto.md`) y la dependencia
 real de `docs/licitacion_privada_presupuestos_diseno.md` ("por invitación desde la app" no se
