@@ -231,6 +231,8 @@ De `docs/relevamiento_sincronizacion_config_precios.md`. Todos del mismo patrón
 
 **Importador de PDF y foto** con prellenado asistido por IA, distinto del importador de Excel ya construido. Necesita decidir proveedor de IA y tiene costo por documento.
 
+**Licitación privada de presupuestos**: pedirle presupuesto a varios constructores sobre la misma planilla, comparación estructurada (qué falta, dónde hay diferencias grandes, si cotizan lo mismo), preguntas automáticas, aprobación con historial. Diseño de negocio cerrado 2026-09-10, sin diseño de datos ni código — `docs/licitacion_privada_presupuestos_diseno.md`. Pieza grande, depende de que las invitaciones (punto 4 del orden de ejecución) existan primero.
+
 ## 6 · Orden de ejecución
 
 1. ~~Corregir la certificación aplicando la cascada a los montos certificados.~~ **CERRADO
@@ -241,7 +243,35 @@ De `docs/relevamiento_sincronizacion_config_precios.md`. Todos del mismo patrón
    `docs/certificacion_correccion_diagnostico.md`, ver §2.1 más abajo.
 2. ~~Verificar INSERT contra UPDATE en el histórico de precios.~~ **VERIFICADO 2026-09-09 — pisa, ver §3.5.** Pendiente real que queda: cambiar la práctica de escritura de las migraciones de precio a INSERT con fecha nueva, y ajustar las 4 funciones que promedian `precios.valor` para que tomen la fila más reciente por corralón. Se puede meter junto con el punto 6 (tocan las mismas funciones).
 3. ~~Auditar el .ods: la fórmula corrida cinco filas, y extraer el criterio del split hacia CLAUDE.md.~~ **VERIFICADO 2026-09-09 — las dos cosas ya estaban resueltas, ver §2.3.** Criterio del split ya escrito con su razonamiento (sesión anterior, re-verificado ahora contra el archivo real). Fórmula ya corregida el 2026-09-03, re-verificada ahora sobre las 125 partidas completas (no una muestra), cero errores en los dos idiomas, y confirmado que nunca alimentó ninguna migración.
-4. **Escribir la spec de roles combinables.**
+4. ~~Escribir la spec de roles combinables.~~ **CORREGIDO 2026-09-10 — la premisa estaba
+   desactualizada, no era cierto que faltara escribir.** La spec está escrita y cerrada
+   (`docs/etapa3_roles_permisos_diseno_datos.md`, revisada con el consultor del usuario),
+   `obra_members` está en producción (`0001_obra_members.sql`, bootstrap `0033`), RLS aplicado
+   sobre las 4 tablas de Etapa 3 —`obra_members`, `modificaciones_obra`, `audit_log`,
+   `libro_entradas`— confirmado en el dashboard de Supabase (nota de estado en
+   `0004_rls_etapa3.sql`), y `UserContext.desdeObraMembers` combina roles reales desde
+   `obra_members` (`core/segurity/user_context.dart`), reemplazando el rol único global viejo.
+   Verificado contra el código, no contra lo que decía este documento.
+
+   Lo que sí queda pendiente, verificado por grep sobre `lib/`, son dos cosas separadas y de
+   tamaño muy distinto:
+
+   - **Conectar pantallas por rol — parcial, no arrancado en cero.** `presupuestos_screen.dart`
+     ya pasa `UserContext` a tres de las seis solapas: Cómputo (`RubrosTab`,
+     `puedeEditarComputo`/`puedeVerMontosYAPU`), APU (`puedeVerMontosYAPU`) y Gestión de Obra
+     (`GestionObraTab`, cinco getters: `puedeEditarConfigCertificacion`, `puedeCargarAvance`,
+     `puedeEmitirCertificado`, `puedeVerMontosGestionObra`, `puedeGestionarAnulacionCertificado`
+     — cierra el gap que tenía memoria de proyecto aparte). **Sin conectar:** Mat y MO
+     (`mat_y_mo_tab.dart`, cero referencias a `UserContext`) y Proveedores/Resumen (mock con
+     datos hardcodeados, sin lógica real que gatear todavía).
+   - **El mecanismo de invitaciones — no existe en ningún lado, esto sí está en cero.**
+     `ObraMembersRepository` solo tiene `getMiembrosDeObra` (lectura); no hay ningún método de
+     insert/update, ningún archivo Dart hace `.from('obra_members').insert(...)`, y no hay
+     pantalla "Agregar Integrante / Generar QR" (la que describe `CLAUDE.md` §"Roles de
+     proyecto"). La política RLS `obra_members_insert` ya está lista del lado de la base
+     esperando ese flujo. Coincide con `docs/vinculacion_dispositivos_decisiones.md` y la
+     memoria de proyecto sobre el QR de vinculación: dos mecanismos de QR distintos en la spec
+     histórica, ninguno de los dos construido.
 5. **Verificar ART y horas por mes** contra póliza y convenio reales.
 6. **Tests de regresión de la cascada**, con dos o tres obras de referencia y totales esperados. Es lo que después permite tocar el motor sin miedo.
 7. **Telemetría mínima y reporte de errores.**

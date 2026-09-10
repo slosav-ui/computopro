@@ -33,6 +33,11 @@ actualizado cuando algo relevante cambie, no dejarlo envejecer. La estrategia co
 en `docs/monetizacion.md`; el relevamiento de qué config/función quedó desconectada de qué, en
 `docs/relevamiento_sincronizacion_config_precios.md`.
 
+**Licitación privada de presupuestos** (pedirle presupuesto a varios constructores sobre la misma
+planilla, comparación estructurada, preguntas automáticas, aprobación con historial) — diseño de
+negocio cerrado 2026-09-10, sin diseño de datos ni código todavía: `docs/licitacion_privada_presupuestos_diseno.md`.
+Depende de que las invitaciones (hoy en cero, diagnóstico §6 punto 4) existan primero.
+
 ## Especificación funcional y de negocio (resumen de `docs/especificacion_funcional*.md`)
 
 Fuentes: `especificacion_funcional.md`, `_2.md` y `_3.md` (transcripciones de conversaciones de diseño con el usuario, se repiten bastante entre sí) más `especificacion_funcional_completa.md` y `_parte2_fundacional.md` (spec histórica extraída de meses de trabajo previo con Gemini, anterior a la migración a Claude Code — no specs formales tampoco). Esto es la referencia funcional/de producto permanente del proyecto — el código actual todavía no implementa la mayoría de estos puntos, son el objetivo a futuro.
