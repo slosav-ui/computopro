@@ -256,22 +256,24 @@ De `docs/relevamiento_sincronizacion_config_precios.md`. Todos del mismo patrón
    Lo que sí queda pendiente, verificado por grep sobre `lib/`, son dos cosas separadas y de
    tamaño muy distinto:
 
-   - **Conectar pantallas por rol — parcial, no arrancado en cero.** `presupuestos_screen.dart`
-     ya pasa `UserContext` a tres de las seis solapas: Cómputo (`RubrosTab`,
-     `puedeEditarComputo`/`puedeVerMontosYAPU`), APU (`puedeVerMontosYAPU`) y Gestión de Obra
-     (`GestionObraTab`, cinco getters: `puedeEditarConfigCertificacion`, `puedeCargarAvance`,
-     `puedeEmitirCertificado`, `puedeVerMontosGestionObra`, `puedeGestionarAnulacionCertificado`
-     — cierra el gap que tenía memoria de proyecto aparte). **Sin conectar:** Mat y MO
-     (`mat_y_mo_tab.dart`, cero referencias a `UserContext`) y Proveedores/Resumen (mock con
-     datos hardcodeados, sin lógica real que gatear todavía).
-   - **El mecanismo de invitaciones — no existe en ningún lado, esto sí está en cero.**
-     `ObraMembersRepository` solo tiene `getMiembrosDeObra` (lectura); no hay ningún método de
-     insert/update, ningún archivo Dart hace `.from('obra_members').insert(...)`, y no hay
-     pantalla "Agregar Integrante / Generar QR" (la que describe `CLAUDE.md` §"Roles de
-     proyecto"). La política RLS `obra_members_insert` ya está lista del lado de la base
-     esperando ese flujo. Coincide con `docs/vinculacion_dispositivos_decisiones.md` y la
-     memoria de proyecto sobre el QR de vinculación: dos mecanismos de QR distintos en la spec
-     histórica, ninguno de los dos construido.
+   - **Conectar pantallas por rol — CERRADO 2026-09-10.** `presupuestos_screen.dart` pasa
+     `UserContext` a cuatro de las seis solapas: Cómputo (`RubrosTab`,
+     `puedeEditarComputo`/`puedeVerMontosYAPU`), APU (`puedeVerMontosYAPU`), Gestión de Obra
+     (`GestionObraTab`, cinco getters) y Mat y MO (`MatYMoTab`, reusa `puedeVerMontosYAPU` —
+     oculta precio/valor hora/cartel de costo de mano de obra y el lápiz de edición para quien no
+     puede verlos, mismo criterio "oculto, no deshabilitado" que ya usa `SubitemsScreen`).
+     **Sin conectar, y sin apuro**: Proveedores/Resumen siguen siendo mock con datos
+     hardcodeados, sin lógica real que gatear todavía.
+   - **El mecanismo de invitaciones — diseño cerrado 2026-09-10, código en cero.**
+     `docs/invitaciones_diseno_datos.md`: tabla `invitaciones` + `aceptar_invitacion` (RPC
+     `SECURITY DEFINER`) + código pegado a mano en vez de enlace real (sin infraestructura de
+     deep link ni web publicada todavía — mejora prioritaria pendiente de eso). Selector de rol
+     limitado a los 5 roles no administrativos, vencimiento a 30 días, regla "un permiso no
+     regala PRO" aplicada a `puede_ver_apu_ajena`. Partido en dos tandas — Tanda 1 (el circuito
+     de invitar/aceptar) es la que desbloquea `docs/licitacion_privada_presupuestos_diseno.md`.
+     `ObraMembersRepository` sigue solo con `getMiembrosDeObra` (lectura) — ningún archivo Dart
+     hace insert/update sobre `obra_members` todavía, eso es exactamente lo que construye la
+     Tanda 1.
 5. **Verificar ART y horas por mes** contra póliza y convenio reales.
 6. **Tests de regresión de la cascada**, con dos o tres obras de referencia y totales esperados. Es lo que después permite tocar el motor sin miedo.
 7. **Telemetría mínima y reporte de errores.**

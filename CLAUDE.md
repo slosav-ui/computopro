@@ -38,6 +38,11 @@ planilla, comparación estructurada, preguntas automáticas, aprobación con his
 negocio cerrado 2026-09-10, sin diseño de datos ni código todavía: `docs/licitacion_privada_presupuestos_diseno.md`.
 Depende de que las invitaciones (hoy en cero, diagnóstico §6 punto 4) existan primero.
 
+**Invitaciones a una obra** (tabla `invitaciones`, código pegado a mano por ahora, RPC
+`aceptar_invitacion`, 5 roles invitables sin `admin_maestro`, regla "un permiso no regala PRO") —
+diseño de datos cerrado 2026-09-10, sin código todavía: `docs/invitaciones_diseno_datos.md`. Es el
+punto 4 del orden de ejecución y la dependencia real de la licitación privada de arriba.
+
 ## Especificación funcional y de negocio (resumen de `docs/especificacion_funcional*.md`)
 
 Fuentes: `especificacion_funcional.md`, `_2.md` y `_3.md` (transcripciones de conversaciones de diseño con el usuario, se repiten bastante entre sí) más `especificacion_funcional_completa.md` y `_parte2_fundacional.md` (spec histórica extraída de meses de trabajo previo con Gemini, anterior a la migración a Claude Code — no specs formales tampoco). Esto es la referencia funcional/de producto permanente del proyecto — el código actual todavía no implementa la mayoría de estos puntos, son el objetivo a futuro.
