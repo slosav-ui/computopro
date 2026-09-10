@@ -116,6 +116,23 @@ Esto todavía no requiere crear la tabla de APU en este paso (ese diseño es el 
 
 `PermisosModulo.verApuYCoeficienteK` (el flag actual a nivel obra) queda **sin uso real** bajo este esquema — no hace falta borrarlo ahora (fuera de alcance de este paso), pero no va a ser lo que decida la visibilidad real.
 
+### Límite conocido: el Factor K es deducible por resta — ACEPTADO, no se corrige (2026-09-10)
+
+La regla genérica de arriba controla quién ve el *registro* de APU — no impide que alguien sin
+acceso a ese registro **deduzca el Factor K igual, por resta**, si además tiene acceso al precio
+final de una partida y al detalle de materiales/mano de obra de la obra (Mat y MO). Con dos o tres
+partidas confirma el porcentaje, sin ninguna habilidad especial — es una resta.
+
+Lo limita parcialmente que hace falta conocer los rendimientos exactos de la receta, que están en
+la composición que esa persona no ve. Con rendimientos personalizados el número no cierra; con las
+recetas oficiales del catálogo (rendimientos públicos, no de la obra) sí le sale.
+
+**Decisión de Seba: se acepta como límite conocido, no se corrige.** En obra, el que quiere
+estimar el margen de otro lo hace igual, con o sin app. Y cerrar el desglose de materiales y mano
+de obra sería peor que el problema — ese dato hace falta para comprar. Detalle completo en
+`docs/factor_k_apu_decisiones.md` (mismo texto en los dos documentos, a propósito, para que quede
+anotado donde se diseña la privacidad del APU y donde se documenta el Factor K en sí).
+
 ---
 
 ## 4. Adicionales / Demasías / Quitas

@@ -250,3 +250,26 @@ en `docs/costo_mano_de_obra_decisiones.md` §14) actualizan al instante sin sali
 Con esto quedan cerrados 3 de los 4 puntos "sin verificar" que había dejado abiertos el commit
 `883b4d7`. El cuarto — borrar un subítem propio del importador de punta a punta en `SubitemsScreen`
 (`0088`) — sigue sin verificarse, no tiene relación con esta cadena.
+
+## Límite conocido: el Factor K es deducible por resta — ACEPTADO, no se corrige
+
+Quien ve el precio final de una partida y además el detalle de materiales y mano de obra de la
+obra **puede calcular la diferencia y deducir los coeficientes del Factor K**, aunque no tenga
+permiso para ver el APU. Con dos o tres partidas confirma el porcentaje — no hace falta ninguna
+habilidad especial, es una resta.
+
+**Lo limita parcialmente** que hace falta conocer los rendimientos exactos de la receta, que están
+en la composición que esa persona no ve. Si el usuario personalizó rendimientos, el número no le
+cierra. Pero si la partida usa las recetas oficiales del catálogo, esos rendimientos son públicos
+(son del catálogo, no de la obra), y la cuenta sí le sale.
+
+**Decisión de Seba (2026-09-10): se acepta como límite conocido, no se corrige.** Dos motivos: en
+obra, el que quiere estimar el margen de otro lo hace igual, con o sin app — no es un problema que
+la app haya creado. Y cerrar el desglose de materiales y mano de obra (la única forma real de
+bloquear la deducción) sería peor que el problema, porque ese dato hace falta para comprar — es
+exactamente el tipo de dato que la solapa Mat y MO expone a propósito a quien puede verla (precio
+de insumo, valor hora), necesario para que esa persona compre materiales o contrate mano de obra.
+
+Mismo texto en `docs/etapa3_roles_permisos_diseno_datos.md` (sección de privacidad del APU) — este
+es el límite real de lo que esa privacidad puede garantizar, y conviene que quede anotado en los
+dos lugares en vez de solo en uno.

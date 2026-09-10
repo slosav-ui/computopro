@@ -53,7 +53,51 @@ No alcanza con mostrar tres columnas de números. Lo que un profesional necesita
 - **Si están cotizando lo mismo.** Con material o sin material, que es la confusión más común.
 - **Las cantidades**, cuando cada uno hizo su propio cómputo (variante "sin cómputo" del punto 2).
 
-## 5. Las preguntas automáticas — el diferencial real
+## 5. Cómputo oculto hasta adjudicar
+
+### El problema real del rubro
+
+Textual de Seba: *"muchos profesionales, y a veces clientes también, te dan a presupuestar para
+que le realices los cómputos gratis, y con esos valores se los pasan a otros constructores a que
+solo pongan el precio"*.
+
+O sea: le pedís cotización a un constructor, se toma el trabajo de medir toda la obra, y usás su
+cómputo para que otros dos coticen sin medir. El primero trabajó gratis para sus competidores.
+
+### La solución
+
+**Cuando el constructor aporta su propio cómputo** (variante "sin cómputo" del §2), **puede
+elegir mostrar solo los precios finales por rubro**, sin las cantidades ni las unidades.
+
+**Y al presupuesto lo acompaña un cartel** que le explica a quien lo recibe: estos son los valores
+finales; si se adjudica la obra, se muestra el cómputo métrico completo de cada rubro.
+
+**Al adjudicar, se abre solo.** El cómputo queda a la vista porque es sobre lo que se va a
+certificar, y ahí ya no hay nada que proteger.
+
+### Por qué va acá y no en los permisos generales de la obra
+
+Porque **depende de quién hizo el cómputo, no del rol de nadie.**
+
+Si el profesional armó el cómputo y se lo pasa al constructor para que ponga precios (variante
+"con el cómputo hecho" del §2), ese cómputo es del profesional y ocultarlo no tiene sentido.
+
+Si el constructor midió por su cuenta, el trabajo es suyo y decide cuánto muestra mientras
+compite.
+
+Es una propiedad del presupuesto, no de la obra — por eso no se modela como un permiso de
+`obra_members`/Etapa 3 (`docs/etapa3_roles_permisos_diseno_datos.md`), que sí es por rol.
+
+### Un efecto que conviene notar
+
+**El que gana muestra todo y el que pierde no.** Así el cliente no puede juntar tres cómputos
+gratis: se lleva solo el del que contrató, que es lo que corresponde.
+
+Eso hace que un constructor esté más dispuesto a cotizar en la app que por fuera, donde su cómputo
+queda expuesto sin ninguna protección. **Es un argumento de adopción del lado del constructor**,
+que hasta ahora era el actor con menos motivos para usar la app — ver §10.
+
+## 6. Las preguntas automáticas — el diferencial real
 
 Además de comparar, **la app genera las preguntas que hay que hacerle a cada constructor.** Sale
 de tres fuentes:
@@ -68,9 +112,9 @@ El punto 3 es el más valioso, porque es criterio profesional que la app aporta,
 mismo tipo de activo que el split del Factor K (`docs/factor_k_apu_decisiones.md`).
 
 **Abierto: la lista del punto 3 todavía no está armada — la tiene que escribir Seba.** Es lo único
-que queda abierto de esta pieza aparte de lo del §9.
+que queda abierto de esta pieza aparte de lo del §11.
 
-## 6. Elección y aprobación
+## 7. Elección y aprobación
 
 **El profesional elige uno y lo marca como recomendado.** Recomienda, no decide: la obra la paga el
 cliente.
@@ -94,7 +138,7 @@ aprobás y después bla bla bla"*. Si ya decidieron juntos, una aprobación form
 - **El cliente ve los tres, no solo el recomendado** — aunque sea para confirmar que el profesional
   eligió bien.
 
-## 7. Qué pasa con los que no se eligieron
+## 8. Qué pasa con los que no se eligieron
 
 **Se conservan, no se descartan.** Dos motivos:
 
@@ -103,9 +147,10 @@ aprobás y después bla bla bla"*. Si ya decidieron juntos, una aprobación form
 - **Si el elegido se cae**, está el segundo a mano sin volver a pedir cotizaciones.
 
 El aprobado pasa a ser el presupuesto de la obra: lo que después se certifica (ver
-`docs/certificados_ciclo_vida_diseno_datos.md`).
+`docs/certificados_ciclo_vida_diseno_datos.md`). Y es el punto en que el cómputo oculto del §5 se
+abre para quien ganó — para los que no, sigue oculto.
 
-## 8. Permisos y planes — resuelto
+## 9. Permisos y planes — resuelto
 
 Al invitar, el administrador otorga rol y permisos (mecanismo de `obra_members`, Etapa 3 —
 `docs/etapa3_roles_permisos_diseno_datos.md`). **Pero un permiso no puede regalar PRO.**
@@ -120,7 +165,7 @@ requiere PRO.
 El administrador no queda bloqueado al otorgar el permiso, y el invitado ve que hay algo que no
 puede ver — que funciona como incentivo de conversión, no como fricción.
 
-## 9. Estrategia de adopción
+## 10. Estrategia de adopción
 
 Esto saca al constructor de su zona de confort, así que la barrera hay que bajarla en cada paso.
 
@@ -137,7 +182,7 @@ Esto saca al constructor de su zona de confort, así que la barrera hay que baja
    la app, el que no quiso migrar se va y se lleva al profesional con él. El Excel tiene que seguir
    funcionando siempre.
 
-Dos reglas más de adopción, cerradas:
+Tres reglas más de adopción, cerradas:
 
 - **El que empuja la adopción es el profesional, no el marketing.** Si manda la planilla a diez
   constructores, esos diez la vieron. El esfuerzo comercial se concentra en un solo tipo de
@@ -145,10 +190,15 @@ Dos reglas más de adopción, cerradas:
 - **El primer uso tiene que dar un resultado visible.** Si el profesional carga tres presupuestos y
   la app le muestra que uno se olvidó dos rubros, eso lo cuenta a sus colegas. Es la publicidad que
   no se compra.
+- **El cómputo oculto hasta adjudicar (§5) es el argumento de adopción del lado del constructor.**
+  Hasta acá, todo lo de arriba convence al profesional — el constructor era el actor con menos
+  motivos para usar la app. Cotizar por fuera expone su cómputo sin ninguna protección; cotizar
+  adentro se lo protege mientras compite, y se lo abre solo si gana. Es una razón real para elegir
+  la app en vez del WhatsApp de siempre, no solo menos fricción.
 
-## 10. Lo que queda abierto
+## 11. Lo que queda abierto
 
-- **La lista de preguntas frecuentes** (§5, punto 3) — qué se olvidan de cotizar los constructores
+- **La lista de preguntas frecuentes** (§6, punto 3) — qué se olvidan de cotizar los constructores
   en la práctica. La tiene que armar Seba, no se puede inferir del código ni de la spec.
 - **Presupuestar desde cuentas propias de cada constructor** (en vez de que el profesional cargue
   los tres a mano): necesita una capa de precios por usuario sobre el mismo cómputo. La base
@@ -158,7 +208,7 @@ Dos reglas más de adopción, cerradas:
   su propio precio" no está diseñado. **Queda para cuando haya constructores usando la app de
   verdad**, no antes.
 
-## 11. Relación con lo que ya existe
+## 12. Relación con lo que ya existe
 
 Esta pieza se apoya en piezas ya cerradas:
 
