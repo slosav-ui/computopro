@@ -99,7 +99,7 @@ teléfono.
 
 **Nota para cuando exista el generador de PDF de presupuestos/certificados** (hoy no existe — `pdf`/
 `printing` en `pubspec.yaml` siguen sin usarse en ningún archivo de `lib/`, ver
-`docs/diagnostico_general_producto.md` §6 punto 11, "Calidad del PDF de salida"): **la matrícula
+`docs/diagnostico_general_producto.md` §6 punto 12, "Calidad del PDF de salida"): **la matrícula
 tiene que ir en el encabezado o el pie del documento, junto con el nombre del profesional que lo
 emite — es lo que le da validez profesional.** `get_perfiles_de_obra`/`getMiPerfil` ya devuelven el
 dato, listo para usar cuando se construya esa pieza; no hace falta ningún cambio de datos

@@ -7,6 +7,7 @@ import '../auth/aceptar_invitacion_screen.dart';
 import 'editar_perfil_screen.dart';
 import '../../services/obras_repository.dart';
 import '../../services/auth_service.dart';
+import '../../services/indices_economicos_repository.dart';
 import '../../services/invitaciones_repository.dart';
 
 class ObrasListScreen extends StatefulWidget {
@@ -21,23 +22,44 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
   bool _esPlanPro = false;
 
   // --- Cotización Dólar BNA & Proyección ---
-  final double _dolarBnaCompra = 1340.0;
-  final double _dolarBnaVenta = 1390.0;
-  final String _fechaActualizacionDolar = 'Agosto 2026 (BNA)';
+  //
+  // Ya no hardcodeado -- ver `_cargarIndicadoresEconomicos()`. Los valores de acá abajo son
+  // solo el placeholder del primer frame, antes de que resuelva la consulta a
+  // `cotizacion_dolar_bna` (0102_indices_cac_cotizacion_dolar.sql): mismos números que el seed
+  // de esa migración, para que no haya un salto visible si la consulta tarda. Si algún día se
+  // desactualiza esta constante y la de la base, no importa -- la de la base gana apenas carga.
+  double _dolarBnaCompra = 1485.0;
+  double _dolarBnaVenta = 1535.0;
+  String _fechaActualizacionDolar = 'BNA';
   double get _dolarOficialPromedio => (_dolarBnaCompra + _dolarBnaVenta) / 2;
   late double _cotizacionUsdEfectiva;
 
   // --- Indicadores CAC ---
-  final double _variacionCacUltimoMes = 3.8;
-  final String _ultimoMesPublicadoCac = 'Julio 2026';
+  // Idem -- placeholder hasta que `_cargarIndicadoresEconomicos()` resuelva contra `indices_cac`.
+  double _variacionCacUltimoMes = 1.5;
+  String _ultimoMesPublicadoCac = 'Julio 2026';
 
   // --- Acceso a datos ---
   final ObrasRepository _obrasRepository = ObrasRepository();
   final AuthService _authService = AuthService();
   final InvitacionesRepository _invitacionesRepository = InvitacionesRepository();
+  final IndicesEconomicosRepository _indicesEconomicosRepository = IndicesEconomicosRepository();
   List<Map<String, dynamic>> _obras = [];
   bool _cargando = true;
   String? _error;
+
+  static const _nombresMeses = [
+    'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+    'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
+  ];
+
+  /// 'YYYY-MM-01' del mes en curso -- valor de `obras.mes_base_cac` (columna `date`) para una
+  /// obra que se crea hoy. `DateTime(...).toIso8601String()` da 'YYYY-MM-01T00:00:00.000', el
+  /// `substring` se queda solo con la parte de fecha que espera la columna.
+  String _primerDiaDelMesActual() {
+    final hoy = DateTime.now();
+    return DateTime(hoy.year, hoy.month, 1).toIso8601String().substring(0, 10);
+  }
 
   @override
   void initState() {
@@ -45,6 +67,47 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
     _cotizacionUsdEfectiva = _dolarOficialPromedio;
     _cargarObras();
     _canjearInvitacionPendiente();
+    _cargarIndicadoresEconomicos();
+  }
+
+  /// Reemplaza los placeholders de arriba por los valores reales -- `cotizacion_dolar_bna` (fila
+  /// única) y el último mes de `indices_cac` (para la variación mensual que se muestra junto al
+  /// interruptor de CAC al crear/editar una obra en pesos). Silencioso en el fracaso a
+  /// propósito, mismo criterio que `_presupuestoVivoSeguro`: un problema puntual acá no tiene
+  /// que tumbar el resto de la pantalla -- la app sigue mostrando el placeholder hasta el
+  /// próximo intento.
+  Future<void> _cargarIndicadoresEconomicos() async {
+    try {
+      final cotizacion = await _indicesEconomicosRepository.getCotizacionDolar();
+      final indices = await _indicesEconomicosRepository.getIndicesCac();
+      if (!mounted) return;
+      // Capturado ANTES de pisar _dolarBnaCompra/_dolarBnaVenta más abajo -- comparar después de
+      // pisarlos compararía contra el promedio nuevo, no contra el placeholder viejo, y la
+      // detección de "el usuario no lo tocó" quedaría rota.
+      final promedioPlaceholder = _dolarOficialPromedio;
+      setState(() {
+        if (cotizacion != null) {
+          _dolarBnaCompra = cotizacion.compra;
+          _dolarBnaVenta = cotizacion.venta;
+          _fechaActualizacionDolar =
+              '${_nombresMeses[cotizacion.actualizadoEn.month - 1]} ${cotizacion.actualizadoEn.year} (BNA)';
+          // Si el usuario no personalizó la proyección (ver el diálogo "Ajuste Económico"),
+          // sigue atada al promedio oficial -- se actualiza junto con él.
+          if (_cotizacionUsdEfectiva == promedioPlaceholder) {
+            _cotizacionUsdEfectiva = (cotizacion.compra + cotizacion.venta) / 2;
+          }
+        }
+        if (indices.length >= 2) {
+          final ultimo = indices.last;
+          final anterior = indices[indices.length - 2];
+          _ultimoMesPublicadoCac = '${_nombresMeses[ultimo.mes.month - 1]} ${ultimo.mes.year}';
+          _variacionCacUltimoMes =
+              double.parse((((ultimo.general / anterior.general) - 1) * 100).toStringAsFixed(1));
+        }
+      });
+    } catch (_) {
+      // Silencioso -- ver comentario de arriba.
+    }
   }
 
   /// Si quedó un código guardado (pegado antes de tener sesión -- ver
@@ -567,7 +630,11 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                             // monto_total = 200.000.000. El monto real se carga solo cuando hay
                             // cómputo cargado (calcular_presupuesto_vivo_obra, 0091), nunca acá.
                             'montoTotal': 0.0,
-                            'mesBaseCac': 'Agosto 2026',
+                            // Bug real encontrado 2026-09-10: acá había el string literal
+                            // 'Agosto 2026', escrito igual en toda obra nueva sin importar la
+                            // fecha real de creación -- obras.mes_base_cac es `date` desde
+                            // 0102_indices_cac_cotizacion_dolar.sql, primer día del mes en curso.
+                            'mesBaseCac': _primerDiaDelMesActual(),
                             'revision': 'Rev. 00',
                             'tipoRol': 'Director de Obra',
                             'estadoServicioEspecial': 'Ninguno',

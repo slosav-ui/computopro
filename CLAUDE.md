@@ -44,11 +44,17 @@ panel de miembros con revocar/sacar) — Tanda 1 verificada de punta a punta, Ta
 correr en emulador: `docs/invitaciones_diseno_datos.md`. Es el punto 4 del orden de ejecución y la
 dependencia real de la licitación privada de arriba.
 
+**Índices CAC y cotización BNA** (`indices_cac` serie CAMARCO 2026, `cotizacion_dolar_bna`,
+`factor_cac_obra`/`calcular_saldo_pendiente_hitos` conectados al Modelo B) —
+`docs/indices_cac_cotizacion_dolar_diseno.md`. El Modelo A (el que usa Seba) sigue sin poder usar
+el CAC: necesita primero el congelamiento del presupuesto, punto 5 del orden de ejecución del
+diagnóstico general — no resuelto acá a propósito.
+
 **Nombre, teléfono y matrícula en `perfiles`** (visibles entre compañeros de obra, nunca `es_pro`;
 pedidos en el registro, editables después) — `docs/perfiles_nombre_telefono_diseno.md`. Resuelve
 el gap de "la pantalla de miembros no tenía nada legible para mostrar" encontrado al construir la
 Tanda 2 de arriba. La matrícula tiene que ir en el encabezado/pie del futuro PDF de salida, junto
-con el nombre — diagnóstico §6 punto 11.
+con el nombre — diagnóstico §6 punto 12.
 
 ## Especificación funcional y de negocio (resumen de `docs/especificacion_funcional*.md`)
 

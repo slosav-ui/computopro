@@ -157,7 +157,7 @@ No se pudo verificar consultando la base (cada precio tiene una sola fila porque
 
 **No hace falta tocar el esquema** — no hay ningún `UNIQUE (insumo_id, corralon_id)` en `precios`, nada impide insertar una segunda fila con fecha nueva hoy mismo. Lo que sí hace falta, y es más de lo que parece: cuatro funciones activas hoy hacen `avg(valor) from precios where insumo_id = X` sin filtrar por fecha ni por fila más reciente por corralón — `calcular_composicion_detalle_subitem` (Factor K/APU), `calcular_precio_apu_subitems` (certificación), `consolidado_insumos_obra` (Mat y MO) y `calcular_precio_promedio_insumo` (sin uso en vivo). Empezar a insertar filas nuevas sin tocar las cuatro en el mismo golpe contamina el precio "automático" de toda la app con precios viejos, en silencio. Falta además un criterio para distinguir "el corralón cambió el precio" (amerita fila nueva) de "corregimos un error de tipeo/unidad, nunca fue un precio real" (amerita seguir corrigiendo en el lugar) — hoy no existe esa marca, y sin ella la próxima limpieza de duplicados puede repetir el mismo problema.
 
-Detalle completo en `docs/relevamiento_sincronizacion_config_precios.md` (Hallazgo #6, actualizado). **La serie histórica de Bariloche todavía no existe — pero tampoco se perdió nada real hasta ahora, según lo que se pudo reconstruir.** El punto 6 del orden de ejecución (tests de regresión de la cascada) es buen momento para meter este cambio junto, porque toca las mismas cuatro funciones.
+Detalle completo en `docs/relevamiento_sincronizacion_config_precios.md` (Hallazgo #6, actualizado). **La serie histórica de Bariloche todavía no existe — pero tampoco se perdió nada real hasta ahora, según lo que se pudo reconstruir.** El punto 7 del orden de ejecución (tests de regresión de la cascada) es buen momento para meter este cambio junto, porque toca las mismas cuatro funciones.
 
 **Criterio decidido, sin el cual lo de arriba no es viable:** el corralón cambió su precio real → fila nueva con fecha nueva (`INSERT`). Corregimos un error nuestro —conversión de unidad, tipeo, precio del paquete cargado como si fuera el de la unidad de uso— → se corrige en el lugar (`UPDATE`), nunca fue un precio real. Sin esta distinción escrita, la próxima limpieza de duplicados repite el mismo patrón que 0068/0083 y vuelve a borrar historia sin poder distinguirla de ruido de importación. Detalle en el relevamiento, Hallazgo #6.
 
@@ -173,9 +173,11 @@ Recomendación: moverlo a Free con límite de filas u obras. **Contradice la dec
 
 Un profesional no carga tres obras en una app de la que no puede sacar nada. Exportar a Excel parece regalar el trabajo, pero es al revés: **el que puede exportar no se va.**
 
-### 3.8 · Multimoneda y cotización BNA
+### 3.8 · Multimoneda y cotización BNA — carga manual resuelta 2026-09-10, automatización sigue pendiente
 
-La actualización automática con aviso ante variación mayor al 5% está pendiente. Una obra en dólares certificada con cotización vieja reproduce el mismo error que la certificación sin Factor K: el usuario pierde plata sin enterarse.
+**Corregido**: la cotización ya no está hardcodeada en el código Dart (`_dolarBnaCompra`/`_dolarBnaVenta` eran `final double` compilados — no es que estuviera vieja, solo podía cambiar recompilando la app). Ahora vive en `cotizacion_dolar_bna` (`docs/indices_cac_cotizacion_dolar_diseno.md`, `0102_indices_cac_cotizacion_dolar.sql`), cargada a mano, leída por la app.
+
+**Sigue pendiente**: la actualización automática con aviso ante variación mayor al 5%. Una obra en dólares certificada con cotización vieja reproduce el mismo error que la certificación sin Factor K: el usuario pierde plata sin enterarse.
 
 ### 3.9 · Rama única
 
@@ -213,7 +215,7 @@ De `docs/relevamiento_sincronizacion_config_precios.md`. Todos del mismo patrón
 
 **El diálogo de ajuste económico sigue escribiendo `obras.monto_total`** con una conversión estática, la misma columna que la 0091 dejó de usar como fuente de verdad. Hoy no se nota porque nadie la relee, pero es el patrón exacto del bug original.
 
-**El interruptor `aplica_cac` es cosmético.** Su propio texto dice que ajusta el presupuesto por el índice CAC, y no existe código que lo haga. **Mismo caso que el interruptor de impuestos**, que guardaba bien y ningún cálculo lo miraba.
+**El interruptor `aplica_cac` era cosmético — parcialmente corregido 2026-09-10.** Su propio texto dice que ajusta el presupuesto por el índice CAC. Ahora hay una tabla real (`indices_cac`, serie CAMARCO 2026 con sus tres niveles) y una función que la conecta al **Modelo B** (`calcular_saldo_pendiente_hitos`) — ver `docs/indices_cac_cotizacion_dolar_diseno.md`. **El Modelo A —el que usa la cascada de Factor K, y el que Seba usa— sigue sin conectar**: no tiene un monto congelado contra el cual calcular el ajuste (`calcular_presupuesto_vivo_obra` recalcula en vivo desde insumos), y ese congelamiento es la pieza siguiente del orden de ejecución, no algo resuelto acá. Mismo caso que tenía el interruptor de impuestos, que guardaba bien y ningún cálculo lo miraba — ese sí está resuelto.
 
 **`tipo_suelo` y `zona_sismorresistente`** no los lee ni los escribe nadie. A diferencia del resto, nunca se conectaron.
 
@@ -241,7 +243,7 @@ De `docs/relevamiento_sincronizacion_config_precios.md`. Todos del mismo patrón
    con la cascada completa), en vez de la versión sin cascada. Incluye el recálculo forzado de
    borradores con avance ya cargado. Diagnóstico previo completo en
    `docs/certificacion_correccion_diagnostico.md`, ver §2.1 más abajo.
-2. ~~Verificar INSERT contra UPDATE en el histórico de precios.~~ **VERIFICADO 2026-09-09 — pisa, ver §3.5.** Pendiente real que queda: cambiar la práctica de escritura de las migraciones de precio a INSERT con fecha nueva, y ajustar las 4 funciones que promedian `precios.valor` para que tomen la fila más reciente por corralón. Se puede meter junto con el punto 6 (tocan las mismas funciones).
+2. ~~Verificar INSERT contra UPDATE en el histórico de precios.~~ **VERIFICADO 2026-09-09 — pisa, ver §3.5.** Pendiente real que queda: cambiar la práctica de escritura de las migraciones de precio a INSERT con fecha nueva, y ajustar las 4 funciones que promedian `precios.valor` para que tomen la fila más reciente por corralón. Se puede meter junto con el punto 7 (tocan las mismas funciones).
 3. ~~Auditar el .ods: la fórmula corrida cinco filas, y extraer el criterio del split hacia CLAUDE.md.~~ **VERIFICADO 2026-09-09 — las dos cosas ya estaban resueltas, ver §2.3.** Criterio del split ya escrito con su razonamiento (sesión anterior, re-verificado ahora contra el archivo real). Fórmula ya corregida el 2026-09-03, re-verificada ahora sobre las 125 partidas completas (no una muestra), cero errores en los dos idiomas, y confirmado que nunca alimentó ninguna migración.
 4. ~~Escribir la spec de roles combinables.~~ **CORREGIDO 2026-09-10 — la premisa estaba
    desactualizada, no era cierto que faltara escribir.** La spec está escrita y cerrada
@@ -273,21 +275,29 @@ De `docs/relevamiento_sincronizacion_config_precios.md`. Todos del mismo patrón
      `puede_ver_apu_ajena`. **Tanda 1** (invitar/aceptar) verificada de punta a punta por Seba —
      es la que desbloquea `docs/licitacion_privada_presupuestos_diseno.md`. **Tanda 2**
      (`MiembrosObraScreen`: ver miembros/invitaciones, copiar código, revocar, sacar miembro con
-     guarda del último administrador) escrita, `flutter analyze` limpio, sin correr en el
-     emulador todavía. Gap real encontrado al construir la Tanda 2, sin resolver: no hay forma de
-     mostrar nombre/email de un usuario en ningún lado del proyecto — la pantalla muestra UUID
-     acortado.
-5. **Verificar ART y horas por mes** contra póliza y convenio reales.
-6. **Tests de regresión de la cascada**, con dos o tres obras de referencia y totales esperados. Es lo que después permite tocar el motor sin miedo.
-7. **Telemetría mínima y reporte de errores.**
-8. **Selector de zona UOCRA.** Sin esto no hay mercado fuera de Zona B.
-9. **Estrategia offline** para la obra activa.
-10. **Obra tipo precargada** de 80 o 120 m², para que el primer uso muestre un presupuesto completo.
-11. **Calidad del PDF de salida.** Es lo único que ve el cliente del profesional, lo que circula por WhatsApp, y la mejor publicidad del producto. **Anotado 2026-09-10** (`docs/perfiles_nombre_telefono_diseno.md` §6): la matrícula profesional tiene que ir en el encabezado o el pie, junto con el nombre — es lo que le da validez profesional al documento. El dato ya existe en `perfiles`/`get_perfiles_de_obra`, listo para leer cuando se construya esta pieza.
+     guarda del último administrador) verificada por Seba en el emulador (nombre y matrícula
+     aparecen bien). El gap de nombre/email que había quedado abierto al construir la Tanda 2 ya
+     se resolvió — ver `docs/perfiles_nombre_telefono_diseno.md`.
+5. **Congelar el presupuesto del Modelo A, para que el CAC tenga sentido.** No es una idea nueva
+   para "más adelante" — es la decisión de negocio ya cerrada el 2026-08-31 (memoria de proyecto
+   "precio congelado vs. recalculado") sin su mecanismo técnico construido, y pasa a ser la pieza
+   siguiente porque el punto 1 del orden de ejecución de abajo (índices CAC + cotización BNA,
+   `docs/indices_cac_cotizacion_dolar_diseno.md`) ya conectó el CAC al Modelo B, pero **Modelo A
+   —el que usa Seba— sigue sin poder usarlo** porque no tiene ningún monto congelado contra el
+   cual calcular el ajuste (`calcular_presupuesto_vivo_obra` recalcula en vivo desde insumos cada
+   vez). Sin esto, el CAC queda a medio conectar. Ver `docs/indices_cac_cotizacion_dolar_diseno.md`
+   §4/§8 para el diagnóstico completo.
+6. **Verificar ART y horas por mes** contra póliza y convenio reales.
+7. **Tests de regresión de la cascada**, con dos o tres obras de referencia y totales esperados. Es lo que después permite tocar el motor sin miedo.
+8. **Telemetría mínima y reporte de errores.**
+9. **Selector de zona UOCRA.** Sin esto no hay mercado fuera de Zona B.
+10. **Estrategia offline** para la obra activa.
+11. **Obra tipo precargada** de 80 o 120 m², para que el primer uso muestre un presupuesto completo.
+12. **Calidad del PDF de salida.** Es lo único que ve el cliente del profesional, lo que circula por WhatsApp, y la mejor publicidad del producto. **Anotado 2026-09-10** (`docs/perfiles_nombre_telefono_diseno.md` §6): la matrícula profesional tiene que ir en el encabezado o el pie, junto con el nombre — es lo que le da validez profesional al documento. El dato ya existe en `perfiles`/`get_perfiles_de_obra`, listo para leer cuando se construya esta pieza.
 
 ## 7 · La regla que ordena todo
 
-**No agregar módulos nuevos hasta terminar el punto 6.**
+**No agregar módulos nuevos hasta terminar el punto 7.**
 
 La tentación con un producto que tiene tanto diseño acumulado sin implementar es seguir diseñando. **El riesgo real no es que falte funcionalidad: es que la que ya existe entregue un número equivocado.**
 
