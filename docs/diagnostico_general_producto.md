@@ -264,16 +264,19 @@ De `docs/relevamiento_sincronizacion_config_precios.md`. Todos del mismo patrón
      puede verlos, mismo criterio "oculto, no deshabilitado" que ya usa `SubitemsScreen`).
      **Sin conectar, y sin apuro**: Proveedores/Resumen siguen siendo mock con datos
      hardcodeados, sin lógica real que gatear todavía.
-   - **El mecanismo de invitaciones — diseño cerrado 2026-09-10, código en cero.**
-     `docs/invitaciones_diseno_datos.md`: tabla `invitaciones` + `aceptar_invitacion` (RPC
-     `SECURITY DEFINER`) + código pegado a mano en vez de enlace real (sin infraestructura de
-     deep link ni web publicada todavía — mejora prioritaria pendiente de eso). Selector de rol
-     limitado a los 5 roles no administrativos, vencimiento a 30 días, regla "un permiso no
-     regala PRO" aplicada a `puede_ver_apu_ajena`. Partido en dos tandas — Tanda 1 (el circuito
-     de invitar/aceptar) es la que desbloquea `docs/licitacion_privada_presupuestos_diseno.md`.
-     `ObraMembersRepository` sigue solo con `getMiembrosDeObra` (lectura) — ningún archivo Dart
-     hace insert/update sobre `obra_members` todavía, eso es exactamente lo que construye la
-     Tanda 1.
+   - **El mecanismo de invitaciones — las dos tandas construidas 2026-09-10.**
+     `docs/invitaciones_diseno_datos.md`: tabla `invitaciones` + `aceptar_invitacion`/
+     `previsualizar_invitacion`/`revocar_invitacion`/`quitar_miembro_obra` (`SECURITY DEFINER`) +
+     código pegado a mano en vez de enlace real (sin infraestructura de deep link ni web publicada
+     todavía — mejora prioritaria pendiente de eso). Selector de rol limitado a los 5 roles no
+     administrativos, vencimiento a 30 días, regla "un permiso no regala PRO" aplicada a
+     `puede_ver_apu_ajena`. **Tanda 1** (invitar/aceptar) verificada de punta a punta por Seba —
+     es la que desbloquea `docs/licitacion_privada_presupuestos_diseno.md`. **Tanda 2**
+     (`MiembrosObraScreen`: ver miembros/invitaciones, copiar código, revocar, sacar miembro con
+     guarda del último administrador) escrita, `flutter analyze` limpio, sin correr en el
+     emulador todavía. Gap real encontrado al construir la Tanda 2, sin resolver: no hay forma de
+     mostrar nombre/email de un usuario en ningún lado del proyecto — la pantalla muestra UUID
+     acortado.
 5. **Verificar ART y horas por mes** contra póliza y convenio reales.
 6. **Tests de regresión de la cascada**, con dos o tres obras de referencia y totales esperados. Es lo que después permite tocar el motor sin miedo.
 7. **Telemetría mínima y reporte de errores.**

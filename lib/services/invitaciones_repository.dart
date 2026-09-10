@@ -69,6 +69,23 @@ class InvitacionesRepository {
     });
   }
 
+  /// Todas las invitaciones de la obra, cualquier estado -- a diferencia de
+  /// `getInvitacionesPendientes`, para el panel de miembros (Tanda 2), que separa vigentes de
+  /// histórico (vencidas/revocadas/aceptadas) del lado de la UI usando `Invitacion.vigente`, no
+  /// acá. RLS (`invitaciones_select`) ya filtra a quien no tiene por qué verlas -- admin_maestro,
+  /// puede_invitar_terceros, o quien invitó esa fila puntual -- así que un miembro sin ese
+  /// permiso recibe lista vacía, no un error.
+  Future<List<Invitacion>> getTodasLasInvitaciones(String obraId) {
+    return _conLog('getTodasLasInvitaciones', () async {
+      final data = await _client
+          .from('invitaciones')
+          .select()
+          .eq('obra_id', obraId)
+          .order('creado_at', ascending: false);
+      return (data as List).map((row) => Invitacion.fromRow(row as Map<String, dynamic>)).toList();
+    });
+  }
+
   Future<List<Invitacion>> getInvitacionesPendientes(String obraId) {
     return _conLog('getInvitacionesPendientes', () async {
       final data = await _client

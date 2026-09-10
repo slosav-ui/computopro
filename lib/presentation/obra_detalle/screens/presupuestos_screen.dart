@@ -11,7 +11,7 @@ import '../tabs/mat_y_mo_tab.dart';
 import '../tabs/selector_tipo_presupuesto.dart';
 import '../tabs/bloque_factor_k.dart';
 import 'composicion_apu_screen.dart';
-import 'invitar_miembro_screen.dart';
+import 'miembros_obra_screen.dart';
 
 class PresupuestosScreen extends StatefulWidget {
   final dynamic obra;
@@ -167,18 +167,21 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> with SingleTick
           ],
         ),
         actions: [
-          // Regla de visibilidad 10 de UserContext -- oculto, no deshabilitado, mismo criterio
-          // que el resto de los gates de esta pantalla (ver _buildTabApu más abajo).
-          if (_userContext?.puedeInvitarMiembros == true)
+          // Punto de entrada único a gestión de gente en la obra (Tanda 2, ver
+          // docs/invitaciones_diseno_datos.md) -- visible a cualquier miembro (la RLS de
+          // obra_members/invitaciones ya filtra qué ve cada uno adentro de esa pantalla; acá no
+          // hace falta gatear con puedeInvitarMiembros, "Invitar" vive dentro de
+          // MiembrosObraScreen). Si _obraId todavía no resolvió, no se muestra -- no hay a dónde
+          // navegar.
+          if (_obraId != null)
             IconButton(
-              icon: const Icon(Icons.person_add_alt, color: Colors.white),
-              tooltip: 'Invitar a la obra',
-              onPressed: () {
-                if (_obraId == null) return;
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => InvitarMiembroScreen(obraId: _obraId!)),
-                );
-              },
+              icon: const Icon(Icons.groups_outlined, color: Colors.white),
+              tooltip: 'Miembros de la obra',
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => MiembrosObraScreen(obraId: _obraId!, userContext: _userContext),
+                ),
+              ),
             ),
         ],
         // Una sola línea, scrollable: probamos dos renglones (etiqueta corta +

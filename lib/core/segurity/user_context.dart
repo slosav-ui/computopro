@@ -130,6 +130,14 @@ class UserContext {
       _tieneAlgunRol([RolProyecto.adminMaestro]) ||
       membresias.any((m) => m.permisosEspeciales.puedeInvitarTerceros);
 
+  // Regla de visibilidad 11: ¿puede sacar a otro miembro de la obra (o revocar su/sus roles)?
+  // Mismo criterio que quitar_miembro_obra (0098_quitar_miembro_obra.sql): solo admin_maestro --
+  // a propósito más estricto que la RLS cruda de obra_members_update, que también deja que
+  // cliente_principal toque filas de invitado_apoderado (gestión de delegación de firma, pieza
+  // aparte, no la gestión general de miembros). No reusa puedeInvitarMiembros (esa suma
+  // puede_invitar_terceros, que no alcanza para sacar gente -- son permisos independientes).
+  bool get puedeQuitarMiembros => _tieneAlgunRol([RolProyecto.adminMaestro]);
+
   bool _delegacionVigente(ObraMember m) {
     final inicio = m.permisosEspeciales.delegacionTemporalInicio;
     final fin = m.permisosEspeciales.delegacionTemporalFin;

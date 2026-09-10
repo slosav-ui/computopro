@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../data/models/obra_member.dart';
 
@@ -11,15 +12,41 @@ import '../data/models/obra_member.dart';
 class ObraMembersRepository {
   final SupabaseClient _client = Supabase.instance.client;
 
-  Future<List<ObraMember>> getMiembrosDeObra(String obraId) async {
-    final data = await _client
-        .from('obra_members')
-        .select()
-        .eq('obra_id', obraId)
-        .eq('activo', true);
-    return (data as List)
-        .map((row) => _fromRow(row as Map<String, dynamic>))
-        .toList();
+  Future<T> _conLog<T>(String etiqueta, Future<T> Function() accion) async {
+    try {
+      return await accion();
+    } on PostgrestException catch (e) {
+      debugPrint(
+        'ObraMembersRepository.$etiqueta falló (Postgrest) -- code=${e.code} message=${e.message} '
+        'details=${e.details} hint=${e.hint}',
+      );
+      rethrow;
+    } catch (e, st) {
+      debugPrint('ObraMembersRepository.$etiqueta falló: $e\n$st');
+      rethrow;
+    }
+  }
+
+  Future<List<ObraMember>> getMiembrosDeObra(String obraId) {
+    return _conLog('getMiembrosDeObra', () async {
+      final data = await _client
+          .from('obra_members')
+          .select()
+          .eq('obra_id', obraId)
+          .eq('activo', true);
+      return (data as List)
+          .map((row) => _fromRow(row as Map<String, dynamic>))
+          .toList();
+    });
+  }
+
+  /// Ver `supabase/migrations/0098_quitar_miembro_obra.sql` -- pone `activo = false` (nunca
+  /// borra la fila) con la guarda de "no dejar la obra sin ningún admin_maestro activo" resuelta
+  /// del lado del servidor, no acá.
+  Future<void> quitarMiembro(String obraMemberId) {
+    return _conLog('quitarMiembro', () async {
+      await _client.rpc('quitar_miembro_obra', params: {'p_obra_member_id': obraMemberId});
+    });
   }
 
   ObraMember _fromRow(Map<String, dynamic> row) {

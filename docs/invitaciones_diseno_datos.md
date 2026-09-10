@@ -1,27 +1,21 @@
 # Invitaciones a una obra — diseño de datos (2026-09-10)
 
-**Estado: Tanda 1 aplicada y con Dart escrito, 2026-09-10 — ajustada tras la primera prueba de
-Seba.** Migración `0095_invitaciones.sql` aplicada y verificada por Seba (2 políticas, 3
-funciones, código de ejemplo generado sin caracteres confusos). Al probar el circuito de punta a
-punta aparecieron dos problemas reales que corrigió una segunda migración
-(`0096_invitaciones_previsualizar.sql`, función `previsualizar_invitacion`) — ver §7 para el
-detalle: la pantalla de pegar el código no explicaba qué seguía, y el código pendiente se aplicaba
-al primer usuario que iniciara sesión en el dispositivo, sin confirmar que fuera la persona
-correcta. Del lado de Dart: modelo, repositorio, las dos pantallas
-(`InvitarMiembroScreen`/`AceptarInvitacionScreen`, esta última ahora en dos pasos —
-previsualizar y confirmar), el getter `UserContext.puedeInvitarMiembros`, y los puntos de entrada
-(ícono en `PresupuestosScreen` para invitar, menú en `ObrasListScreen` y enlace en `LoginScreen`
-para ingresar código) — escrito, `flutter analyze` limpio. `InvitacionesRepository` loguea el
-error real de Postgres (code/message/details/hint) antes de mostrar un mensaje genérico, mismo
-patrón que `panel_crear_equipo_apu.dart` — con eso se encontró un tercer bug real: `42702, column
-reference "obra_id" is ambiguous`, mismo patrón ya visto en la familia de funciones de edición de
-APU (0075/0076), corregido en `0097_invitaciones_variable_conflict_use_column.sql` con
-`#variable_conflict use_column` en las tres funciones — ver §5. **Sin re-verificar en el emulador
-todavía** el circuito con las tres correcciones aplicadas. Tanda 2 (panel de miembros, revocar)
-sigue sin empezar. Es el punto 4 del orden de ejecución
-(`docs/diagnostico_general_producto.md`) y la dependencia real de
-`docs/licitacion_privada_presupuestos_diseno.md` ("por invitación desde la app" no se puede
-construir sin esto). Diagnóstico completo hecho contra el código real, no contra la spec —
+**Estado: Tanda 1 verificada de punta a punta por Seba, Tanda 2 aplicada y con Dart escrito, sin
+verificar en el emulador — 2026-09-10.**
+
+**Tanda 1**: tres migraciones (`0095`/`0096`/`0097`), tres bugs reales encontrados y corregidos al
+probar (explicación insuficiente en la pantalla de pegar el código, canje silencioso a la cuenta
+equivocada, y `42702` por ambigüedad de columna — ver §5/§7 para el detalle de cada uno). Generar,
+compartir, previsualizar y aceptar funcionan, confirmado por Seba.
+
+**Tanda 2** (`0098_quitar_miembro_obra.sql` + `MiembrosObraScreen`): ver miembros, ver
+invitaciones, copiar código, revocar, y sacar miembro con la guarda del último administrador — ver
+§10/§11 para el diagnóstico y los archivos. `flutter analyze` limpio, **sin correr en el emulador
+todavía**.
+
+Es el punto 4 del orden de ejecución (`docs/diagnostico_general_producto.md`) y la dependencia
+real de `docs/licitacion_privada_presupuestos_diseno.md` ("por invitación desde la app" no se
+puede construir sin esto). Diagnóstico completo hecho contra el código real, no contra la spec —
 `etapa3_roles_permisos_diseno_datos.md` no contempla nada de este mecanismo (tiene
 `invitado_por_usuario_id` e `invitado_por_rol`, pero asume que el UUID del invitado ya se conoce
 al insertar en `obra_members`; acá no se conoce todavía).
@@ -217,21 +211,105 @@ ningún camino de datos que los conecte.
 
 El mecanismo ya es `activo = false`, el mismo que `obra_members` usa para "revocar sin borrar"
 (`0001_obra_members.sql`: "Sin política DELETE: nadie borra filas"), con la política
-`obra_members_update` ya permitiendo que `admin_maestro` lo haga. Nunca se toca `auth.users`,
-nunca se borra una fila de `obra_members`. Falta solo la pantalla que dispare ese UPDATE — cero
-cambio de schema o RLS para esta parte.
+`obra_members_update` ya permitiendo que `admin_maestro` lo haga.
 
-## 9. Alcance: dos tandas
+**Ajuste al construir la Tanda 2**: en vez de que la pantalla dispare ese UPDATE directo, pasa por
+`quitar_miembro_obra(p_obra_member_id)` (`0098_quitar_miembro_obra.sql`, `SECURITY DEFINER`,
+mismo patrón que `aceptar_invitacion`/`revocar_invitacion`) — necesario para la guarda de §10 (no
+dejar la obra sin ningún `admin_maestro` activo, algo que un UPDATE crudo bajo RLS no puede
+expresar) y para el rastro garantizado en `audit_log`. Nunca se toca `auth.users`, nunca se borra
+una fila de `obra_members` — eso no cambió.
 
-**Tanda 1** (esta pieza): tabla `invitaciones` + RLS + las tres funciones (crear/revocar directo
-bajo RLS, `aceptar_invitacion` `SECURITY DEFINER`) + pantalla de invitar (rol + permisos + aviso
-PRO) + pantalla de ingresar código + persistencia del token pendiente en `AuthGate`. Cierra
+## 9. Alcance: dos tandas — LAS DOS CERRADAS 2026-09-10
+
+**Tanda 1**: tabla `invitaciones` + RLS + las funciones (crear/revocar directo bajo RLS,
+`aceptar_invitacion`/`previsualizar_invitacion` `SECURITY DEFINER`) + pantalla de invitar (rol +
+permisos + aviso PRO) + pantalla de ingresar código + persistencia del código pendiente. Cierra
 "alguien nuevo entra a la obra por invitación", que es lo que bloquea la licitación privada.
+Verificada de punta a punta por Seba: generar, compartir, previsualizar y aceptar funcionan.
 
-**Tanda 2** (después, no bloquea la primera): panel de miembros de la obra — listar activos,
-invitaciones pendientes/vencidas, botón revocar/quitar (usa el UPDATE de `activo=false` del §8).
+**Tanda 2**: panel de miembros de la obra — listar activos, invitaciones pendientes/histórico,
+copiar código, revocar, y sacar miembro (con la guarda del último administrador). Ver §10/§11.
 
-## 10. Archivos (Tanda 1) — CERRADO 2026-09-10
+## 10. Tanda 2: diagnóstico
+
+**Quién ve la pantalla y quién actúa.** Los miembros activos los ve cualquier miembro de la obra —
+coincide con la RLS: `obra_members_select` (`0004_rls_etapa3.sql`) ya es `is_obra_member(obra_id)`
+sin restricción de rol. Las invitaciones (pendientes e histórico) **no** — `invitaciones_select`
+solo deja verlas a `admin_maestro`, a quien tiene `puede_invitar_terceros`, o a quien invitó esa
+fila puntual. La pantalla usa un solo getter (`puedeInvitarMiembros`, ya existente) para decidir si
+pide y muestra esa sección — cubre los primeros dos casos; el tercero (invitaste una vez y después
+perdiste `puede_invitar_terceros`) queda sin cubrir en la UI a propósito, es un caso borde que no
+justifica un getter aparte, y el dato sigue protegido por RLS igual, solo no se muestra ahí.
+
+Para **revocar** una invitación, la función `revocar_invitacion` ya acepta esos mismos tres casos
+— la pantalla la ofrece bajo el mismo `puedeInvitarMiembros`, con la misma salvedad del párrafo de
+arriba.
+
+Para **sacar a un miembro**, la RLS cruda (`obra_members_update`) es más amplia que "solo
+administrador": también deja que `cliente_principal` actualice filas de `invitado_apoderado`
+(gestión de su propia delegación de firma). **Decisión: la Tanda 2 no cubre ese caso.** Es el
+"Panel de Delegación de Firma" que `CLAUDE.md` ya prevé como pieza aparte — mezclarlo acá hubiera
+sido una tabla más de casos especiales para un permiso que tiene su propia pantalla futura. Por
+eso `quitar_miembro_obra` (§8) es estrictamente `admin_maestro`, más estricto que lo que la RLS
+cruda permitiría, y `UserContext.puedeQuitarMiembros` (regla 11) refleja exactamente eso.
+
+**Cambiar el rol de alguien ya adentro.** No hace falta "editar" una fila — el modelo ya resuelve
+esto por diseño: roles combinables son *varias filas* de `obra_members` para el mismo
+`(obra_id, usuario_id)`. Agregar un rol nuevo a alguien que ya está en la obra es un INSERT directo
+(el admin ya conoce su `usuario_id`, no hace falta invitación — `obra_members_insert` ya lo permite
+sin el chequeo de auto-atribución que sí exige `invitaciones_insert`); quitar un rol es desactivar
+esa fila puntual con el mismo mecanismo que sacar a alguien. Lo que **no** tiene sentido es un
+UPDATE que pise el campo `rol` de una fila existente — rompería contra el
+`unique(obra_id, usuario_id, rol)` si esa persona ya tuviera el rol destino en otra fila, y no es
+como el resto del esquema modela "cambiar de rol". **Fuera de alcance de esta tanda**: el pedido
+explícito era "ver miembros, ver invitaciones, revocar y sacar" — agregar/quitar roles
+individuales queda anotado acá para cuando haga falta, no construido ahora.
+
+**Guarda del último administrador.** Resuelta del lado del servidor, no solo en la pantalla —
+`quitar_miembro_obra` cuenta los `admin_maestro` activos de la obra antes de desactivar uno, y
+si es el único, corta con una excepción clara en vez de dejar la obra sin nadie que la administre.
+Server-side y no solo client-side a propósito: es la misma razón por la que el resto del proyecto
+pone la autoridad real en RLS/funciones, nunca solo en la UI (`docs/diagnostico_general_producto.md`
+§3.3, "toda la seguridad descansa en RLS").
+
+**Dónde vive la pantalla.** Confirmado: desde la obra, en `PresupuestosScreen`. Cambio de diseño
+sobre la Tanda 1: el ícono que antes abría `InvitarMiembroScreen` directo (gateado por
+`puedeInvitarMiembros`) ahora abre `MiembrosObraScreen` sin gate de rol — la ve cualquier miembro,
+como corresponde a "ver miembros" — y "Invitar" pasa a vivir *adentro* de esa pantalla, gateado ahí.
+Un solo punto de entrada para toda la gestión de gente, no dos íconos.
+
+**Gap real encontrado, no resuelto acá:** no hay ninguna forma de mostrar un nombre o email
+legible — ni de un miembro ni de quien invitó a alguien. `perfiles` (`0014_perfiles.sql`) solo
+tiene `usuario_id`/`es_pro`, y el cliente no puede leer `auth.users.email` de otra persona (no hay
+RLS que lo permita, ni debería sin acotar a quién). La pantalla muestra el UUID acortado como
+identificador — sirve para distinguir filas, no para reconocer a alguien por nombre. Agregar un
+campo de nombre/email visible a `perfiles`, con una forma acotada de resolverlo para compañeros de
+obra (no para cualquier usuario autenticado), es una pieza aparte, más grande que esta tanda.
+
+## 11. Archivos (Tanda 2) — CERRADO 2026-09-10
+
+Nuevos:
+- `supabase/migrations/0098_quitar_miembro_obra.sql` — función con la guarda del último admin.
+- `lib/presentation/obra_detalle/screens/miembros_obra_screen.dart` — miembros activos,
+  invitaciones vigentes (copiar/revocar) e histórico, punto de entrada único.
+
+Tocados:
+- `lib/core/segurity/user_context.dart` — getter nuevo `puedeQuitarMiembros` (regla de
+  visibilidad 11), `admin_maestro` únicamente, a propósito más estricto que la RLS cruda (ver §10).
+- `lib/services/obra_members_repository.dart` — `quitarMiembro`, y un helper `_conLog` (mismo
+  patrón que `InvitacionesRepository`, code/message/details/hint de Postgres a la consola antes de
+  relanzar).
+- `lib/services/invitaciones_repository.dart` — `getTodasLasInvitaciones` (todos los estados, para
+  separar vigentes de histórico del lado de la UI).
+- `lib/presentation/obra_detalle/screens/presupuestos_screen.dart` — el ícono del AppBar cambia de
+  abrir `InvitarMiembroScreen` (gateado) a abrir `MiembrosObraScreen` (sin gate) — ver §10, "Dónde
+  vive la pantalla".
+
+`flutter analyze` limpio (49 infos preexistentes, ninguna nueva). **Sin verificar en el emulador
+todavía.**
+
+## 12. Archivos (Tanda 1) — CERRADO 2026-09-10
 
 Nuevos:
 - `supabase/migrations/0095_invitaciones.sql` — aplicada y verificada.
@@ -275,10 +353,14 @@ exclusivamente de la Tanda 2, no hizo falta adelantarlo.
 código, pegarlo sin sesión, registrarse, confirmar que se aplica solo; y con sesión activa,
 directo).
 
-## 11. Qué queda para después
+## 13. Qué queda para después
 
-- La pantalla de gestión de miembros (Tanda 2): listar, revocar (`getInvitacionesPendientes` ya
-  existe en el repositorio, `revocarInvitacion` también — falta la pantalla).
+- **Verificación en el emulador de la Tanda 2** — nunca se probó (Tanda 1 sí, de punta a punta).
+- **Nombre/email visible** para miembros e invitadores — gap real encontrado al construir la
+  Tanda 2, ver §10. Pieza aparte, más grande que agregar una columna.
+- **Agregar/quitar roles individuales** a alguien que ya está en la obra — mecánicamente simple
+  (§10), pero fuera del pedido explícito de esta tanda.
+- El **Panel de Delegación de Firma** (`cliente_principal` gestionando su `invitado_apoderado`) —
+  mencionado en `CLAUDE.md`, deliberadamente no cubierto por `quitar_miembro_obra` (§10).
 - El deep link / Universal Links / App Links real — mejora pendiente en §5, condicionado a que la
   web esté publicada.
-- Verificación en el emulador del circuito completo (ver arriba).
