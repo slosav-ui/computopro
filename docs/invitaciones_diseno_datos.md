@@ -11,9 +11,14 @@ correcta. Del lado de Dart: modelo, repositorio, las dos pantallas
 (`InvitarMiembroScreen`/`AceptarInvitacionScreen`, esta última ahora en dos pasos —
 previsualizar y confirmar), el getter `UserContext.puedeInvitarMiembros`, y los puntos de entrada
 (ícono en `PresupuestosScreen` para invitar, menú en `ObrasListScreen` y enlace en `LoginScreen`
-para ingresar código) — escrito, `flutter analyze` limpio, **sin re-verificar en el emulador
-todavía** el circuito corregido. Tanda 2 (panel de miembros, revocar) sigue sin empezar. Es el
-punto 4 del orden de ejecución
+para ingresar código) — escrito, `flutter analyze` limpio. `InvitacionesRepository` loguea el
+error real de Postgres (code/message/details/hint) antes de mostrar un mensaje genérico, mismo
+patrón que `panel_crear_equipo_apu.dart` — con eso se encontró un tercer bug real: `42702, column
+reference "obra_id" is ambiguous`, mismo patrón ya visto en la familia de funciones de edición de
+APU (0075/0076), corregido en `0097_invitaciones_variable_conflict_use_column.sql` con
+`#variable_conflict use_column` en las tres funciones — ver §5. **Sin re-verificar en el emulador
+todavía** el circuito con las tres correcciones aplicadas. Tanda 2 (panel de miembros, revocar)
+sigue sin empezar. Es el punto 4 del orden de ejecución
 (`docs/diagnostico_general_producto.md`) y la dependencia real de
 `docs/licitacion_privada_presupuestos_diseno.md` ("por invitación desde la app" no se puede
 construir sin esto). Diagnóstico completo hecho contra el código real, no contra la spec —
@@ -147,6 +152,18 @@ empieza con alguien reacio a usar la app (mismo problema de fricción que
 real queda anotado como mejora prioritaria en cuanto la web esté publicada** — condición de
 disparo ya definida en `docs/vinculacion_dispositivos_decisiones.md` §3 (se publica junto con el
 registro del software y el NDA, al momento de repartir el APK a colegas).
+
+**Bug real encontrado al probar en el emulador (2026-09-10), sin relación con lo de arriba**:
+`aceptar_invitacion` fallaba con `42702, column reference "obra_id" is ambiguous` — mismo patrón
+que ya mordió dos veces en la familia de funciones de edición de APU (`0075`/`0076`). Causa:
+`returns table(obra_id uuid, obra_nombre text, rol text)` hace que PL/pgSQL exponga esas columnas
+de salida como variables del cuerpo, y un `obra_id`/`rol` sin calificar en una consulta embebida
+(el candidato más probable: `on conflict (obra_id, usuario_id, rol)`) queda ambiguo. Corregido en
+`0097_invitaciones_variable_conflict_use_column.sql` con `#variable_conflict use_column` como
+primera línea del cuerpo — mismo remedio de fondo que `0076`, aplicado a las tres funciones de esta
+pieza (`aceptar_invitacion`, `revocar_invitacion`, `previsualizar_invitacion`), no solo a la que
+falló: las otras dos comparten el mismo patrón de `RETURNS TABLE` y podrían clonar el bug la
+próxima vez que se les toque el cuerpo.
 
 ## 6. Vencimiento: 30 días, revocable a mano
 
