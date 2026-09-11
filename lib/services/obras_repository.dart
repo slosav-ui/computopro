@@ -1,4 +1,5 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../data/models/certificado_subitem_avance.dart';
 
 /// Acceso a la tabla `obras` de Supabase.
 ///
@@ -59,13 +60,18 @@ class ObrasRepository {
   }
 
   /// Estado del presupuesto para congelamiento/validez (Modelo A) -- ver
-  /// docs/presupuesto_congelado_validez_modelo_a_diseno.md. Select acotado a estas 3 columnas, no
+  /// docs/presupuesto_congelado_validez_modelo_a_diseno.md. Select acotado a estas columnas, no
   /// getObras()/_fromRow() completo -- el panel que consume esto se refresca solo después de cada
-  /// acción, sin necesidad de recargar el resto de la fila de `obras`.
+  /// acción, sin necesidad de recargar el resto de la fila de `obras`. `aplicaCac`/`cacSerie`
+  /// sumados acá (no eran parte del diseño original) porque el panel los necesita para decidir si
+  /// mostrar la sección de CAC ajustado -- ver docs/cac_conectado_modelo_a_diseno.md.
   Future<Map<String, dynamic>> getEstadoPresupuesto(String obraId) async {
     final row = await _client
         .from('obras')
-        .select('presupuesto_fecha_presentacion, presupuesto_validez_dias, presupuesto_congelado_en')
+        .select(
+          'presupuesto_fecha_presentacion, presupuesto_validez_dias, presupuesto_congelado_en, '
+          'aplica_cac, cac_serie',
+        )
         .eq('id', obraId)
         .single();
     return {
@@ -76,6 +82,8 @@ class ObrasRepository {
       'congeladoEn': row['presupuesto_congelado_en'] != null
           ? DateTime.parse(row['presupuesto_congelado_en'] as String)
           : null,
+      'aplicaCac': row['aplica_cac'] == true,
+      'cacSerie': row['cac_serie']?.toString() ?? 'materiales_mano_obra',
     };
   }
 
@@ -97,6 +105,54 @@ class ObrasRepository {
   /// (vencido, sin presentar, recongelamiento con certificados ya emitidos) vía `PostgrestException`.
   Future<void> congelarPresupuesto(String obraId) async {
     await _client.rpc('congelar_presupuesto_obra', params: {'p_obra_id': obraId});
+  }
+
+  /// Suma de `presupuesto_subitems_congelado.monto_total` -- "lo que se firmó", sin ajuste de CAC.
+  /// Consulta directa a la tabla (RLS ya acota a `is_obra_member`), no un RPC nuevo -- es una suma
+  /// simple, no hace falta lógica de negocio del lado de la base para esto.
+  Future<double> getMontoPactadoCongelado(String obraId) async {
+    final rows = await _client
+        .from('presupuesto_subitems_congelado')
+        .select('monto_total')
+        .eq('obra_id', obraId);
+    return (rows as List).fold<double>(
+      0.0,
+      (suma, fila) => suma + ((fila['monto_total'] as num?)?.toDouble() ?? 0.0),
+    );
+  }
+
+  /// Saldo pendiente de certificar, ya ajustado por CAC si la obra lo tiene activo --
+  /// `calcular_saldo_pendiente_avance_medido`, `0104`/`0105`. `0` legítimo (obra sin congelar,
+  /// o 100% ya certificado), nunca la señal de un error -- eso corta como excepción
+  /// (`PostgrestException`), no devuelve `0` (`0106`).
+  Future<double> calcularSaldoPendienteAvanceMedido(String obraId) async {
+    final data = await _client.rpc(
+      'calcular_saldo_pendiente_avance_medido',
+      params: {'p_obra_id': obraId},
+    );
+    return (data as num?)?.toDouble() ?? 0.0;
+  }
+
+  /// Detalle por partida del ajuste de CAC -- `calcular_monto_congelado_ajustado`, `0105`/`0106`.
+  /// Fuente para dos cosas distintas, en dos pantallas distintas: si alguna fila tiene
+  /// `serieAplicada == 'sin_ajustar_indice_pendiente'` (el panel del presupuesto, aviso de índice
+  /// base pendiente) y qué partidas tienen `fallbackGeneral == true` (carga de avance, marca de
+  /// "esta partida se ajusta con el índice general"). Lista vacía para una obra sin congelar --
+  /// legítimo, no un error.
+  Future<List<MontoCongeladoAjustado>> getMontoCongeladoAjustado(String obraId) async {
+    final data = await _client.rpc(
+      'calcular_monto_congelado_ajustado',
+      params: {'p_obra_id': obraId},
+    );
+    return (data as List).map((fila) {
+      final row = fila as Map<String, dynamic>;
+      return MontoCongeladoAjustado(
+        obraSubitemId: row['obra_subitem_id'].toString(),
+        montoTotal: (row['monto_total'] as num?)?.toDouble() ?? 0.0,
+        serieAplicada: row['serie_aplicada']?.toString(),
+        fallbackGeneral: row['fallback_general'] == true,
+      );
+    }).toList();
   }
 
   Map<String, dynamic> _fromRow(Map<String, dynamic> row) {

@@ -58,6 +58,27 @@ class MontoObraSubitem {
   });
 }
 
+/// Monto de una partida congelada, ya ajustado por CAC si corresponde — salida de
+/// `calcular_monto_congelado_ajustado` (`0105`/`0106`). `serieAplicada`: `null` (obra sin CAC
+/// activo, `montoTotal` es el pactado tal cual), `'general'`/`'materiales_mano_obra'`/
+/// `'mano_obra'` (ajuste aplicado normalmente), o `'sin_ajustar_indice_pendiente'` (el índice del
+/// mes de congelamiento todavía no se publicó — `montoTotal` es el pactado sin ajustar, hasta que
+/// aparezca). `fallbackGeneral`: esta partida puntual cayó al índice general aunque la obra eligió
+/// separar series (rubro de precio manual, o sin ningún insumo con precio al congelar).
+class MontoCongeladoAjustado {
+  final String obraSubitemId;
+  final double montoTotal;
+  final String? serieAplicada;
+  final bool fallbackGeneral;
+
+  const MontoCongeladoAjustado({
+    required this.obraSubitemId,
+    required this.montoTotal,
+    required this.serieAplicada,
+    required this.fallbackGeneral,
+  });
+}
+
 /// Avance ponderado de un rubro — salida de `calcular_avance_ponderado_rubros` (0052).
 class AvancePonderadoRubro {
   final String rubroId;

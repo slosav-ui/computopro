@@ -8,6 +8,7 @@ import '../../../data/models/rubro_catalogo.dart';
 import '../../../services/auth_service.dart';
 import '../../../services/certificado_subitems_avance_repository.dart';
 import '../../../services/obra_subitems_repository.dart';
+import '../../../services/obras_repository.dart';
 import '../../../services/subitems_repository.dart';
 
 /// Carga de avance de los subítems tildados de UN rubro, para el Borrador en curso — Gestión de
@@ -42,6 +43,7 @@ class _CargaAvanceSubitemsScreenState extends State<CargaAvanceSubitemsScreen> {
   final ObraSubitemsRepository _obraSubitemsRepository = ObraSubitemsRepository();
   final SubitemsRepository _subitemsRepository = SubitemsRepository();
   final CertificadoSubitemsAvanceRepository _avanceRepository = CertificadoSubitemsAvanceRepository();
+  final ObrasRepository _obrasRepository = ObrasRepository();
   final AuthService _authService = AuthService();
 
   bool _cargando = true;
@@ -51,6 +53,12 @@ class _CargaAvanceSubitemsScreenState extends State<CargaAvanceSubitemsScreen> {
   final Map<String, MontoObraSubitem> _montoPorObraSubitem = {};
   final Map<String, double> _acumuladoPorObraSubitem = {};
   final Map<String, CertificadoSubitemAvance> _avanceActualPorObraSubitem = {};
+
+  // Partidas que, con la obra congelada y el ajuste de CAC separado por series, cayeron igual al
+  // índice general -- rubro de precio manual, o sin ningún insumo con precio al congelar. Ver
+  // docs/cac_conectado_modelo_a_diseno.md §1/§7 (ambigüedad C, cerrada por Seba: "el usuario tiene
+  // que poder enterarse"). Vacío para una obra sin congelar o sin CAC separado -- nada que marcar.
+  final Set<String> _ajusteGeneralPorObraSubitem = {};
 
   // Historial: cargado a demanda (lazy) recién cuando el usuario despliega esa fila puntual, no
   // de arriba para todas — evita N llamadas de más para algo que casi siempre queda plegado.
@@ -99,11 +107,15 @@ class _CargaAvanceSubitemsScreenState extends State<CargaAvanceSubitemsScreen> {
       final subitemsCatalogoFuture = _subitemsRepository.getSubitemsDeRubro(widget.rubro.id, usuarioId: usuarioId);
       final montosFuture = _avanceRepository.getMontoObraSubitems(widget.obraId);
       final avancesFuture = _avanceRepository.getAvancesDeCertificado(widget.certificado.id);
+      final ajusteCacFuture = _obrasRepository.getMontoCongeladoAjustado(widget.obraId);
 
       final obraSubitems = await obraSubitemsFuture;
       final subitemsCatalogo = await subitemsCatalogoFuture;
       final montos = await montosFuture;
       final avances = await avancesFuture;
+      // Silencioso ante error a propósito -- es una marca informativa, no algo de lo que dependa
+      // poder cargar avance; si falla, la pantalla sigue funcionando sin la marca.
+      final ajusteCac = await ajusteCacFuture.catchError((_) => <MontoCongeladoAjustado>[]);
 
       // Acumulado: una llamada por subítem tildado de este rubro, en paralelo — no hay (todavía)
       // una versión batch de calcular_avance_acumulado_subitem, y un rubro tiene pocos subítems
@@ -124,6 +136,9 @@ class _CargaAvanceSubitemsScreenState extends State<CargaAvanceSubitemsScreen> {
         _avanceActualPorObraSubitem
           ..clear()
           ..addEntries(avances.map((a) => MapEntry(a.obraSubitemId, a)));
+        _ajusteGeneralPorObraSubitem
+          ..clear()
+          ..addAll(ajusteCac.where((a) => a.fallbackGeneral).map((a) => a.obraSubitemId));
         for (var i = 0; i < obraSubitems.length; i++) {
           _acumuladoPorObraSubitem[obraSubitems[i].id] = acumulados[i];
         }
@@ -343,11 +358,24 @@ class _CargaAvanceSubitemsScreenState extends State<CargaAvanceSubitemsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              _descripcionDe(os),
-              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Text(
+                    _descripcionDe(os),
+                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (_ajusteGeneralPorObraSubitem.contains(os.id))
+                  Tooltip(
+                    message: 'Esta partida se ajusta con el índice CAC general -- no tiene '
+                        'materiales/mano de obra separados para aplicar las dos series.',
+                    child: Icon(Icons.info_outline, size: 15, color: Colors.blueGrey.shade400),
+                  ),
+              ],
             ),
             const SizedBox(height: 4),
             Row(
