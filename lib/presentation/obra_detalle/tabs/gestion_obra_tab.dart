@@ -477,11 +477,16 @@ class _GestionObraTabState extends State<GestionObraTab> {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           clipBehavior: Clip.antiAlias,
           child: InkWell(
-            // Sin acción para un Borrador -- retomarlo ya tiene su propio punto de entrada
-            // ("Nuevo certificado" arriba, que reabre el borrador si ya existe). El detalle
-            // (Leído/Pagado/Impactado, Gestión de Obra pieza 5) es para certificados que ya
-            // dejaron de ser borrador.
-            onTap: cert.estado == EstadoCertificado.borrador ? null : () => _abrirDetalle(cert),
+            // Corregido (Seba, al probar): un Borrador tiene que poder tocarse siempre -- es lo
+            // que permite corregir antes de emitir. Antes de esta pieza tocar la tarjeta no hacía
+            // nada (el único camino era el botón "Nuevo certificado" de arriba); ahora que el
+            // resto de la lista SÍ responde al toque, un Borrador que no responde se siente
+            // bloqueado, no "sin cambios". Borrador -> misma pantalla de carga de avance que ya
+            // usa "Nuevo certificado" para reabrirlo; cualquier otro estado -> el detalle nuevo
+            // (Leído/Pagado/Impactado).
+            onTap: cert.estado == EstadoCertificado.borrador
+                ? () => _abrirCargaAvance(cert)
+                : () => _abrirDetalle(cert),
             child: Padding(
             padding: const EdgeInsets.all(14.0),
             child: Column(
