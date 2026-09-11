@@ -506,11 +506,26 @@ class _GestionObraTabState extends State<GestionObraTab> {
                 // montos según la matriz de permisos — encontrado como agujero real al construir
                 // la pieza 3 (esta pantalla no tenía ningún UserContext hasta ahora), cerrado acá
                 // de una vez ya que se está conectando UserContext a este archivo por primera vez.
-                if (widget.userContext?.puedeVerMontosGestionObra == true)
+                if (widget.userContext?.puedeVerMontosGestionObra == true) ...[
                   Text(
                     'Monto Certificado: ${_fmt(cert.monto)}',
                     style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.black54),
                   ),
+                  // Desglose pactado/ajuste CAC (docs/cac_conectado_modelo_a_diseno.md §9,
+                  // ambigüedad B) -- solo si hay algo que explicar: montoPactado null son
+                  // certificados emitidos antes de esa migración (sin desglose guardado), y monto
+                  // == montoPactado es una obra sin CAC o sin ajuste ese mes -- en los dos casos no
+                  // hay nada nuevo que esta línea agregue.
+                  if (cert.montoPactado != null && cert.monto != cert.montoPactado)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text(
+                        'Pactado ${_fmt(cert.montoPactado!)} · Ajuste CAC '
+                        '${_fmt(cert.monto - cert.montoPactado!)}',
+                        style: TextStyle(fontSize: 11, color: Colors.blueGrey.shade600),
+                      ),
+                    ),
+                ],
                 Text(
                   'Emisión: ${_fmtFecha(cert.fechaEmision)}${cert.diasPlazoPago != null ? ' | Plazo: ${cert.diasPlazoPago} días' : ''}',
                   style: const TextStyle(fontSize: 11, color: Colors.black45),

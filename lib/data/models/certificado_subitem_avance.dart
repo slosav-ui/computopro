@@ -116,6 +116,11 @@ class TotalesCertificado {
   final double montoFondoReparo;
   final double montoNeto;
   final int? diasPlazoPago;
+  // Desglose pactado/ajuste CAC (0105) -- montoPactado + montoAjusteCac = monto, siempre. 0 en
+  // montoAjusteCac para cualquier obra sin CAC activo o sin congelar -- no hace falta distinguir
+  // esos dos casos acá, la UI solo se pregunta si hay algo que mostrar (!= 0).
+  final double montoPactado;
+  final double montoAjusteCac;
 
   const TotalesCertificado({
     required this.monto,
@@ -125,6 +130,8 @@ class TotalesCertificado {
     required this.montoFondoReparo,
     required this.montoNeto,
     required this.diasPlazoPago,
+    required this.montoPactado,
+    required this.montoAjusteCac,
   });
 }
 

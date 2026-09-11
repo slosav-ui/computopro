@@ -165,6 +165,8 @@ class CertificadoSubitemsAvanceRepository {
       montoFondoReparo: (fila['monto_fondo_reparo'] as num?)?.toDouble() ?? 0,
       montoNeto: (fila['monto_neto'] as num?)?.toDouble() ?? 0,
       diasPlazoPago: (fila['dias_plazo_pago'] as num?)?.toInt(),
+      montoPactado: (fila['monto_pactado'] as num?)?.toDouble() ?? 0,
+      montoAjusteCac: (fila['monto_ajuste_cac'] as num?)?.toDouble() ?? 0,
     );
   }
 

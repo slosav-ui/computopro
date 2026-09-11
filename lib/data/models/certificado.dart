@@ -29,6 +29,11 @@ class Certificado {
   final int version;
   final String periodo;
   final double monto;
+  // Desglose pactado/ajuste CAC, snapshoteado al emitir (0105) -- null para certificados emitidos
+  // antes de esa migración, no reconstruible retroactivamente (ver docs/cac_conectado_modelo_a_diseno.md
+  // §7, ambigüedad B). `monto - montoPactado` es el ajuste, no se guarda aparte -- sin significado
+  // de negocio propio más allá de esa resta.
+  final double? montoPactado;
   final EstadoCertificado estado;
 
   final String creadoPor;
@@ -86,6 +91,7 @@ class Certificado {
     this.version = 1,
     required this.periodo,
     required this.monto,
+    this.montoPactado,
     required this.estado,
     required this.creadoPor,
     required this.fechaCreacion,

@@ -236,11 +236,20 @@ preexistentes, ninguna nueva de fondo)**:
 - `lib/data/models/certificado_subitem_avance.dart` — modelo nuevo `MontoCongeladoAjustado`
   (salida de `calcular_monto_congelado_ajustado`).
 
-**Sin tocar todavía, por fuera de lo que pediste en esta pasada**:
-- `TotalesCertificado`/`calcular_totales_certificado` ya trae `montoPactado`/`montoAjusteCac` del
-  lado de datos (`0105` §6) — la vista previa de un certificado y la tarjeta del historial
-  (`vista_previa_certificado_screen.dart`, `gestion_obra_tab.dart`) todavía no lo muestran. El
-  desglose guardado (ambigüedad B) hoy solo es recuperable por SQL directo, no desde la app.
+**Desglose pactado/ajuste en la UI — hecho** (Seba: "no tiene sentido guardarlo si no se ve"):
+- `lib/data/models/certificado.dart` — `Certificado.montoPactado` (`null` = certificado emitido
+  antes de `0105`, sin desglose reconstruible).
+- `lib/services/certificados_repository.dart` — parsea `monto_pactado`.
+- `lib/data/models/certificado_subitem_avance.dart` — `TotalesCertificado.montoPactado`/
+  `montoAjusteCac`.
+- `lib/services/certificado_subitems_avance_repository.dart` — parsea las 2 columnas nuevas de
+  `calcular_totales_certificado`.
+- `lib/presentation/obra_detalle/screens/vista_previa_certificado_screen.dart` — desglosa
+  "Precio pactado"/"Ajuste CAC" antes del subtotal, solo cuando el ajuste es distinto de 0 (para no
+  ensuciar la vista previa de las obras sin CAC, la mayoría hoy).
+- `lib/presentation/obra_detalle/tabs/gestion_obra_tab.dart` — la tarjeta de cada certificado ya
+  emitido suma una línea chica "Pactado $X · Ajuste CAC $Y" cuando hay algo que explicar (mismo
+  criterio: nada si `montoPactado` es `null` o coincide con `monto`).
 
 **No tocados**: `0102_indices_cac_cotizacion_dolar.sql`/`calcular_saldo_pendiente_hitos` (Modelo B,
 sin cambios, confirmado); `0104_presupuesto_congelamiento_modelo_a.sql` (el congelamiento en sí

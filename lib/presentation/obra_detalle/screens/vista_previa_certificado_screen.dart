@@ -233,6 +233,14 @@ class _VistaPreviaCertificadoScreenState extends State<VistaPreviaCertificadoScr
         else
           ..._avancesPorRubro.entries.map(_buildBloqueRubro),
         const Divider(height: 32),
+        // Desglose pactado/ajuste CAC (docs/cac_conectado_modelo_a_diseno.md §9, ambigüedad B) --
+        // solo si hay ajuste que explicar. Para una obra sin CAC (la mayoría hoy) montoAjusteCac
+        // es exactamente 0 -- mostrar "Precio pactado" + "Ajuste CAC: $0" sería ruido sin ningún
+        // dato nuevo, así que el subtotal solo se desglosa cuando el ajuste es real.
+        if (totales.montoAjusteCac != 0) ...[
+          _buildFilaTotal('Precio pactado', totales.montoPactado),
+          _buildFilaTotal('Ajuste CAC', totales.montoAjusteCac),
+        ],
         _buildFilaTotal('Subtotal certificado', totales.monto),
         if ((totales.anticipoPct ?? 0) > 0)
           _buildFilaTotal(

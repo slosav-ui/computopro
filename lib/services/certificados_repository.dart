@@ -155,6 +155,7 @@ class CertificadosRepository {
       version: (row['version'] as num?)?.toInt() ?? 1,
       periodo: row['periodo'].toString(),
       monto: (row['monto'] as num).toDouble(),
+      montoPactado: (row['monto_pactado'] as num?)?.toDouble(),
       estado: _estadoDesdeColumna(row['estado']?.toString()),
       creadoPor: row['creado_por'].toString(),
       fechaCreacion: DateTime.tryParse(row['fecha_creacion']?.toString() ?? '') ?? DateTime.now(),
