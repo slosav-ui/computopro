@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/segurity/user_context.dart';
+import '../../../core/utils/conversion_dolar.dart';
 import '../../../data/models/certificado.dart';
 import '../../../services/auth_service.dart';
 import '../../../services/certificados_repository.dart';
+import '../../../services/indices_economicos_repository.dart';
+import '../../../services/obras_repository.dart';
 import '../screens/carga_avance_rubros_screen.dart';
 import '../screens/detalle_certificado_screen.dart';
 import 'cartel_firma_pendiente.dart';
@@ -34,15 +37,39 @@ class GestionObraTab extends StatefulWidget {
 class _GestionObraTabState extends State<GestionObraTab> {
   final CertificadosRepository _certificadosRepository = CertificadosRepository();
   final AuthService _authService = AuthService();
+  final ObrasRepository _obrasRepository = ObrasRepository();
+  final IndicesEconomicosRepository _indicesRepository = IndicesEconomicosRepository();
 
   List<Certificado> _certificados = [];
   bool _cargando = true;
   String? _error;
+  String _moneda = 'ARS';
+  double _cotizacionHoy = 0;
 
   @override
   void initState() {
     super.initState();
     _cargarCertificados();
+    _cargarMoneda();
+  }
+
+  /// Silencioso ante error, mismo criterio que el resto de los datos secundarios de esta solapa
+  /// (`PresupuestoEstadoPanel`, `CartelFirmaPendiente`): si falla, los montos siguen mostrándose
+  /// en ARS (moneda nace en 'ARS'), nunca rompe la lista de certificados por esto.
+  Future<void> _cargarMoneda() async {
+    try {
+      final monedaFuture = _obrasRepository.getMoneda(widget.obraId);
+      final cotizacionFuture = _indicesRepository.getCotizacionDolar();
+      final moneda = await monedaFuture;
+      final cotizacion = await cotizacionFuture;
+      if (!mounted) return;
+      setState(() {
+        _moneda = moneda;
+        _cotizacionHoy = cotizacion?.promedio ?? 0;
+      });
+    } catch (_) {
+      // Silencioso -- ver comentario del método.
+    }
   }
 
   Future<void> _cargarCertificados() async {
@@ -164,12 +191,22 @@ class _GestionObraTabState extends State<GestionObraTab> {
     await _cargarCertificados();
   }
 
-  String _fmt(double monto) {
-    final valorInt = monto.round();
+  /// `montoArs`: el valor tal cual sale de `certificados` -- siempre en pesos. Convierte a la
+  /// moneda de la obra antes de formatear -- un certificado YA EMITIDO usa su propia cotización
+  /// congelada al emitir (`0107`), no la de hoy (mismo criterio que `DetalleCertificadoScreen`,
+  /// docs/gestion_obra_estado_real_auditoria.md, intercambio del 2026-09-11); un Borrador (monto
+  /// en 0, sin nada congelado todavía) cae a la cotización de hoy.
+  String _fmt(double montoArs, Certificado cert) {
+    final cotizacion =
+        (cert.estado != EstadoCertificado.borrador && cert.cotizacionDolarPromedioAlEmitir != null)
+            ? cert.cotizacionDolarPromedioAlEmitir!
+            : _cotizacionHoy;
+    final convertido = convertirArsAMoneda(montoArs, _moneda, cotizacion);
+    final valorInt = convertido.round();
     final str = valorInt.toString();
     final reg = RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))');
     final formateado = str.replaceAllMapped(reg, (Match m) => '${m[1]}.');
-    return '\$ $formateado';
+    return _moneda == 'USD' ? 'USD $formateado' : '\$ $formateado';
   }
 
   String _fmtFecha(DateTime? fecha) {
@@ -521,7 +558,7 @@ class _GestionObraTabState extends State<GestionObraTab> {
                 // de una vez ya que se está conectando UserContext a este archivo por primera vez.
                 if (widget.userContext?.puedeVerMontosGestionObra == true) ...[
                   Text(
-                    'Monto Certificado: ${_fmt(cert.monto)}',
+                    'Monto Certificado: ${_fmt(cert.monto, cert)}',
                     style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.black54),
                   ),
                   // Desglose pactado/ajuste CAC (docs/cac_conectado_modelo_a_diseno.md §9,
@@ -533,8 +570,8 @@ class _GestionObraTabState extends State<GestionObraTab> {
                     Padding(
                       padding: const EdgeInsets.only(top: 2),
                       child: Text(
-                        'Pactado ${_fmt(cert.montoPactado!)} · Ajuste CAC '
-                        '${_fmt(cert.monto - cert.montoPactado!)}',
+                        'Pactado ${_fmt(cert.montoPactado!, cert)} · Ajuste CAC '
+                        '${_fmt(cert.monto - cert.montoPactado!, cert)}',
                         style: TextStyle(fontSize: 11, color: Colors.blueGrey.shade600),
                       ),
                     ),

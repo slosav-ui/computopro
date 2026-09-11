@@ -54,6 +54,13 @@ class ObrasRepository {
   ///
   /// Sin cómputo cargado todavía (obra recién creada, o sin ninguna partida tildada), la función
   /// de base devuelve 0 -- no null, no excepción -- así que esto no necesita ningún caso especial.
+  /// La moneda de la obra (`'ARS'`/`'USD'`) -- select acotado, no `getObras()`/`_fromRow()`
+  /// completo. Para conversión de montos guardados en ARS, ver `core/utils/conversion_dolar.dart`.
+  Future<String> getMoneda(String obraId) async {
+    final row = await _client.from('obras').select('moneda').eq('id', obraId).single();
+    return row['moneda']?.toString() ?? 'ARS';
+  }
+
   Future<double> calcularPresupuestoVivo(String obraId) async {
     final data = await _client.rpc('calcular_presupuesto_vivo_obra', params: {'p_obra_id': obraId});
     return (data as num?)?.toDouble() ?? 0.0;

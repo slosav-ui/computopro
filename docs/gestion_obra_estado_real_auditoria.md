@@ -44,6 +44,18 @@ detrás de `marcar_certificado_pagado` — nunca lo incluye, solo `cliente_princ
 `CLAUDE.md` como fuente; lo que exige el servidor es distinto. Se dejó ese getter sin tocar (no lo
 usa nada hoy) y los 3 nuevos no lo reusan.
 
+**Obras en USD: el certificado seguía mostrando pesos — CERRADO 2026-09-11.** Encontrado al probar
+el ciclo completo: `certificados.monto` siempre está en ARS (igual que todo el sistema de
+precios), pero ninguna de las 3 pantallas (`DetalleCertificadoScreen`, el historial de
+`GestionObraTab`, `VistaPreviaCertificadoScreen`) convertía a la moneda de la obra — sí lo hacía el
+presupuesto vivo del dashboard (`ObrasListScreen._convertirMonto`), esto quedó afuera al
+construirse antes de que existiera ese patrón. Además, un certificado YA EMITIDO tiene que
+convertirse a la cotización del momento en que se emitió, no a la de hoy — el monto en pesos ya
+está congelado, mismo criterio de "no retroactivo" que el resto del ciclo. Como
+`cotizacion_dolar_bna` es una fila única sin historial, hizo falta un snapshot nuevo
+(`certificados.cotizacion_dolar_promedio_al_emitir`, `0107`) — `null` en certificados emitidos
+antes de esa migración, que caen a la cotización de hoy con un aviso visible de que es aproximado.
+
 **El selector de Modelo de certificación bypaseaba la función dedicada — CERRADO 2026-09-11.**
 `ObraConfigCertificacionRepository.actualizarConfig` hacía un `.update()` directo sobre
 `obras.modelo_certificacion`, sin pasar por `cambiar_modelo_certificacion` (`0005`, motivo

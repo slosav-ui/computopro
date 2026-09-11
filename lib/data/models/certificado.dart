@@ -34,6 +34,13 @@ class Certificado {
   // §7, ambigüedad B). `monto - montoPactado` es el ajuste, no se guarda aparte -- sin significado
   // de negocio propio más allá de esa resta.
   final double? montoPactado;
+  // Cotización promedio BNA (compra/venta) snapshoteada al emitir (0107) -- para obras en USD, la
+  // conversión de un certificado YA EMITIDO tiene que usar ESTA, no la cotización de hoy: el monto
+  // en pesos ya está congelado, así que el número en dólares que se le mostró al cliente tampoco
+  // puede moverse después. `null` = certificado emitido antes de esta migración, o todavía en
+  // borrador (nada que congelar todavía) -- quien muestra el monto cae a la cotización de hoy en
+  // los dos casos, marcado como aproximación en el primero.
+  final double? cotizacionDolarPromedioAlEmitir;
   final EstadoCertificado estado;
 
   final String creadoPor;
@@ -92,6 +99,7 @@ class Certificado {
     required this.periodo,
     required this.monto,
     this.montoPactado,
+    this.cotizacionDolarPromedioAlEmitir,
     required this.estado,
     required this.creadoPor,
     required this.fechaCreacion,

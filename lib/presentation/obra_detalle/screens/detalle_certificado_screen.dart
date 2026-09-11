@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/segurity/user_context.dart';
+import '../../../core/utils/conversion_dolar.dart';
 import '../../../data/models/certificado.dart';
 import '../../../services/certificados_repository.dart';
+import '../../../services/indices_economicos_repository.dart';
+import '../../../services/obras_repository.dart';
 
 /// Detalle de un certificado YA EMITIDO -- cierra el ciclo de 5 estados que hasta ahora quedaba
 /// atascado en "Emitido" (Gestión de Obra, auditoría 2026-09-11,
@@ -35,17 +38,59 @@ class DetalleCertificadoScreen extends StatefulWidget {
 
 class _DetalleCertificadoScreenState extends State<DetalleCertificadoScreen> {
   final CertificadosRepository _certificadosRepository = CertificadosRepository();
+  final ObrasRepository _obrasRepository = ObrasRepository();
+  final IndicesEconomicosRepository _indicesRepository = IndicesEconomicosRepository();
 
   late Certificado _cert;
   bool _actualizando = false;
+  String _moneda = 'ARS';
+  double _cotizacionHoy = 0;
 
   bool get _puedeVerMontos => widget.userContext?.puedeVerMontosGestionObra == true;
+
+  /// La cotización con la que se convierten los montos de este certificado -- ver
+  /// `docs/gestion_obra_estado_real_auditoria.md` y el intercambio del 2026-09-11: un certificado
+  /// YA EMITIDO usa la cotización congelada al emitir (`0107`), nunca la de hoy -- el monto en
+  /// pesos ya está fijo, así que el número en dólares que se mostró en su momento tampoco se
+  /// mueve. Un Borrador (no debería llegar a esta pantalla, pero por las dudas) o un certificado
+  /// emitido antes de esa migración (sin snapshot guardado) cae a la cotización de hoy -- la mejor
+  /// aproximación disponible en esos dos casos, marcada como tal en pantalla (ver
+  /// `_avisoConversionAproximada`).
+  double get _cotizacionAUsar =>
+      (_cert.estado != EstadoCertificado.borrador && _cert.cotizacionDolarPromedioAlEmitir != null)
+          ? _cert.cotizacionDolarPromedioAlEmitir!
+          : _cotizacionHoy;
+
+  bool get _avisoConversionAproximada =>
+      _moneda == 'USD' &&
+      _cert.estado != EstadoCertificado.borrador &&
+      _cert.cotizacionDolarPromedioAlEmitir == null;
 
   @override
   void initState() {
     super.initState();
     _cert = widget.certificado;
     _marcarLeidoSiCorresponde();
+    _cargarMoneda();
+  }
+
+  /// Silencioso ante error -- si falla, la pantalla sigue mostrando los montos en ARS (moneda
+  /// nace en 'ARS', `convertirArsAMoneda` no convierte para esa moneda), nunca rompe la pantalla
+  /// por un dato secundario de visualización.
+  Future<void> _cargarMoneda() async {
+    try {
+      final monedaFuture = _obrasRepository.getMoneda(widget.obraId);
+      final cotizacionFuture = _indicesRepository.getCotizacionDolar();
+      final moneda = await monedaFuture;
+      final cotizacion = await cotizacionFuture;
+      if (!mounted) return;
+      setState(() {
+        _moneda = moneda;
+        _cotizacionHoy = cotizacion?.promedio ?? 0;
+      });
+    } catch (_) {
+      // Silencioso -- ver comentario del método.
+    }
   }
 
   /// Automático, sin botón -- ver el comentario de cabecera. Silencioso ante error (no es una
@@ -78,6 +123,7 @@ class _DetalleCertificadoScreenState extends State<DetalleCertificadoScreen> {
       periodo: c.periodo,
       monto: c.monto,
       montoPactado: c.montoPactado,
+      cotizacionDolarPromedioAlEmitir: c.cotizacionDolarPromedioAlEmitir,
       estado: c.estado == EstadoCertificado.emitido ? EstadoCertificado.leido : c.estado,
       creadoPor: c.creadoPor,
       fechaCreacion: c.fechaCreacion,
@@ -250,12 +296,15 @@ class _DetalleCertificadoScreenState extends State<DetalleCertificadoScreen> {
     }
   }
 
-  String _fmt(double monto) {
-    final valorInt = monto.round();
+  /// `montoArs`: el valor tal cual sale de `certificados` -- siempre en pesos. Convierte a la
+  /// moneda de la obra antes de formatear, ver `_cotizacionAUsar`.
+  String _fmt(double montoArs) {
+    final convertido = convertirArsAMoneda(montoArs, _moneda, _cotizacionAUsar);
+    final valorInt = convertido.round();
     final str = valorInt.toString();
     final reg = RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))');
     final formateado = str.replaceAllMapped(reg, (Match m) => '${m[1]}.');
-    return '\$ $formateado';
+    return _moneda == 'USD' ? 'USD $formateado' : '\$ $formateado';
   }
 
   String _fmtFecha(DateTime? fecha) {
@@ -313,6 +362,15 @@ class _DetalleCertificadoScreenState extends State<DetalleCertificadoScreen> {
             _buildFila('Fondo de reparo (${_cert.fondoReparoPctAplicado!.toStringAsFixed(1)}%)', '-${_fmt(_cert.montoFondoReparoRetenido ?? 0)}'),
           const Divider(),
           _buildFila('Neto a pagar', _fmt(_cert.montoNetoAPagar ?? _cert.monto), destacado: true),
+          if (_avisoConversionAproximada)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                'Convertido a la cotización de hoy -- este certificado se emitió antes de que se '
+                'empezara a guardar la cotización del momento de emisión.',
+                style: TextStyle(fontSize: 10, color: Colors.blueGrey.shade400, fontStyle: FontStyle.italic),
+              ),
+            ),
         ],
       ),
     );

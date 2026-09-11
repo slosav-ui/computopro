@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/segurity/user_context.dart';
+import '../../../core/utils/conversion_dolar.dart';
 import '../../../data/models/certificado.dart';
 import '../../../data/models/certificado_subitem_avance.dart';
 import '../../../services/auth_service.dart';
 import '../../../services/certificado_subitems_avance_repository.dart';
+import '../../../services/indices_economicos_repository.dart';
 import '../../../services/obra_subitems_repository.dart';
+import '../../../services/obras_repository.dart';
 import '../../../services/rubros_repository.dart';
 import '../../../services/subitems_repository.dart';
 
@@ -41,6 +44,8 @@ class _VistaPreviaCertificadoScreenState extends State<VistaPreviaCertificadoScr
   final SubitemsRepository _subitemsRepository = SubitemsRepository();
   final RubrosRepository _rubrosRepository = RubrosRepository();
   final AuthService _authService = AuthService();
+  final ObrasRepository _obrasRepository = ObrasRepository();
+  final IndicesEconomicosRepository _indicesRepository = IndicesEconomicosRepository();
 
   bool _cargando = true;
   bool _emitiendo = false;
@@ -51,6 +56,8 @@ class _VistaPreviaCertificadoScreenState extends State<VistaPreviaCertificadoScr
   final Map<String, String> _rubroNombrePorObraSubitem = {};
   TotalesCertificado? _totales;
   List<ExcesoCertificado> _excesos = [];
+  String _moneda = 'ARS';
+  double _cotizacionHoy = 0;
 
   bool get _puedeEmitir => widget.userContext?.puedeEmitirCertificado == true;
 
@@ -58,6 +65,27 @@ class _VistaPreviaCertificadoScreenState extends State<VistaPreviaCertificadoScr
   void initState() {
     super.initState();
     _cargarDatos();
+    _cargarMoneda();
+  }
+
+  /// Siempre la cotización de HOY -- a diferencia de un certificado ya emitido
+  /// (`DetalleCertificadoScreen`), acá nada está congelado todavía: esta pantalla es la vista
+  /// previa de un Borrador, antes de emitir. Silencioso ante error, mismo criterio que el resto
+  /// de los datos secundarios de visualización de este proyecto.
+  Future<void> _cargarMoneda() async {
+    try {
+      final monedaFuture = _obrasRepository.getMoneda(widget.obraId);
+      final cotizacionFuture = _indicesRepository.getCotizacionDolar();
+      final moneda = await monedaFuture;
+      final cotizacion = await cotizacionFuture;
+      if (!mounted) return;
+      setState(() {
+        _moneda = moneda;
+        _cotizacionHoy = cotizacion?.promedio ?? 0;
+      });
+    } catch (_) {
+      // Silencioso -- ver comentario del método.
+    }
   }
 
   Future<void> _cargarDatos() async {
@@ -185,12 +213,17 @@ class _VistaPreviaCertificadoScreenState extends State<VistaPreviaCertificadoScr
     );
   }
 
-  String _fmt(double monto) {
-    final valorInt = monto.round();
+  /// `montoArs`: el valor tal cual sale de `certificado_subitems_avance`/`calcular_totales_certificado`
+  /// -- siempre en pesos. Convierte a la moneda de la obra con la cotización de HOY (ver
+  /// `_cargarMoneda` -- nada está congelado todavía en esta pantalla, es la vista previa de un
+  /// Borrador).
+  String _fmt(double montoArs) {
+    final convertido = convertirArsAMoneda(montoArs, _moneda, _cotizacionHoy);
+    final valorInt = convertido.round();
     final str = valorInt.toString();
     final reg = RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))');
     final formateado = str.replaceAllMapped(reg, (Match m) => '${m[1]}.');
-    return '\$ $formateado';
+    return _moneda == 'USD' ? 'USD $formateado' : '\$ $formateado';
   }
 
   String _fmtPct(double v) => v == v.roundToDouble() ? v.toInt().toString() : v.toStringAsFixed(2);

@@ -192,6 +192,7 @@ class CertificadosRepository {
       periodo: row['periodo'].toString(),
       monto: (row['monto'] as num).toDouble(),
       montoPactado: (row['monto_pactado'] as num?)?.toDouble(),
+      cotizacionDolarPromedioAlEmitir: (row['cotizacion_dolar_promedio_al_emitir'] as num?)?.toDouble(),
       estado: _estadoDesdeColumna(row['estado']?.toString()),
       creadoPor: row['creado_por'].toString(),
       fechaCreacion: DateTime.tryParse(row['fecha_creacion']?.toString() ?? '') ?? DateTime.now(),
