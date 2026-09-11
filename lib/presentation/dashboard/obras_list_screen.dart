@@ -916,6 +916,20 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
     );
   }
 
+  /// ¿Puede este usuario editar la configuración económica de esta obra (moneda, CAC)? Misma
+  /// aproximación por dueño único que ya usa `obra_config_certificacion_repository.dart` para un
+  /// caso análogo -- `idAdminCreador == auth.uid()` en vez de resolver el rol real vía
+  /// `obra_members` (que `ObrasListScreen` no carga hoy, es una lista de muchas obras a la vez, no
+  /// el detalle de una). No cubre a un segundo `admin_maestro` que no sea el creador original
+  /// (edge case ya documentado como aceptado en ese mismo archivo) -- ocultar el botón de más
+  /// (falso negativo) es un fallo seguro; mostrarlo de más (falso positivo) es lo que este cambio
+  /// existe para evitar.
+  bool _esDuenioDeObra(Map<String, dynamic> obra) {
+    final creador = obra['idAdminCreador'];
+    final actual = _authService.usuarioActual?.id;
+    return creador != null && actual != null && creador == actual;
+  }
+
   // --- Diálogo: Ajuste Económico & Moneda ---
   void _configurarAjusteEconomico(Map<String, dynamic> obra) {
     String monedaSeleccionada = obra['moneda'];
@@ -2002,13 +2016,26 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                                     ),
                                     Row(
                                       children: [
-                                        IconButton(
-                                          constraints: const BoxConstraints(),
-                                          padding: const EdgeInsets.symmetric(horizontal: 6),
-                                          icon: const Icon(Icons.tune, size: 18, color: Color(0xFF1B365D)),
-                                          tooltip: 'Ajuste Económico / Moneda',
-                                          onPressed: () => _configurarAjusteEconomico(obra),
-                                        ),
+                                        // Gateado por dueño -- confirmado por Seba (2026-09-11):
+                                        // un invitado profesional (no admin_maestro, no el
+                                        // creador) que intenta esto choca con la RLS de `obras`
+                                        // (`0051`) y es correcto que choque. Antes se mostraba
+                                        // igual y fallaba al guardar -- "mejor que no aparezca a
+                                        // que aparezca y falle". `idAdminCreador == auth.uid()` es
+                                        // una aproximación, no la regla exacta de la RLS (que
+                                        // también deja pasar a un `admin_maestro` que no sea el
+                                        // creador original) -- mismo criterio ya aceptado en
+                                        // otras partes del proyecto (obra_config_certificacion_repository.dart):
+                                        // subestimar quién puede editar es un fallo seguro, nunca
+                                        // al revés.
+                                        if (_esDuenioDeObra(obra))
+                                          IconButton(
+                                            constraints: const BoxConstraints(),
+                                            padding: const EdgeInsets.symmetric(horizontal: 6),
+                                            icon: const Icon(Icons.tune, size: 18, color: Color(0xFF1B365D)),
+                                            tooltip: 'Ajuste Económico / Moneda',
+                                            onPressed: () => _configurarAjusteEconomico(obra),
+                                          ),
                                         IconButton(
                                           constraints: const BoxConstraints(),
                                           padding: const EdgeInsets.symmetric(horizontal: 6),

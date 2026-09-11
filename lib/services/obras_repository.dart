@@ -36,17 +36,18 @@ class ObrasRepository {
     return _fromRow(inserted);
   }
 
-  /// Bug real encontrado por Seba (2026-09-11): cambiar la moneda de una obra a USD se veía
-  /// aplicado en el dashboard (`setState` optimista) pero no sobrevivía a volver a entrar a la
-  /// obra -- `_cargarObras()` releía `obras.moneda` = `'ARS'`. Causa: esta función hacía el
-  /// `update` sin pedir la fila de vuelta (`.eq('id', id)` solo, sin `.select()`) -- si el `WHERE`
-  /// después de aplicar RLS no matchea ninguna fila, PostgREST devuelve éxito igual (0 filas
-  /// modificadas no es un error para PostgREST/RLS, mismo caso ya documentado en
-  /// `actualizarMontoTotalContratadoInicial`, más abajo, que sí se armó con esta guarda desde el
-  /// principio) -- el `await` nunca lanzaba, así que el catch de quien llama nunca se enteraba.
-  /// Corregido con el mismo patrón: pedir la fila actualizada y lanzar si viene `null`. El
-  /// `debugPrint` queda para poder ver el motivo real la próxima vez que esto (o algo parecido)
-  /// vuelva a pasar, en vez de tener que adivinar entre RLS/id incorrecto/otra causa.
+  /// Confirmado por Seba (2026-09-11): NO era un bug -- un usuario invitado con rol `profesional`
+  /// (no `admin_maestro` ni el creador) intentando cambiar la moneda es exactamente lo que la RLS
+  /// de `obras` (`0051`) tiene que rechazar. Lo que sí hacía falta corregir es el mensaje: para
+  /// `UPDATE`, cuando el `USING` de la política no matchea ninguna fila, PostgREST no lanza ningún
+  /// error de RLS -- el `update` simplemente no modifica nada, éxito silencioso (0 filas no es un
+  /// error para PostgREST). Sin pedir la fila de vuelta (como estaba antes de esta función), eso
+  /// se leía como "guardado" en el dashboard aunque no hubiera pasado nada -- el bug real que
+  /// arrancó todo este intercambio. Con `.select().maybeSingle()` se puede distinguir: `null` =
+  /// sin permiso (el caso normal y esperable acá), listo para traducir a un mensaje claro en vez
+  /// de la redacción técnica ("no se pudo actualizar", con jerga de fila/RLS) que tenía la primera
+  /// versión de este fix. El `debugPrint` se queda -- sigue siendo información útil en consola
+  /// para distinguir este caso de un id inexistente o un error real de Postgrest.
   Future<void> actualizarObra(String id, Map<String, dynamic> cambios) async {
     final row = _toRow(cambios);
     // updated_at lo mantiene un trigger de la base (0035_updated_at_trigger.sql),
@@ -64,9 +65,9 @@ class ObrasRepository {
     if (actualizada == null) {
       debugPrint(
         'ObrasRepository.actualizarObra: 0 filas actualizadas para id=$id (cambios=$row) -- '
-        'la obra no existe, o el usuario actual no tiene permiso de UPDATE sobre ella según RLS.',
+        'caso esperado cuando quien llama no es admin_maestro ni el creador de la obra (RLS).',
       );
-      throw StateError('No se pudo guardar -- no se encontró la obra o no tenés permiso para editarla.');
+      throw StateError('No tenés permiso para modificar esta obra.');
     }
   }
 
