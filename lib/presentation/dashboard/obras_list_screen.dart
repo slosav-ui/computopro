@@ -927,7 +927,19 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
   bool _esDuenioDeObra(Map<String, dynamic> obra) {
     final creador = obra['idAdminCreador'];
     final actual = _authService.usuarioActual?.id;
-    return creador != null && actual != null && creador == actual;
+    final esDuenio = creador != null && actual != null && creador == actual;
+    // Log temporal -- Seba reportó que el gate no funciona con el usuario invitado seba2135 (los
+    // 3 íconos le siguen apareciendo en Galpón Mix). Imprime los dos valores tal cual llegan,
+    // con su tipo runtime, para descartar entre: idAdminCreador ausente/null en el map,
+    // usuarioActual desincronizado (sesión vieja en memoria), o que Galpón Mix realmente tenga
+    // id_admin_creador = seba2135 en la base (creada desde esa cuenta en algún momento, aunque
+    // conceptualmente se la piense como "no suya"). Sacar una vez confirmada la causa.
+    debugPrint(
+      '_esDuenioDeObra — obra="${obra['nombre']}" (${obra['id']}) '
+      'idAdminCreador=$creador (${creador.runtimeType}) '
+      'usuarioActual=$actual (${actual.runtimeType}) -> esDuenio=$esDuenio',
+    );
+    return esDuenio;
   }
 
   // --- Diálogo: Ajuste Económico & Moneda ---
