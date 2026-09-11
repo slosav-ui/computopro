@@ -11,6 +11,7 @@ import '../../../services/certificado_subitems_avance_repository.dart';
 import '../../../services/obra_subitems_repository.dart';
 import '../../../services/obras_repository.dart';
 import '../../../services/subitems_repository.dart';
+import 'quitas_demasias_screen.dart';
 
 /// Carga de avance de los subítems tildados de UN rubro, para el Borrador en curso — Gestión de
 /// Obra, pieza 3. Empujada desde `CargaAvanceRubrosScreen`, mismo patrón de navegación que
@@ -303,6 +304,20 @@ class _CargaAvanceSubitemsScreenState extends State<CargaAvanceSubitemsScreen> {
     }
   }
 
+  /// Abre el mismo diálogo de alta que usa `QuitasDemasiasScreen` (el "+" con selector de
+  /// partida) -- acá la partida ya se conoce, es la fila que se estaba cargando, así que se
+  /// salta directo al diálogo de tipo/cantidad/motivo. No recarga nada de esta pantalla al volver:
+  /// una demasía/quita recién registrada queda `pendiente`, no cambia `obra_subitems.cantidad`
+  /// hasta que se apruebe (ver `aprobar_quita_demasia`, 0109).
+  Future<void> _registrarQuitaDemasia(ObraSubitem os) async {
+    await mostrarDialogoCrearQuitaDemasia(
+      context,
+      obraId: widget.obraId,
+      obraSubitem: os,
+      descripcionPartida: _descripcionDe(os),
+    );
+  }
+
   void _mostrarError(String mensaje) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(mensaje)));
   }
@@ -444,12 +459,29 @@ class _CargaAvanceSubitemsScreenState extends State<CargaAvanceSubitemsScreen> {
                 child: Text('Guardando...', style: TextStyle(fontSize: 10, color: Colors.black45)),
               ),
             const SizedBox(height: 2),
-            InkWell(
-              onTap: () => _toggleHistorial(os),
-              child: Text(
-                expandido ? '▾ Ocultar historial' : '▸ Ver historial de avances',
-                style: const TextStyle(fontSize: 11, color: Color(0xFF1B365D), fontWeight: FontWeight.w600),
-              ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                InkWell(
+                  onTap: () => _toggleHistorial(os),
+                  child: Text(
+                    expandido ? '▾ Ocultar historial' : '▸ Ver historial de avances',
+                    style: const TextStyle(fontSize: 11, color: Color(0xFF1B365D), fontWeight: FontWeight.w600),
+                  ),
+                ),
+                // Contextual, mismo lugar donde se detecta el desvío (docs/adicionales_quitas_
+                // demasias_diagnostico.md, confirmado por Seba: "se detecta cargando el avance de
+                // una partida"). Mismo gate que la carga de avance en sí -- si podés cargar acá,
+                // podés registrar lo que encontraste acá.
+                if (_puedeCargar)
+                  InkWell(
+                    onTap: () => _registrarQuitaDemasia(os),
+                    child: const Text(
+                      '± Demasía/Quita',
+                      style: TextStyle(fontSize: 11, color: Color(0xFF1B365D), fontWeight: FontWeight.w600),
+                    ),
+                  ),
+              ],
             ),
             if (expandido) _buildHistorial(os),
           ],

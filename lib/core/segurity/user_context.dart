@@ -182,6 +182,16 @@ class UserContext {
   bool get puedeMarcarCertificadoImpactado =>
       _tieneAlgunRol([RolProyecto.adminMaestro, RolProyecto.constructor]);
 
+  // Regla de visibilidad 15: ¿puede aprobar/rechazar una Demasía o Quita? Mirroreada EXACTO contra
+  // `puede_aprobar_quita_demasia` (0109), no contra `puedeGestionarAnulacionCertificado` (regla 9)
+  // aunque hoy compartan el mismo par de roles -- son autoridades de circuitos distintos que no
+  // tienen por qué seguir coincidiendo (mismo criterio que ya separó `puedeQuitarMiembros` de
+  // `puedeOtorgarAdminMaestro`, regla 11-bis). A propósito SIN cliente_principal ni admin_maestro:
+  // "al propietario se le informa, no se le pide permiso" (docs/adicionales_quitas_demasias_
+  // diagnostico.md §7-A/§6) -- el Cliente comenta vía `observar`, nunca aprueba.
+  bool get puedeAprobarQuitaDemasia =>
+      _tieneAlgunRol([RolProyecto.profesional, RolProyecto.constructor]);
+
   bool _delegacionVigente(ObraMember m) {
     final inicio = m.permisosEspeciales.delegacionTemporalInicio;
     final fin = m.permisosEspeciales.delegacionTemporalFin;

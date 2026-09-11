@@ -1,19 +1,22 @@
-/// Historial inmutable de transiciones — genérico y reusable, no una tabla de
-/// auditoría por feature. Ver docs/etapa3_roles_permisos_diseno_datos.md, sección 4.
-/// Sirve para modificaciones_obra hoy, y a futuro para certificados, delegaciones
-/// de firma y moderación de contenido (CLAUDE.md, "Blindaje legal").
+/// Fila de la tabla `audit_log` (Supabase) — historial inmutable de transiciones, genérico y
+/// reusable, no una tabla de auditoría por feature (append-only: sin política de UPDATE/DELETE
+/// para nadie). Sirve hoy para las observaciones del circuito de Quitas/Demasías
+/// (`ModificacionesObraRepository.observar`, docs/adicionales_quitas_demasias_diagnostico.md §6) y
+/// para lo que ya escribe `aprobar_quita_demasia` (0109); a futuro, certificados/delegaciones de
+/// firma/moderación de contenido.
+/// Ver supabase/migrations/0002_modificaciones_obra_audit_log.sql.
 class AuditLogEntry {
   final String id;
   final String? obraId;
   final String usuarioId;
   final String? ip;
-  final String accion;   // ej. 'aprobar_adicional', 'rechazar_adicional', 'devolver_adicional'
-  final String entidad;  // ej. 'modificacion_obra', 'certificado', 'delegacion_firma'
+  final String accion; // ej. 'aprobar_quita_demasia', 'observar_modificacion'
+  final String entidad; // ej. 'modificacion_obra', 'certificado'
   final String? entidadId;
   final Map<String, dynamic>? detalle;
   final DateTime fechaCreacion;
 
-  AuditLogEntry({
+  const AuditLogEntry({
     required this.id,
     this.obraId,
     required this.usuarioId,
@@ -25,59 +28,19 @@ class AuditLogEntry {
     required this.fechaCreacion,
   });
 
-  AuditLogEntry copyWith({
-    String? id,
-    String? obraId,
-    String? usuarioId,
-    String? ip,
-    String? accion,
-    String? entidad,
-    String? entidadId,
-    Map<String, dynamic>? detalle,
-    DateTime? fechaCreacion,
-  }) {
+  factory AuditLogEntry.fromRow(Map<String, dynamic> row) {
     return AuditLogEntry(
-      id: id ?? this.id,
-      obraId: obraId ?? this.obraId,
-      usuarioId: usuarioId ?? this.usuarioId,
-      ip: ip ?? this.ip,
-      accion: accion ?? this.accion,
-      entidad: entidad ?? this.entidad,
-      entidadId: entidadId ?? this.entidadId,
-      detalle: detalle ?? this.detalle,
-      fechaCreacion: fechaCreacion ?? this.fechaCreacion,
-    );
-  }
-
-  Map<String, dynamic> toMap() {
-    return {
-      'id': id,
-      'obraId': obraId,
-      'usuarioId': usuarioId,
-      'ip': ip,
-      'accion': accion,
-      'entidad': entidad,
-      'entidadId': entidadId,
-      'detalle': detalle,
-      'fechaCreacion': fechaCreacion.toIso8601String(),
-    };
-  }
-
-  factory AuditLogEntry.fromMap(Map<String, dynamic> map) {
-    return AuditLogEntry(
-      id: map['id']?.toString() ?? '',
-      obraId: map['obraId']?.toString(),
-      usuarioId: map['usuarioId']?.toString() ?? '',
-      ip: map['ip']?.toString(),
-      accion: map['accion']?.toString() ?? '',
-      entidad: map['entidad']?.toString() ?? '',
-      entidadId: map['entidadId']?.toString(),
-      detalle: map['detalle'] != null && map['detalle'] is Map<String, dynamic>
-          ? map['detalle'] as Map<String, dynamic>
+      id: row['id'].toString(),
+      obraId: row['obra_id']?.toString(),
+      usuarioId: row['usuario_id'].toString(),
+      ip: row['ip']?.toString(),
+      accion: row['accion']?.toString() ?? '',
+      entidad: row['entidad']?.toString() ?? '',
+      entidadId: row['entidad_id']?.toString(),
+      detalle: row['detalle'] != null && row['detalle'] is Map
+          ? Map<String, dynamic>.from(row['detalle'] as Map)
           : null,
-      fechaCreacion: map['fechaCreacion'] != null
-          ? DateTime.tryParse(map['fechaCreacion'].toString()) ?? DateTime.now()
-          : DateTime.now(),
+      fechaCreacion: DateTime.tryParse(row['created_at']?.toString() ?? '') ?? DateTime.now(),
     );
   }
 }

@@ -9,6 +9,7 @@ import '../../../services/indices_economicos_repository.dart';
 import '../../../services/obras_repository.dart';
 import '../screens/carga_avance_rubros_screen.dart';
 import '../screens/detalle_certificado_screen.dart';
+import '../screens/quitas_demasias_screen.dart';
 import 'cartel_firma_pendiente.dart';
 import 'panel_config_certificacion.dart';
 import 'presupuesto_estado_panel.dart';
@@ -91,6 +92,18 @@ class _GestionObraTabState extends State<GestionObraTab> {
         _cargando = false;
       });
     }
+  }
+
+  Future<void> _abrirQuitasDemasias() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => QuitasDemasiasScreen(obraId: widget.obraId, userContext: widget.userContext),
+      ),
+    );
+    // Aprobar una demasía/quita cambia obra_subitems.cantidad -- no afecta a esta lista de
+    // certificados, así que no hace falta recargar acá (a diferencia de _abrirDetalle/
+    // _abrirCargaAvance, que sí tocan certificados).
   }
 
   Future<void> _abrirConfigCertificacion() async {
@@ -412,8 +425,9 @@ class _GestionObraTabState extends State<GestionObraTab> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              runSpacing: 6,
               children: [
                 // Visible para admin_maestro/profesional/constructor — los 3 mismos roles que
                 // certificados_insert/certificados_update (0009/0010) ya autorizan a crear o
@@ -425,14 +439,28 @@ class _GestionObraTabState extends State<GestionObraTab> {
                     icon: const Icon(Icons.add, size: 16),
                     label: const Text('Nuevo certificado', style: TextStyle(fontSize: 11)),
                     style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF1B365D)),
-                  )
-                else
-                  const SizedBox.shrink(),
-                OutlinedButton.icon(
-                  onPressed: _abrirConfigCertificacion,
-                  icon: const Icon(Icons.settings_outlined, size: 16),
-                  label: const Text('Configuración', style: TextStyle(fontSize: 11)),
-                  style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF1B365D)),
+                  ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Visible para cualquiera -- es informativo para todos (el propietario se
+                    // entera de una demasía/quita comentando ahí, no aprobándola, docs/
+                    // adicionales_quitas_demasias_diagnostico.md §6). Aprobar/rechazar/crear se
+                    // gatean adentro de la pantalla, no acá.
+                    OutlinedButton.icon(
+                      onPressed: () => _abrirQuitasDemasias(),
+                      icon: const Icon(Icons.rule_outlined, size: 16),
+                      label: const Text('Quitas y Demasías', style: TextStyle(fontSize: 11)),
+                      style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF1B365D)),
+                    ),
+                    const SizedBox(width: 8),
+                    OutlinedButton.icon(
+                      onPressed: _abrirConfigCertificacion,
+                      icon: const Icon(Icons.settings_outlined, size: 16),
+                      label: const Text('Configuración', style: TextStyle(fontSize: 11)),
+                      style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF1B365D)),
+                    ),
+                  ],
                 ),
               ],
             ),
