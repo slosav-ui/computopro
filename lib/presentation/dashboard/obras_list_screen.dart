@@ -885,11 +885,19 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(content: Text('Obra actualizada.')),
                           );
-                        } catch (e) {
+                        } catch (e, st) {
+                          // El error real a la consola -- mismo criterio que _configurarAjusteEconomico
+                          // (más abajo): antes esto no decía nada, ni siquiera cuando actualizarObra
+                          // empezó a poder lanzar StateError (0 filas actualizadas, ver ese método).
+                          debugPrint('_abrirEditarObra: guardar falló: $e\n$st');
                           if (!context.mounted) return;
                           setModalState(() => guardando = false);
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('No se pudo guardar los cambios. Probá de nuevo.')),
+                            SnackBar(
+                              content: Text(
+                                e is StateError ? e.message : 'No se pudo guardar los cambios. Probá de nuevo.',
+                              ),
+                            ),
                           );
                         }
                       },

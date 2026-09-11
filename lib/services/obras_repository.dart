@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../data/models/certificado_subitem_avance.dart';
 
@@ -35,11 +36,38 @@ class ObrasRepository {
     return _fromRow(inserted);
   }
 
+  /// Bug real encontrado por Seba (2026-09-11): cambiar la moneda de una obra a USD se veía
+  /// aplicado en el dashboard (`setState` optimista) pero no sobrevivía a volver a entrar a la
+  /// obra -- `_cargarObras()` releía `obras.moneda` = `'ARS'`. Causa: esta función hacía el
+  /// `update` sin pedir la fila de vuelta (`.eq('id', id)` solo, sin `.select()`) -- si el `WHERE`
+  /// después de aplicar RLS no matchea ninguna fila, PostgREST devuelve éxito igual (0 filas
+  /// modificadas no es un error para PostgREST/RLS, mismo caso ya documentado en
+  /// `actualizarMontoTotalContratadoInicial`, más abajo, que sí se armó con esta guarda desde el
+  /// principio) -- el `await` nunca lanzaba, así que el catch de quien llama nunca se enteraba.
+  /// Corregido con el mismo patrón: pedir la fila actualizada y lanzar si viene `null`. El
+  /// `debugPrint` queda para poder ver el motivo real la próxima vez que esto (o algo parecido)
+  /// vuelva a pasar, en vez de tener que adivinar entre RLS/id incorrecto/otra causa.
   Future<void> actualizarObra(String id, Map<String, dynamic> cambios) async {
     final row = _toRow(cambios);
     // updated_at lo mantiene un trigger de la base (0035_updated_at_trigger.sql),
     // no se manda desde acá.
-    await _client.from('obras').update(row).eq('id', id);
+    final Map<String, dynamic>? actualizada;
+    try {
+      actualizada = await _client.from('obras').update(row).eq('id', id).select().maybeSingle();
+    } on PostgrestException catch (e) {
+      debugPrint(
+        'ObrasRepository.actualizarObra (Postgrest) -- id=$id cambios=$row code=${e.code} '
+        'message=${e.message} details=${e.details} hint=${e.hint}',
+      );
+      rethrow;
+    }
+    if (actualizada == null) {
+      debugPrint(
+        'ObrasRepository.actualizarObra: 0 filas actualizadas para id=$id (cambios=$row) -- '
+        'la obra no existe, o el usuario actual no tiene permiso de UPDATE sobre ella según RLS.',
+      );
+      throw StateError('No se pudo guardar -- no se encontró la obra o no tenés permiso para editarla.');
+    }
   }
 
   Future<void> eliminarObra(String id) async {
