@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/segurity/user_context.dart';
 import '../../../core/utils/parser_numero_ar.dart';
 import '../../../data/models/certificado.dart';
@@ -280,7 +281,22 @@ class _CargaAvanceSubitemsScreenState extends State<CargaAvanceSubitemsScreen> {
         _avanceActualPorObraSubitem[os.id] = avance;
         _guardando.remove(os.id);
       });
+    } on PostgrestException catch (e) {
+      // El mensaje que ve el usuario queda genérico a propósito -- el motivo real (el más
+      // probable hoy: el trigger de la tabla recalcula monto_periodo llamando a
+      // calcular_monto_obra_subitems, que para una obra congelada con CAC activo puede terminar
+      // llamando a factor_cac_obra -- si falta el índice del MES ACTUAL, esa función corta con
+      // `raise exception` y el guardado entero falla, incluso para cargar un % en borrador) va a
+      // la consola para poder diagnosticarlo sin adivinar.
+      debugPrint(
+        'CargaAvanceSubitemsScreen._guardar (Postgrest) -- code=${e.code} message=${e.message} '
+        'details=${e.details} hint=${e.hint}',
+      );
+      if (!mounted) return;
+      setState(() => _guardando.remove(os.id));
+      _mostrarError('No se pudo guardar el avance de este subítem.');
     } catch (e) {
+      debugPrint('CargaAvanceSubitemsScreen._guardar: $e');
       if (!mounted) return;
       setState(() => _guardando.remove(os.id));
       _mostrarError('No se pudo guardar el avance de este subítem.');

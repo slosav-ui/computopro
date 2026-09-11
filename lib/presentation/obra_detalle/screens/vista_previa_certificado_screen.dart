@@ -145,10 +145,19 @@ class _VistaPreviaCertificadoScreenState extends State<VistaPreviaCertificadoScr
       if (!mounted) return;
       Navigator.pop(context, true);
     } on PostgrestException catch (e) {
+      // e.message ya se muestra en el SnackBar de abajo (suele ser el texto del `raise exception`
+      // de `emitir_certificado`, en español, listo para mostrar) -- esto además deja el detalle
+      // completo en la consola (code/details/hint) para los casos en que el mensaje solo no
+      // alcanza para diagnosticar (por ejemplo, un error de RLS/constraint sin `raise` propio).
+      debugPrint(
+        'VistaPreviaCertificadoScreen._onEmitir (Postgrest) -- code=${e.code} message=${e.message} '
+        'details=${e.details} hint=${e.hint}',
+      );
       if (!mounted) return;
       setState(() => _emitiendo = false);
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
     } catch (e) {
+      debugPrint('VistaPreviaCertificadoScreen._onEmitir: $e');
       if (!mounted) return;
       setState(() => _emitiendo = false);
       ScaffoldMessenger.of(context).showSnackBar(
