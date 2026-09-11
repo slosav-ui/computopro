@@ -439,6 +439,21 @@ language sql stable as $$
 $$;
 
 grant execute on function calcular_totales_certificado(uuid) to authenticated;
+revoke execute on function calcular_totales_certificado(uuid) from public, anon;
+-- Corregido (Seba, 2026-09-11): cerrada a mano en producción tras encontrarla abierta a anon.
+-- Precisión sobre el origen (revisado contra el archivo, no de memoria): la `0085` NO le agregó
+-- revoke a esta función -- la clasificó en su "Paso 3" (funciones SECURITY INVOKER, búsqueda de
+-- `search_path` nada más) junto con otras 9, con el argumento de que una INVOKER no necesita
+-- revoke por seguridad: corre con los privilegios de quien la llama, así que si `anon` la ejecuta
+-- sigue chocando contra la RLS de `certificados`/`obras` igual que si llamara a esas tablas
+-- directo -- sin filtración real. Esa clasificación seguía siendo correcta acá (sigue siendo
+-- `language sql stable`, sin `security definer`, sin cambios en ese aspecto por el DROP de abajo).
+-- Lo que sí es válida es la lección general que motivó este chequeo: un `DROP FUNCTION` +
+-- `CREATE FUNCTION` resetea el `EXECUTE` de vuelta al default de Postgres (abierto a PUBLIC/anon)
+-- sin importar si la función es DEFINER o INVOKER -- por eso apareció abierta después de esta
+-- migración aunque nunca lo hubiera estado por un exploit real. Se revoca igual por prolijidad y
+-- para no depender de que el argumento de "INVOKER = inofensiva" siga siendo válido si el cuerpo
+-- de la función cambia en el futuro.
 
 -- emitir_certificado (0055, vigente hoy): YA lee `v_totales` de `calcular_totales_certificado` --
 -- agregar `monto_pactado` a la fila que se congela es una línea nueva en el UPDATE, sin tocar nada
