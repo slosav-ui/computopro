@@ -47,6 +47,11 @@ end;
 $$;
 
 grant execute on function otorgar_admin_maestro(uuid, uuid) to authenticated;
+revoke execute on function otorgar_admin_maestro(uuid, uuid) from public, anon;
+-- Corregido (Seba, 2026-09-11): esta función nació abierta a anon -- el `grant... to authenticated`
+-- de arriba no revoca el privilegio que Postgres le da a `public` (y por herencia a `anon`) por
+-- default a TODA función nueva. Revocada a mano en producción; este `revoke` deja el estado
+-- correcto en el repositorio, para que aplicar esta migración desde cero ya nazca cerrada.
 
 -- =====================================================================
 -- Paso 2 -- obras: SELECT/UPDATE/DELETE dejan de aceptar id_admin_creador como acceso permanente
