@@ -7,6 +7,7 @@ import '../../../services/certificados_repository.dart';
 import '../screens/carga_avance_rubros_screen.dart';
 import 'cartel_firma_pendiente.dart';
 import 'panel_config_certificacion.dart';
+import 'presupuesto_estado_panel.dart';
 
 class GestionObraTab extends StatefulWidget {
   final String obraId;
@@ -398,6 +399,15 @@ class _GestionObraTabState extends State<GestionObraTab> {
               ],
             ),
             const SizedBox(height: 8),
+            // Presentar (con validez), aviso de vencido + actualizar, y congelar al firmar --
+            // docs/presupuesto_congelado_validez_modelo_a_diseno.md. Visible para cualquiera (el
+            // estado es informativo para todos); los botones de acción se ocultan solos adentro
+            // del panel para quien no tiene puedeEditarComputo — mismo par (admin_maestro/
+            // profesional) que ya edita obra_subitems y que cerró la ambigüedad B del diseño.
+            PresupuestoEstadoPanel(
+              obraId: widget.obraId,
+              puedeGestionar: widget.userContext?.puedeEditarComputo == true,
+            ),
             // Solo quien tiene autoridad para subir el PDF (subir_pdf_firmado_certificado, 0011:
             // admin_maestro/profesional) — mostrárselo al Constructor sería un botón que le falla
             // siempre, no una información útil para él.

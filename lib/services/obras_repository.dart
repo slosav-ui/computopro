@@ -58,6 +58,47 @@ class ObrasRepository {
     return (data as num?)?.toDouble() ?? 0.0;
   }
 
+  /// Estado del presupuesto para congelamiento/validez (Modelo A) -- ver
+  /// docs/presupuesto_congelado_validez_modelo_a_diseno.md. Select acotado a estas 3 columnas, no
+  /// getObras()/_fromRow() completo -- el panel que consume esto se refresca solo después de cada
+  /// acción, sin necesidad de recargar el resto de la fila de `obras`.
+  Future<Map<String, dynamic>> getEstadoPresupuesto(String obraId) async {
+    final row = await _client
+        .from('obras')
+        .select('presupuesto_fecha_presentacion, presupuesto_validez_dias, presupuesto_congelado_en')
+        .eq('id', obraId)
+        .single();
+    return {
+      'fechaPresentacion': row['presupuesto_fecha_presentacion'] != null
+          ? DateTime.parse(row['presupuesto_fecha_presentacion'] as String)
+          : null,
+      'validezDias': (row['presupuesto_validez_dias'] as num?)?.toInt() ?? 30,
+      'congeladoEn': row['presupuesto_congelado_en'] != null
+          ? DateTime.parse(row['presupuesto_congelado_en'] as String)
+          : null,
+    };
+  }
+
+  /// Arranca (o reinicia) la validez del presupuesto -- `presentar_presupuesto_obra`,
+  /// `0103_presupuesto_validez_obra.sql`. Misma función para la primera presentación y para
+  /// "Actualizar" uno vencido; la excepción de la base (sin autoridad, ya congelado con
+  /// certificados emitidos, validez inválida) llega como `PostgrestException`, sin traducir acá --
+  /// el mensaje ya viene en español, listo para mostrar.
+  Future<void> presentarPresupuesto(String obraId, int validezDias) async {
+    await _client.rpc('presentar_presupuesto_obra', params: {
+      'p_obra_id': obraId,
+      'p_validez_dias': validezDias,
+    });
+  }
+
+  /// Congela cantidad y precio final de cada partida tildada -- `congelar_presupuesto_obra`,
+  /// `0104_presupuesto_congelamiento_modelo_a.sql`. A partir de acá, Gestión de Obra certifica
+  /// contra este número, no contra el precio en vivo. Mismas excepciones de negocio que arriba
+  /// (vencido, sin presentar, recongelamiento con certificados ya emitidos) vía `PostgrestException`.
+  Future<void> congelarPresupuesto(String obraId) async {
+    await _client.rpc('congelar_presupuesto_obra', params: {'p_obra_id': obraId});
+  }
+
   Map<String, dynamic> _fromRow(Map<String, dynamic> row) {
     return {
       'id': row['id']?.toString() ?? '',

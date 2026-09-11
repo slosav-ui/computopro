@@ -197,13 +197,20 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> with SingleTick
           labelColor: Colors.amber,
           unselectedLabelColor: Colors.white70,
           labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+          // Orden real del trabajo (Seba, 2026-09-11): Cómputo -> APU -> Mat y MO -> Gestión de
+          // Obra -> Resumen -> Proveedores. Resumen no es el cierre del presupuesto, es el tablero
+          // de situación de la obra en curso (avance, curva de tiempos, distribución de materiales
+          // y mano de obra, semáforos) -- va después de Gestión de Obra, no antes. Ojo si se vuelve
+          // a tocar este orden: `_abrirComposicionDesdeComputo` usa `animateTo(1)` para ir a APU --
+          // sigue siendo correcto acá porque APU no se movió de posición, pero cualquier cambio que
+          // mueva a APU de índice 1 tiene que actualizar ese `animateTo` también.
           tabs: const [
             Tab(text: 'Cómputo'),
             Tab(text: 'APU'),
             Tab(text: 'Mat y MO'),
-            Tab(text: 'Proveedores'),
             Tab(text: 'Gestión de Obra'),
             Tab(text: 'Resumen'),
+            Tab(text: 'Proveedores'),
           ],
         ),
       ),
@@ -226,11 +233,11 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> with SingleTick
                   puedeVerMontosYAPU: _userContext?.puedeVerMontosYAPU == true,
                 )
               : const Center(child: Text('No se pudo determinar la obra.')),
-          _buildTabProveedores(),
           _obraId != null
               ? GestionObraTab(obraId: _obraId!, userContext: _userContext)
               : const Center(child: Text('No se pudo determinar la obra.')),
           _buildTabResumenFinal(),
+          _buildTabProveedores(),
         ],
       ),
     );
@@ -307,7 +314,7 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> with SingleTick
     );
   }
 
-  // 4. PROVEEDORES
+  // 6. PROVEEDORES
   Widget _buildTabProveedores() {
     return ListView(
       padding: const EdgeInsets.all(12),
@@ -351,7 +358,7 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> with SingleTick
     );
   }
 
-  // 6. RESUMEN FINAL DINÁMICO
+  // 5. RESUMEN FINAL DINÁMICO
   Widget _buildTabResumenFinal() {
     final double costoDirectoTotal = 85000000.0;
     final double gastosGenerales = costoDirectoTotal * (_gastosGeneralesPorcentaje / 100);
