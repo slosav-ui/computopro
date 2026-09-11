@@ -123,11 +123,28 @@ class _PanelConfigCertificacionState extends State<PanelConfigCertificacion> {
     final validado = _validar();
     if (validado == null) return;
 
+    // Cambio de modelo separado del resto -- corregido (2026-09-11): antes esto viajaba en el
+    // mismo `update` que dias/anticipo/fondo de reparo, bypaseando `cambiar_modelo_certificacion`
+    // (motivo obligatorio + audit_log). Ahora se llama aparte, y solo si el modelo realmente
+    // cambió -- la función rechaza si se le pide "cambiar" al mismo modelo que ya tiene.
+    final modeloCambio = _modeloSeleccionado != _config!.modeloCertificacion;
+    String? motivo;
+    if (modeloCambio) {
+      motivo = await _pedirMotivoCambioModelo();
+      if (motivo == null) return; // canceló, no se guarda nada -- ni el modelo ni el resto
+    }
+
     setState(() => _guardando = true);
     try {
+      if (modeloCambio) {
+        await _repository.cambiarModelo(
+          obraId: widget.obraId,
+          modeloNuevo: _modeloSeleccionado,
+          motivo: motivo!,
+        );
+      }
       await _repository.actualizarConfig(
         obraId: widget.obraId,
-        modeloCertificacion: _modeloSeleccionado,
         diasPlazoPagoCertificados: validado['dias'] as int,
         anticipoPct: validado['anticipo'] as double,
         fondoReparoPct: validado['fondoReparo'] as double,
@@ -148,6 +165,37 @@ class _PanelConfigCertificacionState extends State<PanelConfigCertificacion> {
         _error = 'No se pudo guardar.';
       });
     }
+  }
+
+  /// Motivo obligatorio -- mismo candado que ya aplica `cambiar_modelo_certificacion` del lado del
+  /// servidor ("sin texto, la función falla antes de tocar ninguna fila"), repetido acá para no
+  /// hacer el viaje de red con algo que va a rechazar seguro.
+  Future<String?> _pedirMotivoCambioModelo() {
+    final controller = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Motivo del cambio de modelo', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLines: 3,
+          decoration: const InputDecoration(labelText: 'Motivo', isDense: true),
+          style: const TextStyle(fontSize: 13),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+          TextButton(
+            onPressed: () {
+              final texto = controller.text.trim();
+              if (texto.isEmpty) return;
+              Navigator.pop(ctx, texto);
+            },
+            child: const Text('Confirmar'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -200,6 +248,37 @@ class _PanelConfigCertificacionState extends State<PanelConfigCertificacion> {
               groupValue: _modeloSeleccionado,
               onChanged: soloLectura ? null : (v) => setState(() => _modeloSeleccionado = v!),
             ),
+            // Auditoría 2026-09-11 (docs/gestion_obra_estado_real_auditoria.md §3): el dato de
+            // hitos ya existe en Supabase, pero ninguna pantalla de la app lo usa todavía -- este
+            // radio dejaba elegirlo sin que nadie se enterara de eso hasta buscar dónde cargar el
+            // primer hito y no encontrarlo. Visible siempre, no solo al elegirlo, para que
+            // informe la decisión en vez de sorprender después.
+            if (_modeloSeleccionado == ModeloCertificacion.hitosPrecioCerrado)
+              Padding(
+                padding: const EdgeInsets.only(left: 12, bottom: 8),
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.shade50,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: Colors.amber.shade300),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.warning_amber_rounded, size: 14, color: Colors.amber.shade800),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          'Todavía no hay ninguna pantalla en la app para cargar o gestionar '
+                          'hitos -- el dato se guarda, pero no hay dónde usarlo.',
+                          style: TextStyle(fontSize: 10.5, color: Colors.amber.shade900),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             const SizedBox(height: 8),
             _buildCampo(label: 'Plazo de pago (días)', controller: diasController, habilitado: !soloLectura),
             _buildCampo(label: 'Anticipo (%)', controller: anticipoController, habilitado: !soloLectura),

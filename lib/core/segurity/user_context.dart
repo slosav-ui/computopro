@@ -138,6 +138,44 @@ class UserContext {
   // puede_invitar_terceros, que no alcanza para sacar gente -- son permisos independientes).
   bool get puedeQuitarMiembros => _tieneAlgunRol([RolProyecto.adminMaestro]);
 
+  // Reglas de visibilidad 12-14: cierre del ciclo del certificado (Leído/Pagado/Impactado, Gestión
+  // de Obra pieza 5) — mirroreadas EXACTO contra la autoridad real del lado del servidor
+  // (marcar_certificado_leido/pagado/impactado, 0011), no contra `puedeAprobarCertificados` (regla
+  // 3, arriba): esa regla incluye `admin_maestro` porque su comentario cita la "Matriz de permisos
+  // consolidada" de CLAUDE.md, pero `puede_gestionar_certificado` (la función real que usa
+  // marcar_certificado_pagado) NUNCA incluye admin_maestro -- solo cliente_principal o
+  // invitado_apoderado. Es un desajuste real entre lo documentado y lo que el servidor exige
+  // (encontrado auditando Gestión de Obra, 2026-09-11) -- `puedeAprobarCertificados` queda sin
+  // tocar (no la usa ninguna pantalla hoy, confirmado), pero estas 3 reglas nuevas no la reusan.
+
+  // Regla 12: ¿puede marcar un certificado como Leído? Quien lo recibe -- cliente_principal
+  // siempre, invitado_apoderado solo con delegación vigente (sin chequeo de
+  // puede_aprobar_certificados ni de tope: leer no es un acto económico, mismo criterio que ya
+  // cerró el diseño original, docs/certificados_ciclo_vida_diseno_datos.md §7).
+  bool get puedeMarcarCertificadoLeido =>
+      _tieneAlgunRol([RolProyecto.clientePrincipal]) ||
+      membresias.any((m) => m.rol == RolProyecto.invitadoApoderado && _delegacionVigente(m));
+
+  // Regla 13: ¿puede marcar un certificado como Pagado? Quien paga -- cliente_principal siempre,
+  // invitado_apoderado solo con `puedeAprobarCertificados` (el flag de PermisosEspeciales, no esta
+  // regla), delegación vigente, Y dentro de su tope de monto -- mismo chequeo exacto que
+  // `puede_gestionar_certificado` (0011). Recibe el monto del certificado puntual porque el tope
+  // es por certificado, no un booleano fijo de la obra.
+  bool puedeMarcarCertificadoPagado(double monto) =>
+      _tieneAlgunRol([RolProyecto.clientePrincipal]) ||
+      membresias.any((m) =>
+          m.rol == RolProyecto.invitadoApoderado &&
+          m.permisosEspeciales.puedeAprobarCertificados &&
+          (m.permisosEspeciales.topeMontoAprobacion == null ||
+              monto <= m.permisosEspeciales.topeMontoAprobacion!) &&
+          _delegacionVigente(m));
+
+  // Regla 14: ¿puede marcar un certificado como Impactado y Cerrado? El lado de la
+  // Empresa/Constructor que cobra y cierra administrativamente -- admin_maestro o constructor,
+  // nunca el Cliente (mismo par que `marcar_certificado_impactado`, 0011).
+  bool get puedeMarcarCertificadoImpactado =>
+      _tieneAlgunRol([RolProyecto.adminMaestro, RolProyecto.constructor]);
+
   bool _delegacionVigente(ObraMember m) {
     final inicio = m.permisosEspeciales.delegacionTemporalInicio;
     final fin = m.permisosEspeciales.delegacionTemporalFin;

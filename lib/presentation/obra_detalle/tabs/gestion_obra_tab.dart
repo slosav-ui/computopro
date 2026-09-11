@@ -5,6 +5,7 @@ import '../../../data/models/certificado.dart';
 import '../../../services/auth_service.dart';
 import '../../../services/certificados_repository.dart';
 import '../screens/carga_avance_rubros_screen.dart';
+import '../screens/detalle_certificado_screen.dart';
 import 'cartel_firma_pendiente.dart';
 import 'panel_config_certificacion.dart';
 import 'presupuesto_estado_panel.dart';
@@ -474,7 +475,14 @@ class _GestionObraTabState extends State<GestionObraTab> {
           elevation: 2,
           margin: const EdgeInsets.only(bottom: 12),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          child: Padding(
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            // Sin acción para un Borrador -- retomarlo ya tiene su propio punto de entrada
+            // ("Nuevo certificado" arriba, que reabre el borrador si ya existe). El detalle
+            // (Leído/Pagado/Impactado, Gestión de Obra pieza 5) es para certificados que ya
+            // dejaron de ser borrador.
+            onTap: cert.estado == EstadoCertificado.borrador ? null : () => _abrirDetalle(cert),
+            child: Padding(
             padding: const EdgeInsets.all(14.0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -556,9 +564,27 @@ class _GestionObraTabState extends State<GestionObraTab> {
                   ),
               ],
             ),
+            ),
           ),
         );
       },
     );
+  }
+
+  Future<void> _abrirDetalle(Certificado cert) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => DetalleCertificadoScreen(
+          obraId: widget.obraId,
+          certificado: cert,
+          userContext: widget.userContext,
+        ),
+      ),
+    );
+    // Recarga siempre al volver, no solo si se marcó algo explícito: "Leído" pasa solo al abrir
+    // el detalle, sin que el usuario haga nada -- el historial tiene que reflejar eso también si
+    // el usuario solo miró y volvió sin marcar nada más.
+    await _cargarCertificados();
   }
 }

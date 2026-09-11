@@ -97,8 +97,9 @@ class CertificadosRepository {
   /// Sube el/los adjunto(s) del PDF firmado — RPC a `subir_pdf_firmado_certificado`. Mismo patrón
   /// que el resto de los `*_adjuntos` de este certificado (`comprobante_pago_adjuntos`,
   /// `factura_final_adjuntos`): una lista de URLs ya hospedadas afuera (Drive, WhatsApp, etc.), la
-  /// app no sube el archivo en sí — no hay ningún mecanismo de carga de binarios en todo el
-  /// proyecto todavía (sin `file_picker`, sin uso de Supabase Storage desde Dart).
+  /// app no sube el archivo en sí. Supabase Storage sí se usa en el proyecto (el importador de
+  /// Excel/PDF, `importaciones_repository.dart`) pero nunca se conectó a los adjuntos de Gestión de
+  /// Obra — sigue siendo link pegado a mano acá, no subida real.
   Future<void> subirPdfFirmado({
     required String certificadoId,
     required List<String> adjuntos,
@@ -145,6 +146,41 @@ class CertificadosRepository {
         'p_motivo_rechazo': motivoRechazo,
       },
     );
+  }
+
+  /// Emitido/Leído -> Leído -- RPC a `marcar_certificado_leido` (0011). Idempotente del lado del
+  /// servidor (si ya estaba leído, no hace nada) -- pensada para llamarla sola al abrir el detalle
+  /// del certificado, no solo desde un botón explícito.
+  Future<void> marcarLeido(String certificadoId) async {
+    await _client.rpc('marcar_certificado_leido', params: {'p_certificado_id': certificadoId});
+  }
+
+  /// Emitido o Leído -> Pagado -- RPC a `marcar_certificado_pagado` (0011). `medioPago` tiene que
+  /// ser uno de `transferencia`/`efectivo`/`cheque`/`otro` (`check` de `certificados`, 0009) -- no
+  /// se valida acá, si no matchea la base lo rechaza con `PostgrestException`. `comprobanteAdjuntos`:
+  /// mismo patrón de link pegado a mano que el resto de los adjuntos de este certificado.
+  Future<void> marcarPagado({
+    required String certificadoId,
+    required String medioPago,
+    List<String> comprobanteAdjuntos = const [],
+  }) async {
+    await _client.rpc('marcar_certificado_pagado', params: {
+      'p_certificado_id': certificadoId,
+      'p_medio_pago': medioPago,
+      'p_comprobante_adjuntos': comprobanteAdjuntos,
+    });
+  }
+
+  /// Pagado -> Impactado y Cerrado -- RPC a `marcar_certificado_impactado` (0011). Cierra el ciclo
+  /// del certificado -- no hay transición después de esta.
+  Future<void> marcarImpactado({
+    required String certificadoId,
+    List<String> facturaAdjuntos = const [],
+  }) async {
+    await _client.rpc('marcar_certificado_impactado', params: {
+      'p_certificado_id': certificadoId,
+      'p_factura_adjuntos': facturaAdjuntos,
+    });
   }
 
   Certificado _fromRow(Map<String, dynamic> row) {

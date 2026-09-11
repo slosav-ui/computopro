@@ -29,13 +29,18 @@ class ObraConfigCertificacionRepository {
     return _fromRow(row);
   }
 
-  /// Los 4 campos simples juntos, un solo Guardar — mismo criterio que
+  /// Los 3 campos simples juntos, un solo Guardar — mismo criterio que
   /// `ObraPresupuestoConfigRepository.actualizarCargasSociales`: se validan juntos en el panel
-  /// antes de llegar acá, separarlo en 4 llamadas no gana nada. `monto_total_contratado` NO se
+  /// antes de llegar acá, separarlo en 3 llamadas no gana nada. `monto_total_contratado` NO se
   /// toca acá, tiene su propia regla — ver `actualizarMontoTotalContratadoInicial`.
+  ///
+  /// Ya NO incluye `modelo_certificacion` — corregido (2026-09-11, auditoría de Gestión de Obra):
+  /// esta función hacía un `update` directo sobre esa columna, bypaseando `cambiar_modelo_certificacion`
+  /// (`0005`), que exige un motivo obligatorio y deja rastro en `audit_log`. El cambio de modelo
+  /// ahora es `cambiarModelo`, abajo — separado a propósito, un `update` genérico no puede pasar el
+  /// `motivo` que esa función exige.
   Future<ObraConfigCertificacion> actualizarConfig({
     required String obraId,
-    required ModeloCertificacion modeloCertificacion,
     required int diasPlazoPagoCertificados,
     required double anticipoPct,
     required double fondoReparoPct,
@@ -43,7 +48,6 @@ class ObraConfigCertificacionRepository {
     final updated = await _client
         .from('obras')
         .update({
-          'modelo_certificacion': _columnaDesdeModelo(modeloCertificacion),
           'dias_plazo_pago_certificados': diasPlazoPagoCertificados,
           'anticipo_pct': anticipoPct,
           'fondo_reparo_pct': fondoReparoPct,
@@ -52,6 +56,23 @@ class ObraConfigCertificacionRepository {
         .select(_columnas)
         .single();
     return _fromRow(updated);
+  }
+
+  /// Cambia el modelo de certificación — RPC a `cambiar_modelo_certificacion` (`0005`), no un
+  /// `update` directo: esa función exige un motivo (rechaza sin él, del lado del servidor) y
+  /// registra el cambio en `audit_log` (`entidad='obra'`, `accion='cambiar_modelo_certificacion'`,
+  /// con el modelo anterior/nuevo/motivo en el detalle). Llamar solo cuando el modelo realmente
+  /// cambió -- la función rechaza si se le pide "cambiar" al mismo modelo que ya tiene.
+  Future<void> cambiarModelo({
+    required String obraId,
+    required ModeloCertificacion modeloNuevo,
+    required String motivo,
+  }) async {
+    await _client.rpc('cambiar_modelo_certificacion', params: {
+      'p_obra_id': obraId,
+      'p_modelo_nuevo': _columnaDesdeModelo(modeloNuevo),
+      'p_motivo': motivo,
+    });
   }
 
   /// Carga inicial de `monto_total_contratado` (Modelo B) — definición cerrada,
