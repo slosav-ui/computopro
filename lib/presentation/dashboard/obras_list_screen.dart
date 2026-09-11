@@ -9,6 +9,7 @@ import '../../services/obras_repository.dart';
 import '../../services/auth_service.dart';
 import '../../services/indices_economicos_repository.dart';
 import '../../services/invitaciones_repository.dart';
+import '../../services/obra_members_repository.dart';
 
 class ObrasListScreen extends StatefulWidget {
   const ObrasListScreen({super.key});
@@ -44,9 +45,15 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
   final AuthService _authService = AuthService();
   final InvitacionesRepository _invitacionesRepository = InvitacionesRepository();
   final IndicesEconomicosRepository _indicesEconomicosRepository = IndicesEconomicosRepository();
+  final ObraMembersRepository _obraMembersRepository = ObraMembersRepository();
   List<Map<String, dynamic>> _obras = [];
   bool _cargando = true;
   String? _error;
+
+  // Obras donde el usuario actual tiene admin_maestro activo -- reemplaza el criterio viejo por
+  // `obras.id_admin_creador` (0108): ese campo es inmutable y no reflejaba ni que puede haber
+  // varios administradores ni que uno puede renunciar al rol. Ver `_esAdminDeObra`.
+  Set<String> _obraIdsAdmin = {};
 
   static const _nombresMeses = [
     'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -192,11 +199,21 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
       final presupuestos = await Future.wait([
         for (final o in obras) _presupuestoVivoSeguro(o['id'] as String),
       ]);
+      // Una sola consulta para toda la lista, no una por obra -- ver _esAdminDeObra. Fail-safe a
+      // vacío: si falla, ningún ícono de administrador se muestra (fallo seguro, mismo criterio
+      // que el resto de esta pantalla) en vez de romper la carga de toda la lista.
+      final usuarioId = _authService.usuarioActual?.id;
+      final obraIdsAdmin = usuarioId == null
+          ? <String>{}
+          : await _obraMembersRepository
+              .getObraIdsDondeSoyAdminMaestro(usuarioId)
+              .catchError((_) => <String>{});
       if (!mounted) return;
       setState(() {
         _obras = [
           for (var i = 0; i < obras.length; i++) _conMontosCalculados(obras[i], presupuestos[i]),
         ];
+        _obraIdsAdmin = obraIdsAdmin;
         _cargando = false;
       });
     } catch (e) {
@@ -916,31 +933,15 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
     );
   }
 
-  /// ¿Puede este usuario editar la configuración económica de esta obra (moneda, CAC)? Misma
-  /// aproximación por dueño único que ya usa `obra_config_certificacion_repository.dart` para un
-  /// caso análogo -- `idAdminCreador == auth.uid()` en vez de resolver el rol real vía
-  /// `obra_members` (que `ObrasListScreen` no carga hoy, es una lista de muchas obras a la vez, no
-  /// el detalle de una). No cubre a un segundo `admin_maestro` que no sea el creador original
-  /// (edge case ya documentado como aceptado en ese mismo archivo) -- ocultar el botón de más
-  /// (falso negativo) es un fallo seguro; mostrarlo de más (falso positivo) es lo que este cambio
-  /// existe para evitar.
-  bool _esDuenioDeObra(Map<String, dynamic> obra) {
-    final creador = obra['idAdminCreador'];
-    final actual = _authService.usuarioActual?.id;
-    final esDuenio = creador != null && actual != null && creador == actual;
-    // Log temporal -- Seba reportó que el gate no funciona con el usuario invitado seba2135 (los
-    // 3 íconos le siguen apareciendo en Galpón Mix). Imprime los dos valores tal cual llegan,
-    // con su tipo runtime, para descartar entre: idAdminCreador ausente/null en el map,
-    // usuarioActual desincronizado (sesión vieja en memoria), o que Galpón Mix realmente tenga
-    // id_admin_creador = seba2135 en la base (creada desde esa cuenta en algún momento, aunque
-    // conceptualmente se la piense como "no suya"). Sacar una vez confirmada la causa.
-    debugPrint(
-      '_esDuenioDeObra — obra="${obra['nombre']}" (${obra['id']}) '
-      'idAdminCreador=$creador (${creador.runtimeType}) '
-      'usuarioActual=$actual (${actual.runtimeType}) -> esDuenio=$esDuenio',
-    );
-    return esDuenio;
-  }
+  /// ¿Puede este usuario editar la configuración económica/eliminar/editar esta obra? Corregido
+  /// (2026-09-11, decisión de Seba): ya NO mira `idAdminCreador` -- ese campo es inmutable y hacía
+  /// al creador "dueño para siempre", sin reflejar que puede haber varios `admin_maestro` (`0108`,
+  /// el dueño le puede dar el rol a otro) ni que alguien puede renunciar a ese rol (`MiembrosObraScreen`,
+  /// vía `quitar_miembro_obra` sobre su propia fila) -- con el criterio viejo, renunciar no sacaba
+  /// estos íconos porque `idAdminCreador` seguía siendo suyo para siempre. Ahora mira `_obraIdsAdmin`
+  /// (cargado una sola vez para toda la lista en `_cargarObras`, ver ese comentario), que sale de
+  /// `obra_members` -- la fuente de verdad real del rol, no un campo histórico de quién la creó.
+  bool _esAdminDeObra(Map<String, dynamic> obra) => _obraIdsAdmin.contains(obra['id']);
 
   // --- Diálogo: Ajuste Económico & Moneda ---
   void _configurarAjusteEconomico(Map<String, dynamic> obra) {
@@ -1914,7 +1915,7 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                                     // Gateado por dueño, mismo criterio que "Ajuste Económico" y
                                     // "Eliminar" (2026-09-11): la RLS de UPDATE sobre `obras` es
                                     // la misma para los 3 -- si no puede, que no aparezca.
-                                    if (_esDuenioDeObra(obra))
+                                    if (_esAdminDeObra(obra))
                                       IconButton(
                                         icon: const Icon(Icons.edit_outlined, size: 16, color: Colors.black45),
                                         tooltip: 'Editar Obra',
@@ -2055,7 +2056,7 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                                         // otras partes del proyecto (obra_config_certificacion_repository.dart):
                                         // subestimar quién puede editar es un fallo seguro, nunca
                                         // al revés.
-                                        if (_esDuenioDeObra(obra))
+                                        if (_esAdminDeObra(obra))
                                           IconButton(
                                             constraints: const BoxConstraints(),
                                             padding: const EdgeInsets.symmetric(horizontal: 6),
@@ -2075,7 +2076,7 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                                         // borrado y ver "Obra eliminada del registro" (éxito
                                         // falso, ObrasRepository.eliminarObra no detectaba el
                                         // rechazo de RLS) sin saber si de verdad se borró o no.
-                                        if (_esDuenioDeObra(obra))
+                                        if (_esAdminDeObra(obra))
                                           IconButton(
                                             constraints: const BoxConstraints(),
                                             padding: const EdgeInsets.symmetric(horizontal: 6),

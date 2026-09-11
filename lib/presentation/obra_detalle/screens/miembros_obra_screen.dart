@@ -44,6 +44,15 @@ class _MiembrosObraScreenState extends State<MiembrosObraScreen> {
 
   bool get _puedeVerInvitaciones => widget.userContext?.puedeInvitarMiembros == true;
   bool get _puedeQuitar => widget.userContext?.puedeQuitarMiembros == true;
+  bool get _puedeOtorgarAdmin => widget.userContext?.puedeOtorgarAdminMaestro == true;
+
+  // Quiénes ya tienen admin_maestro activo -- un mismo usuario puede aparecer en _miembros más de
+  // una vez (una fila por rol combinado, 0001_obra_members.sql), así que "hacer administrador" no
+  // tiene sentido ofrecerlo en la fila de alguien que ya lo es por otra fila.
+  Set<String> get _yaSonAdmin => _miembros
+      .where((m) => m.rol == RolProyecto.adminMaestro)
+      .map((m) => m.usuarioId)
+      .toSet();
 
   @override
   void initState() {
@@ -96,20 +105,32 @@ class _MiembrosObraScreenState extends State<MiembrosObraScreen> {
 
   Future<void> _confirmarQuitar(ObraMember miembro) async {
     final esUnoMismo = miembro.usuarioId == _authService.usuarioActual?.id;
+    // Renunciar a admin_maestro (0108) es el mismo camino que sacar a cualquier otro miembro --
+    // pasa por la misma función y la misma guarda del lado del servidor ("no se puede sacar al
+    // único administrador"), que ya llega tal cual al catch de abajo (PostgrestException con el
+    // mensaje de quitar_miembro_obra). Solo cambia el texto del diálogo, para que quede claro que
+    // es una renuncia al rol, no un abandono de la obra si todavía queda con otro rol.
+    final esRenunciaAdmin = esUnoMismo && miembro.rol == RolProyecto.adminMaestro;
     final confirmar = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('Sacar de la obra'),
+        title: Text(esRenunciaAdmin ? 'Renunciar a administrador' : 'Sacar de la obra'),
         content: Text(
-          esUnoMismo
-              ? '¿Salir de esta obra como ${etiquetaRol(miembro.rol)}? Vas a perder el acceso.'
-              : '¿Sacar a ${_nombreMostrado(miembro.usuarioId)} (${etiquetaRol(miembro.rol)}) de la obra?\n\n'
-                  'Se le quita el acceso. Lo que ya cargó -- avance, partidas -- no se borra: '
-                  'queda igual, atribuido a esta persona.',
+          esRenunciaAdmin
+              ? '¿Renunciar a tu rol de administrador de esta obra? Si tenés otro rol acá, lo '
+                  'conservás -- solo perdés los permisos de administrador.'
+              : esUnoMismo
+                  ? '¿Salir de esta obra como ${etiquetaRol(miembro.rol)}? Vas a perder el acceso.'
+                  : '¿Sacar a ${_nombreMostrado(miembro.usuarioId)} (${etiquetaRol(miembro.rol)}) de la obra?\n\n'
+                      'Se le quita el acceso. Lo que ya cargó -- avance, partidas -- no se borra: '
+                      'queda igual, atribuido a esta persona.',
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
-          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Sacar')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(esRenunciaAdmin ? 'Renunciar' : 'Sacar'),
+          ),
         ],
       ),
     );
@@ -118,6 +139,22 @@ class _MiembrosObraScreenState extends State<MiembrosObraScreen> {
     try {
       await _obraMembersRepository.quitarMiembro(miembro.id);
       if (!mounted) return;
+      if (esUnoMismo) {
+        // Si esa era la última fila activa del usuario en esta obra, ya no es is_obra_member --
+        // recargar esta pantalla rompería (la RLS ya no le deja leer nada de acá). Volver al
+        // dashboard directo, no solo refrescar. `getMiembrosDeObra` (RLS: is_obra_member) da lista
+        // vacía en vez de error si ya no tiene acceso -- no hace falta un caso aparte para eso.
+        final sigueSiendoMiembro = await _obraMembersRepository
+            .getMiembrosDeObra(widget.obraId)
+            .then((miembros) => miembros.any((m) => m.usuarioId == _authService.usuarioActual?.id))
+            .catchError((_) => false);
+        if (!mounted) return;
+        if (!sigueSiendoMiembro) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Saliste de la obra.')));
+          Navigator.of(context).popUntil((route) => route.isFirst);
+          return;
+        }
+      }
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Listo.')));
       await _cargar();
     } on PostgrestException catch (e) {
@@ -127,6 +164,39 @@ class _MiembrosObraScreenState extends State<MiembrosObraScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('No se pudo sacar al miembro.')),
+      );
+    }
+  }
+
+  Future<void> _confirmarOtorgarAdmin(ObraMember miembro) async {
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Hacer administrador'),
+        content: Text(
+          '¿Nombrar a ${_nombreMostrado(miembro.usuarioId)} administrador de esta obra? '
+          'Conserva su rol de ${etiquetaRol(miembro.rol)} además -- los dos conviven.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Nombrar')),
+        ],
+      ),
+    );
+    if (confirmar != true) return;
+
+    try {
+      await _obraMembersRepository.otorgarAdminMaestro(widget.obraId, miembro.usuarioId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Listo.')));
+      await _cargar();
+    } on PostgrestException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No se pudo nombrar administrador.')),
       );
     }
   }
@@ -304,13 +374,29 @@ class _MiembrosObraScreenState extends State<MiembrosObraScreen> {
           ],
         ),
         subtitle: Text(lineaSecundaria, style: const TextStyle(fontSize: 11)),
-        trailing: _puedeQuitar
-            ? IconButton(
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // "Hacer administrador" (0108) -- solo tiene sentido en la fila de alguien que
+            // TODAVÍA no es admin_maestro (por esta fila o por otra combinada, ver _yaSonAdmin).
+            if (_puedeOtorgarAdmin &&
+                miembro.rol != RolProyecto.adminMaestro &&
+                !_yaSonAdmin.contains(miembro.usuarioId))
+              IconButton(
+                icon: const Icon(Icons.admin_panel_settings_outlined, size: 20, color: Color(0xFF1B365D)),
+                tooltip: 'Hacer administrador',
+                onPressed: () => _confirmarOtorgarAdmin(miembro),
+              ),
+            if (_puedeQuitar)
+              IconButton(
                 icon: const Icon(Icons.person_remove_outlined, size: 20, color: Colors.red),
-                tooltip: 'Sacar de la obra',
+                tooltip: esUnoMismo && miembro.rol == RolProyecto.adminMaestro
+                    ? 'Renunciar a administrador'
+                    : 'Sacar de la obra',
                 onPressed: () => _confirmarQuitar(miembro),
-              )
-            : null,
+              ),
+          ],
+        ),
       ),
     );
   }

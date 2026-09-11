@@ -138,6 +138,12 @@ class UserContext {
   // puede_invitar_terceros, que no alcanza para sacar gente -- son permisos independientes).
   bool get puedeQuitarMiembros => _tieneAlgunRol([RolProyecto.adminMaestro]);
 
+  // Regla de visibilidad 11-bis: ¿puede nombrar a otro miembro como admin_maestro? Mismo cómputo
+  // que puedeQuitarMiembros hoy (solo admin_maestro), getter propio a propósito -- son acciones
+  // distintas (`otorgar_admin_maestro`/`quitar_miembro_obra`, `0108`) que hoy comparten la misma
+  // autoridad pero no tienen por qué seguir coincidiendo si algún día una de las dos cambia.
+  bool get puedeOtorgarAdminMaestro => _tieneAlgunRol([RolProyecto.adminMaestro]);
+
   // Reglas de visibilidad 12-14: cierre del ciclo del certificado (Leído/Pagado/Impactado, Gestión
   // de Obra pieza 5) — mirroreadas EXACTO contra la autoridad real del lado del servidor
   // (marcar_certificado_leido/pagado/impactado, 0011), no contra `puedeAprobarCertificados` (regla

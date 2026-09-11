@@ -42,10 +42,40 @@ class ObraMembersRepository {
 
   /// Ver `supabase/migrations/0098_quitar_miembro_obra.sql` -- pone `activo = false` (nunca
   /// borra la fila) con la guarda de "no dejar la obra sin ningún admin_maestro activo" resuelta
-  /// del lado del servidor, no acá.
+  /// del lado del servidor, no acá. Mismo camino para que un `admin_maestro` renuncie a su propio
+  /// rol -- pasarle el `id` de su propia fila; la guarda de "no puede irse el único administrador"
+  /// aplica igual (`0108`).
   Future<void> quitarMiembro(String obraMemberId) {
     return _conLog('quitarMiembro', () async {
       await _client.rpc('quitar_miembro_obra', params: {'p_obra_member_id': obraMemberId});
+    });
+  }
+
+  /// Nombra a otro miembro ya existente como `admin_maestro`, además de su(s) rol(es) actual(es)
+  /// -- roles combinables, no un reemplazo. `0108`. Solo puede llamarla quien ya es
+  /// `admin_maestro` de esa obra (verificado del lado del servidor).
+  Future<void> otorgarAdminMaestro(String obraId, String usuarioId) {
+    return _conLog('otorgarAdminMaestro', () async {
+      await _client.rpc('otorgar_admin_maestro', params: {
+        'p_obra_id': obraId,
+        'p_usuario_id': usuarioId,
+      });
+    });
+  }
+
+  /// Los `obra_id` donde el usuario actual tiene `admin_maestro` activo -- `0108`, reemplaza el
+  /// criterio viejo de `ObrasListScreen` (`obras.id_admin_creador == auth.uid()`, que no reflejaba
+  /// ni la posibilidad de varios administradores ni la renuncia al rol). Una sola consulta para
+  /// toda la lista del dashboard, no una por obra.
+  Future<Set<String>> getObraIdsDondeSoyAdminMaestro(String usuarioId) {
+    return _conLog('getObraIdsDondeSoyAdminMaestro', () async {
+      final data = await _client
+          .from('obra_members')
+          .select('obra_id')
+          .eq('usuario_id', usuarioId)
+          .eq('rol', 'admin_maestro')
+          .eq('activo', true);
+      return (data as List).map((row) => (row as Map<String, dynamic>)['obra_id'].toString()).toSet();
     });
   }
 
