@@ -71,8 +71,32 @@ class ObrasRepository {
     }
   }
 
+  /// Mismo bug de fondo que `actualizarObra` (arriba), más peligroso acá: un `delete` cuyo `USING`
+  /// no matchea ninguna fila (sin permiso) es éxito silencioso para PostgREST -- sin verificar,
+  /// esto devolvía sin lanzar, y quien llama (`ObrasListScreen._confirmarEliminar`) lo trataba
+  /// como un borrado real: sacaba la obra de la lista local y mostraba "Obra eliminada del
+  /// registro." — una confirmación de borrado FALSA para una obra que seguía intacta en la base,
+  /// que iba a reaparecer sola en la próxima recarga. Corregido con `.select()`: si la lista de
+  /// filas borradas viene vacía, no se borró nada -- se lanza antes de que quien llama pueda
+  /// creer que sí.
   Future<void> eliminarObra(String id) async {
-    await _client.from('obras').delete().eq('id', id);
+    final List<dynamic> borradas;
+    try {
+      borradas = await _client.from('obras').delete().eq('id', id).select();
+    } on PostgrestException catch (e) {
+      debugPrint(
+        'ObrasRepository.eliminarObra (Postgrest) -- id=$id code=${e.code} message=${e.message} '
+        'details=${e.details} hint=${e.hint}',
+      );
+      rethrow;
+    }
+    if (borradas.isEmpty) {
+      debugPrint(
+        'ObrasRepository.eliminarObra: 0 filas borradas para id=$id -- caso esperado cuando '
+        'quien llama no es admin_maestro ni el creador de la obra (RLS).',
+      );
+      throw StateError('No tenés permiso para eliminar esta obra.');
+    }
   }
 
   /// Presupuesto vivo de la obra -- suma de todas las partidas tildadas, cantidad × precio final,

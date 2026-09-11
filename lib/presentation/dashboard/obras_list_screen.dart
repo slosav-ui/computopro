@@ -1551,11 +1551,21 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Obra eliminada del registro.')),
                 );
-              } catch (e) {
+              } catch (e, st) {
+                // El error real a la consola, mismo criterio que el resto de las acciones de esta
+                // pantalla -- acá importa más que en ninguna otra: antes de este fix, un borrado
+                // sin permiso ni siquiera caía en este catch (eliminarObra no lo detectaba),
+                // mostraba éxito falso y sacaba la obra de la lista igual. Ver
+                // ObrasRepository.eliminarObra.
+                debugPrint('_confirmarEliminar: falló: $e\n$st');
                 if (!mounted || !ctx.mounted) return;
                 Navigator.pop(ctx);
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('No se pudo eliminar la obra. Intente nuevamente.')),
+                  SnackBar(
+                    content: Text(
+                      e is StateError ? e.message : 'No se pudo eliminar la obra. Intente nuevamente.',
+                    ),
+                  ),
                 );
               }
             },
@@ -1888,13 +1898,18 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                                     // overflow en pantalla angosta). Editar
                                     // el nombre es lo que el usuario está
                                     // mirando cuando lo quiere corregir.
-                                    IconButton(
-                                      icon: const Icon(Icons.edit_outlined, size: 16, color: Colors.black45),
-                                      tooltip: 'Editar Obra',
-                                      constraints: const BoxConstraints(),
-                                      padding: const EdgeInsets.symmetric(horizontal: 6),
-                                      onPressed: () => _mostrarModalEditarObra(obra),
-                                    ),
+                                    //
+                                    // Gateado por dueño, mismo criterio que "Ajuste Económico" y
+                                    // "Eliminar" (2026-09-11): la RLS de UPDATE sobre `obras` es
+                                    // la misma para los 3 -- si no puede, que no aparezca.
+                                    if (_esDuenioDeObra(obra))
+                                      IconButton(
+                                        icon: const Icon(Icons.edit_outlined, size: 16, color: Colors.black45),
+                                        tooltip: 'Editar Obra',
+                                        constraints: const BoxConstraints(),
+                                        padding: const EdgeInsets.symmetric(horizontal: 6),
+                                        onPressed: () => _mostrarModalEditarObra(obra),
+                                      ),
                                     Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                       decoration: BoxDecoration(
@@ -2043,13 +2058,19 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                                           tooltip: 'Imprimir / Exportar',
                                           onPressed: () => _abrirMenuExportar(obra),
                                         ),
-                                        IconButton(
-                                          constraints: const BoxConstraints(),
-                                          padding: const EdgeInsets.symmetric(horizontal: 6),
-                                          icon: const Icon(Icons.delete_outline, size: 18, color: Colors.redAccent),
-                                          tooltip: 'Eliminar Obra',
-                                          onPressed: () => _confirmarEliminar(obra),
-                                        ),
+                                        // Gateado por dueño (2026-09-11) -- el más importante de
+                                        // los 3: sin esto, alguien sin permiso podía confirmar el
+                                        // borrado y ver "Obra eliminada del registro" (éxito
+                                        // falso, ObrasRepository.eliminarObra no detectaba el
+                                        // rechazo de RLS) sin saber si de verdad se borró o no.
+                                        if (_esDuenioDeObra(obra))
+                                          IconButton(
+                                            constraints: const BoxConstraints(),
+                                            padding: const EdgeInsets.symmetric(horizontal: 6),
+                                            icon: const Icon(Icons.delete_outline, size: 18, color: Colors.redAccent),
+                                            tooltip: 'Eliminar Obra',
+                                            onPressed: () => _confirmarEliminar(obra),
+                                          ),
                                       ],
                                     ),
                                   ],
