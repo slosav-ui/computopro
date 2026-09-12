@@ -296,3 +296,320 @@ La UI del `admin_maestro` para tildar/destildar qué libros están activos por o
 - No creé los archivos Dart nuevos mostrados arriba (son propuesta, no código real todavía).
 - No diseñé la tabla de APU completa (insumos, mano de obra, equipos, Coeficiente K heredable) — eso es alcance de la Solapa 2, más adelante en el orden ya acordado; acá solo se deja anotado el único requisito que le impone Etapa 3 (`creador_usuario_id`).
 - No definí el orden de implementación (qué se crea primero: `obra_members`, o el reemplazo de `UserContext`, etc.) — queda para la próxima conversación, ahora que el diseño está cerrado.
+
+---
+
+## 8. Cambio de matriz: el `constructor` ve montos (2026-09-12)
+
+### El problema: un error de nombres que arrastraba el diseño
+
+La matriz definía al `constructor` como **"vista operativa sin montos"**, pensándolo como capataz:
+carga avance, ve el cómputo, no ve precios. **En el rubro argentino el constructor es la empresa que
+cotiza y ejecuta.** Textual de Seba: *"acá la mayoría de las veces el constructor es el que pasa
+presupuesto parcial o global y construye la obra, y es el que HACE EL PRESUPUESTO. Nunca es el
+capataz — el capataz es capataz"*. El rol le estaba ocultando montos justamente a quien los armó: el
+nombre significaba una cosa en el diseño y otra en el rubro.
+
+### El cambio
+
+- `constructor` ve montos igual que `profesional`: cómputo con precios, Mat y MO con precios, la
+  Solapa APU (receta oficial y la suya propia) y el Factor K de la obra, y los montos de Gestión de
+  Obra y de Adicionales. En `UserContext`: `puedeVerMontosYAPU` y `puedeVerMontosGestionObra`
+  incluyen `constructor`; `esVistaOperativa` deja de aplicarle (queda como "no ve montos en ningún
+  lado" — hoy `invitado_veedor` y un apoderado sin delegación vigente — y no la usa ninguna
+  pantalla).
+- **No hay rol nuevo.** El capataz es alguien que el constructor invita, con los permisos que le
+  quiera dar.
+- **No se tocó la base**: todas las lecturas de precios, Factor K y montos ya estaban abiertas a
+  cualquier miembro (`is_obra_member`); ocultarle montos al constructor era solo de la capa de app.
+
+### Ver no es editar — y eso sí quedó igual
+
+Las escrituras del presupuesto siguen siendo de `admin_maestro`/`profesional` en la RLS (0019, 0020,
+0026, 0030, 0036, 0080) y en las funciones (presentar/congelar, emitir, subir PDF firmado). Como hasta
+ahora solo esos dos roles llegaban a los controles de edición de la Solapa APU y de Mat y MO, esos
+controles se gateaban solo por PRO. Abrirle la solapa al constructor sin más le habría mostrado
+botones que la base rechaza — o, en un UPDATE, ignora sin error. Por eso se agregó
+`UserContext.puedeEditarPreciosObra` (admin_maestro/profesional, mirror de esa RLS) y se aplicó al
+selector de vista del presupuesto, al Factor K e impuestos, al lápiz y "Volver" de Mat y MO, al
+tilde de cargas sociales y al campo de precio del panel de la composición (el rendimiento sí lo
+puede editar: es su receta personal).
+
+### Qué queda distinto entre constructor y profesional
+
+Ver: nada — los dos ven exactamente lo mismo. Hacer:
+
+| | profesional | constructor |
+|---|---|---|
+| Editar cómputo, precios, Factor K, vista del presupuesto, valor hora, orden de rubros, importar | sí | no |
+| Presentar / congelar el presupuesto, emitir certificados, subir el PDF firmado | sí | no |
+| Enviar un adicional presupuestado a aprobación | sí | solo el que él creó |
+| Cerrar un certificado cobrado (impactado) | **no** | sí |
+| Leer el audit_log completo de la obra | sí | solo sus propias acciones |
+| Cargar avance, quitas/demasías, anulación, certificar avance de adicionales | sí | sí |
+
+Con lo que dijo Seba ("es el que HACE EL PRESUPUESTO"), la primera fila es la inconsistencia que
+queda: el constructor ve el presupuesto pero no lo puede armar en la app. Cambiarlo es RLS (varias
+tablas y funciones), no `UserContext` — decisión aparte, pendiente.
+
+### Lo que NO cambia, y un límite encontrado al verificar la premisa
+
+- **La receta es de la persona** (§3, §6.1): cada uno ve su receta propia o la oficial, nunca la de
+  otro salvo `puede_ver_apu_ajena` (default `false`). Sin tocar.
+- **El Factor K NO es de la persona — es de la obra.** Verificado en el código: los % (GG,
+  Imprevistos, EPP, Costo Financiero, Beneficio, Gestión de materiales de terceros) e impuestos viven
+  en `obra_presupuesto_config`/`obra_impuestos`, **una fila por obra**, legibles por cualquier
+  miembro; `puede_ver_apu_ajena` no los cubre (solo gobierna la visibilidad de recetas personales,
+  0019). Hasta este cambio lo único que se los ocultaba al constructor era la app. **Desde este
+  cambio, un empleado invitado como constructor ve el Factor K de la obra** en la Solapa APU — los
+  coeficientes con los que se cotizó. Lo que sigue sin ver es la receta personal (rendimientos e
+  insumos propios). Esto choca con el caso que planteó Seba ("no quiero que vea mi receta de los
+  factores K con los cuales cotizo la obra") — **pendiente de su decisión**, sin tocar las APU ni
+  `puede_ver_apu_ajena`, como pidió. Nota: aun sin el bloque, el Factor K es deducible por resta
+  (§3, límite ya aceptado) desde que el constructor ve precios de partidas y de insumos.
+- **Los precios y materiales que ve cada uno salen de SU receta.** `calcular_composicion_detalle_
+  subitem` y `consolidado_insumos_obra` resuelven la composición por `auth.uid()` (propia u
+  oficial). Un empleado sin recetas propias ve el cómputo y la lista de materiales calculados con la
+  receta **oficial**, no con la personal de quien cotizó: si Seba cotizó con recetas propias, el
+  empleado ve otras cantidades de materiales y otros precios de partida. `puede_ver_apu_ajena` le
+  deja ver la receta ajena en la composición, pero no hace que los cálculos la usen. Ya pasaba entre
+  profesional y constructor siendo personas distintas; con el constructor viendo montos se vuelve
+  visible.
+
+### `invitado_veedor`
+
+No le cambia nada: no está en ninguna de las dos reglas de montos, y `esVistaOperativa` ahora lo
+describe a él. Sigue sin montos en Cómputo, Mat y MO, APU (no ve la solapa), Gestión de Obra,
+Adicionales, carga de avance y detalle de certificado. Excepciones que ya existían, ajenas a este
+cambio: el dashboard (`ObrasListScreen`) muestra montos a cualquier miembro (nunca filtró por rol, no
+tiene `UserContext` por obra), y la solapa Resumen es todavía un mock con números fijos.
+
+## 9. Constructor igual a profesional también en lo que HACE — diagnóstico (2026-09-12)
+
+Decisión de Seba, sobre §8: *"El constructor tiene que poder editar todo lo del presupuesto: cómputo,
+precios, Factor K, valor hora, orden de rubros e importar. Y también los actos formales: presentar,
+congelar, emitir certificados y subir el PDF firmado. Si él cotiza y ejecuta la obra, es el que emite
+los certificados."* Sin SQL todavía — falta cerrar §9.3.
+
+### 9.1 Qué hay que tocar — inventario de lo vigente, no supuesto
+
+Script sobre la última definición de cada política y función de `supabase/migrations/`:
+
+- **19 políticas** que nombran `profesional` sin `constructor`: `obra_subitems` insert/update/delete
+  (0019/0028), `obra_rubros_orden` insert/update (0026), `obra_presupuesto_config` update y
+  `obra_impuestos` update (0020), `obra_insumo_precios` insert/update/delete (0030),
+  `obra_valor_hora_override` insert/update/delete (0036), `importaciones`/`importaciones_items`/
+  storage (0080, 5 políticas), `audit_log_select` (0004).
+- **6 funciones**: `presentar_presupuesto_obra` (0103), `congelar_presupuesto_obra` (0104),
+  `emitir_certificado` (0107), `subir_pdf_firmado_certificado` (0011), `confirmar_importacion`
+  (0081), `enviar_adicional_a_aprobacion` (0118).
+- **Al revés, 1 función**: `marcar_certificado_impactado` (0011) — admin_maestro y constructor, NO
+  profesional.
+- **Dart**: los getters que espejan esas reglas (`puedeEditarComputo`, `puedeEditarPreciosObra`,
+  `puedeEmitirCertificado`, `puedeMarcarCertificadoImpactado`, `puedeEnviarAdicional`) y los botones
+  de presentar/congelar/importar/subir PDF.
+
+### 9.2 ¿Quedan indistinguibles?
+
+**En permisos, casi.** Después del cambio, lo único que los separa:
+
+1. **Los libros de Órdenes de Servicio y Notas de Pedido** (`libro_entradas_insert`, 0004/§5): el
+   profesional (Dirección Técnica) emite órdenes y el constructor acusa recibo; el constructor emite
+   notas de pedido y el profesional responde. No es un privilegio de uno sobre otro: es la expresión
+   legal de que son **contrapartes** — uno dirige, el otro ejecuta. Igualarlos borraría el sentido de
+   los dos libros.
+2. **Aprobar ajustes de contrato (Modelo B)**, vía `puede_aprobar_monto` (0004/0008): hoy
+   admin_maestro/profesional/cliente. Sumar al constructor es que el contratista apruebe una suba de
+   su propio contrato — ver §9.3-B.
+3. **Identidad**: quién es quién en la lista de miembros, las invitaciones, el `perfil_creador` de
+   la obra y la matrícula que va al PDF (la del profesional).
+
+### 9.3 Ambigüedades
+
+**A. ¿Fusionar o dejarlos separados?** Recomiendo **separados, con los permisos iguales por
+construcción**: un solo helper SQL (`es_equipo_tecnico(obra)` = admin_maestro/profesional/
+constructor) que usan todas las políticas y funciones del inventario, y un solo getter en Dart. Así
+no pueden divergir por accidente, y si algún día se quiere que diverjan, es una línea. Motivos para no
+fusionar:
+- los libros (§9.2-1) necesitan la distinción, y son la parte legal de Gestión de Obra;
+- en una obra con Dirección Técnica y contratista siendo personas distintas, siguen siendo dos partes
+  enfrentadas aunque puedan hacer lo mismo — el cliente tiene que saber quién es quién, y la dupla de
+  la anulación (propone uno, resuelve otro) solo tiene sentido entre dos partes;
+- fusionar es la operación cara e irreversible: cambiar el check de `obra_members.rol`, migrar filas
+  (y deduplicar a quien hoy tiene los dos roles), invitaciones, textos, el enum `RolProyecto`, cada
+  política y función — para ninguna ganancia funcional sobre "separados con los mismos permisos". Si
+  más adelante hace falta distinguirlos de nuevo (por ejemplo, una conformidad de la Dirección Técnica
+  sobre el certificado del contratista), deshacer una fusión es mucho peor que cambiar un helper.
+
+**B. Ajuste de contrato (Modelo B).** ¿El constructor aprueba ajustes de contrato? Recomiendo que
+**no**: aprobaría un cambio del monto que él mismo cobra. Queda como hoy (admin_maestro/profesional/
+cliente). Es la única excepción a "iguales en todo", y es la misma lógica que ya cerró los adicionales
+("la aprobación la da el que paga", §7-B de adicionales).
+
+**C. Cerrar un certificado cobrado.** Para que queden iguales, el profesional también puede marcarlo
+impactado/cerrado (hoy solo admin_maestro/constructor). Recomiendo que **sí**: un profesional que
+además construye es el que cobra.
+
+**D. Libros.** Recomiendo **dejarlos asimétricos** (§9.2-1): no es una diferencia de permisos, es qué
+es cada libro.
+
+### 9.4 Nota sobre §8
+
+El gate `puedeEditarPreciosObra` de §8 (constructor ve pero no edita) queda como está hasta aplicar la
+migración de esta sección — espeja la RLS de hoy. Cuando la RLS incluya al constructor, el getter lo
+incluye también; los controles no se tocan.
+
+### 9.5 Cerradas por Seba (2026-09-12)
+
+- **A.** Separados, con un helper común — "tu argumento es bueno". El helper pasa a ser el permiso de
+  §10, no una lista de roles.
+- **B.** El constructor **no** aprueba ajustes de contrato: "aprueba el que paga, igual que en
+  adicionales". `puede_aprobar_monto` sin cambios.
+- **C.** El profesional también puede cerrar un certificado cobrado.
+- **D.** Los libros quedan como están.
+- Y el Factor K visible al empleado (§8): "con el permiso de edición apagado no me preocupa, porque lo
+  ve pero no lo cambia. Lo dejamos así." Cerrado.
+
+## 10. Permiso `puede_editar_presupuesto` — diseño (2026-09-12)
+
+Decisión de Seba: *"Un permiso nuevo que se otorga al invitar: puede_editar_presupuesto, apagado por
+defecto. El que armó el presupuesto es el que lo edita; los demás lo ven pero no lo tocan. Si el
+constructor es administrador, el profesional y el cliente ven precios pero no los editan. Hoy eso no
+se puede expresar porque los permisos dependen del rol."* Y resuelve el hueco de §9: el empleado
+entra como constructor sin el permiso — ve precios, compra, carga avance, no toca el presupuesto ni
+emite. Sin rol nuevo. Sin SQL todavía — falta cerrar §10.6.
+
+### 10.1 Cómo convive con los roles
+
+La lectura de Seba es la correcta: **el rol define qué ves, el permiso define qué editás** del
+presupuesto y qué actos formales firmás. Con un matiz: el permiso solo tiene sentido en los roles que
+ven el presupuesto — `profesional` y `constructor`. A un cliente, veedor o apoderado no se le ofrece
+(no se edita lo que no se ve), y la base no lo acepta en esas filas (check en `obra_members` e
+`invitaciones`). Regla completa, un solo helper SQL usado en todos lados (el "helper común" de §9-A):
+
+    puede_editar_presupuesto(obra) =
+        admin_maestro
+        or (profesional o constructor, fila activa, con puede_editar_presupuesto = true)
+
+### 10.2 El administrador edita siempre, sin el permiso
+
+Sí. `admin_maestro` es quien crea la obra (bootstrap, 0033) — en el caso normal, "el que armó el
+presupuesto" —, y una obra nueva necesita al menos alguien que la edite. Vale para cualquier
+`admin_maestro` de la obra (puede haber más de uno desde la 0108): es la administración de la obra,
+no un rol económico (§6.2). Si el constructor crea la obra, él es admin y edita; el profesional y el
+cliente que invite ven y no editan — exactamente el caso que planteó Seba. (El cliente, como hoy, ve
+totales y certificados, no APU ni precios unitarios: eso lo define su rol, no cambia.)
+
+### 10.3 Qué cubre — una sola llave, presupuesto y actos formales juntos
+
+| Acción | Hoy | Propuesta |
+|---|---|---|
+| Editar cómputo (tildar, cantidades, precio manual), precios de insumos, Factor K e impuestos, vista del presupuesto, valor hora y cargas sociales, orden de rubros, importar | admin/profesional por rol | **permiso** |
+| Presentar y congelar el presupuesto | admin/profesional | **permiso** |
+| Emitir certificado, subir el PDF firmado | admin/profesional | **permiso** |
+| Proponer/resolver la anulación de un certificado | profesional/constructor | **permiso** (§10.6-1) |
+| Cerrar un certificado cobrado | admin/constructor | **permiso** (con §9-C, el profesional entra) |
+| Aprobar quita/demasía (cambia cantidades del cómputo y del congelado) | profesional/constructor | **permiso** (§10.6-1) |
+| Enviar un adicional presupuestado a aprobación (congela) | admin/profesional de la hija | **permiso** en la hija |
+| Ver montos, APU, Factor K | por rol (§8) | por rol, sin cambios |
+| Cargar avance en el borrador, certificar avance de un adicional, crear adicionales y quitas/demasías, libros | por rol | por rol, sin cambios |
+
+**¿Separar algo?** Recomiendo **una sola llave**. El único corte natural sería presupuesto vs.
+certificación — alguien que certifica sin poder tocar precios, típicamente una Dirección Técnica que
+no cotizó. Pero Seba lo descartó de frente ("no tiene sentido que arme el presupuesto y después
+dependa de otro para certificar"), y con el helper en su lugar, partirlo después es sumar una segunda
+columna y cambiar qué helper usa cada función — no rehacer nada.
+
+### 10.4 La protección va en la base, no en los botones
+
+- **Cada política y función del inventario de §9.1**, más anulación, cierre y quitas/demasías, pasa a
+  llamar al helper. Los botones de la app (vía `UserContext`) solo espejan lo que la base ya exige.
+- **El "guardó pero no guardó"**: con RLS, un UPDATE sin permiso no da error — afecta 0 filas y la app
+  cree que guardó (el caso que ya nos pasó). Además de la base, los repositorios que hacen UPDATE
+  directo sobre esas tablas pasan a pedir la fila actualizada y tratan "0 filas" como error ("no
+  tenés permiso para editar el presupuesto de esta obra"). Así, si algún día un botón quedara
+  visible por error, el usuario ve el rechazo en vez de un falso "guardado".
+- **Quién lo otorga**: solo `admin_maestro` (§10.6-3). Hoy `invitaciones_insert` deja que cualquiera
+  con `puede_invitar_terceros` cree una invitación con cualquier permiso — con este permiso eso sería
+  una escalada (alguien que no edita invita a otro que sí). `obra_members_update` ya es de
+  admin_maestro, así que otorgarlo o sacarlo después de la invitación también. Nota: la misma
+  escalada existe hoy con `puede_aprobar_certificados`/`puede_aprobar_adicionales`/
+  `puede_ver_apu_ajena` — fuera de esta pieza, anotado.
+
+### 10.5 Lo que arrastra
+
+- `obra_members.puede_editar_presupuesto` e `invitaciones.puede_editar_presupuesto` (boolean, default
+  false, check por rol); `aceptar_invitacion` lo copia; las dos copias de equipo de adicionales
+  (`crear_adicional_presupuestado`, `enviar_adicional_a_aprobacion`) lo copian a la obra hija.
+- Obra hija: quien crea el adicional es `admin_maestro` de la hija (bootstrap), así que edita su
+  cómputo siempre, aunque en la madre no tenga el permiso — ver §10.6-4.
+- Dart: `PermisosEspeciales.puedeEditarPresupuesto`; en `UserContext`, los getters de las acciones de
+  §10.3 pasan a una sola regla espejo del helper; checkbox en invitar (solo para profesional/
+  constructor, solo si quien invita es admin); verlo y cambiarlo en la lista de miembros; el chequeo
+  de "0 filas" en los repositorios.
+
+### 10.6 Ambigüedades — necesito tu respuesta antes de escribir la migración
+
+**1. Anulación y quitas/demasías, ¿con el permiso?** Recomiendo que sí. Anular un certificado es
+un acto formal de certificación, igual que emitirlo; aprobar una demasía cambia cantidades del
+cómputo y del presupuesto congelado — es tocar el presupuesto. Sin esto, el empleado sin permiso
+podría anular certificados o subir cantidades. (Solicitar una quita/demasía sigue siendo de
+cualquiera; lo que pide permiso es aprobarla.)
+
+**2. Los que hoy editan.** Hoy edita cualquier profesional por su rol. Con el permiso, un profesional
+sin la marca deja de editar. Recomiendo que la migración marque `true` a los profesionales activos
+que ya existen — nadie pierde lo que hoy tiene — y deje en `false` a los constructores (hoy no
+editan; se otorga a mano). Alternativa: todos en `false` y se otorga uno por uno.
+
+**3. Quién lo otorga.** Recomiendo **solo admin_maestro**, al invitar o después (§10.4).
+
+**4. Adicional creado por alguien sin el permiso.** Por el bootstrap, quien crea un adicional
+presupuestado es admin de la obra hija y edita su cómputo, aunque en la madre no pueda. Recomiendo
+dejarlo así: el adicional es su cotización, y la barrera real es la aprobación del cliente (§7-B de
+adicionales). Alternativa: que crear un adicional presupuestado también pida el permiso.
+
+### 10.7 Cerradas por Seba (2026-09-12) y lo escrito
+
+- **1.** Anular y aprobar quitas/demasías piden el permiso — "tu ejemplo lo justifica solo: sin eso,
+  mi empleado podría anular certificados o subir cantidades". Solicitar sigue siendo de cualquiera.
+- **2.** Backfill: profesionales activos en `true`, constructores en `false`.
+- **3.** Solo admin_maestro lo otorga — "es la única forma de cerrar la escalada".
+- **4.** El adicional creado por alguien sin el permiso queda como está.
+- **Aparte, para su propia pieza**: hoy cualquiera con `puede_invitar_terceros` puede otorgar
+  `puede_aprobar_certificados`, `puede_aprobar_adicionales` (con tope) y `puede_ver_apu_ajena` — la
+  misma escalada, sin cerrar todavía.
+
+**Migración escrita, sin aplicar**: `supabase/migrations/0121_permiso_editar_presupuesto.sql` — la
+columna en `obra_members` e `invitaciones` con su check por rol, el backfill, el helper
+`puede_editar_presupuesto(obra)`, las 18 políticas de escritura del presupuesto, 12 funciones (el
+chequeo de autoridad o la copia de permisos; cada una verificada con diff contra su versión vigente:
+no cambia nada más), `invitaciones_insert`/`obra_members_insert` (solo admin otorga) y
+`audit_log_select` (el constructor ve el historial completo, por rol). Anulación y quitas/demasías
+conservan además el requisito de rol técnico (profesional/constructor): un admin que no es técnico —
+el cliente que creó la obra — edita el presupuesto pero no aprueba demasías ni resuelve anulaciones,
+como hasta ahora. Después de la 0121 lo único que distingue a profesional de constructor en la base
+es `puede_aprobar_monto` (ajustes de contrato, §9.5-B) — verificado con el mismo script de §9.1.
+
+**Dart, después de aplicarla:**
+- `lib/data/models/obra_member.dart` (`PermisosEspeciales.puedeEditarPresupuesto`) y
+  `lib/data/models/invitacion.dart`.
+- `lib/services/invitaciones_repository.dart` (mandarlo al invitar) y
+  `lib/services/obra_members_repository.dart` (leerlo, y que el admin lo cambie).
+- `lib/core/segurity/user_context.dart` — `puedeEditarPresupuesto`, espejo del helper, y los getters
+  de §10.3 apoyados en él: `puedeEditarComputo`, `puedeEditarPreciosObra`, `puedeEmitirCertificado`,
+  `puedeMarcarCertificadoImpactado`, `puedeGestionarAnulacionCertificado` y
+  `puedeAprobarQuitaDemasia` (rol técnico + permiso), `puedeEnviarAdicional`.
+- `lib/presentation/obra_detalle/screens/invitar_miembro_screen.dart` — el checkbox (solo para
+  profesional/constructor, solo si quien invita es admin) y
+  `lib/presentation/obra_detalle/screens/miembros_obra_screen.dart` — verlo y que el admin lo cambie.
+- "0 filas es error" en los repositorios con UPDATE/DELETE directo sobre tablas protegidas:
+  `obra_subitems_repository.dart`, `obra_presupuesto_config_repository.dart`,
+  `obra_impuestos_repository.dart`, `obra_insumos_repository.dart` (el delete del valor hora) e
+  `importaciones_repository.dart`. (`obra_rubros_orden_repository.dart` y los `upsert`/`insert` no
+  lo necesitan: si la RLS los rechaza, Postgres tira error.)
+- Los botones que hoy leen los getters de arriba (presentar/congelar en `presupuesto_estado_panel.dart`,
+  emitir/cerrar/anular en `gestion_obra_tab.dart`/`detalle_certificado_screen.dart`/
+  `vista_previa_certificado_screen.dart`, firma física en `cartel_firma_pendiente.dart`, importar en
+  `revisar_importacion_screen.dart`, quitas/demasías, Solapa APU y Mat y MO) no cambian de código:
+  toman el permiso nuevo a través de los getters. Se revisan uno por uno en la prueba.
+- `CLAUDE.md` — la matriz, con "rol = qué ves, permiso = qué editás".
