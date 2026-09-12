@@ -1041,3 +1041,112 @@ sin enviar y descongela su obra hija, con una fila en audit_log que lo explica.
 **0117, 0118 y 0119 aplicadas y verificadas por Seba (2026-09-12)**, junto con la línea "Total con
 adicionales" del dashboard y el cartel de pendientes: circuito completo con roles separados
 (profesional envía, cliente aprueba), total visible en la card con 2 decimales.
+
+## 14. Seguimiento de avance del adicional — diagnóstico (2026-09-12)
+
+Lo último que queda de la Tanda 2. Ya cerrado (§4, §7-C): un porcentaje y un monto certificado por
+adicional aprobado, **sin ciclo de vida propio** — "construir un segundo circuito de certificación
+reducido para adicionales sería duplicar lo que ya existe". Sin código todavía.
+
+### 14.1 Verificado contra el código
+
+- **Dónde se guarda**: dos columnas en la propia fila de `modificaciones_obra` (§4/§11.2-6),
+  `porcentaje_avance` (acumulado, 0 a 100) y `monto_certificado`. Solo un adicional `aprobado` puede
+  tener avance — check en la base.
+- **Cómo se escribe**: desde la 0116 ninguna escritura directa sobre una fila de adicional pasa la
+  RLS, así que es una función SECURITY DEFINER más, `certificar_avance_adicional(id, porcentaje)`,
+  con su propio chequeo de autoridad — mismo patrón que enviar/aprobar/rechazar. El trigger del
+  monto no interfiere (solo actúa sobre pendientes).
+- **Cómo se carga el avance de la obra hoy** (`carga_avance_subitems_screen.dart`, pieza 3): se
+  ingresa el % **del período**, con el acumulado siempre a la vista; si se pasa de lo disponible,
+  ofrece certificar solo lo que queda. El adicional puede usar exactamente el mismo gesto.
+- **Diferencia real con la obra**: allá el % del período va a un borrador que después se emite, y
+  si algo estuvo mal existe la anulación. Acá, sin ciclo, **cada carga es firme al guardarse** — no
+  hay borrador que revisar ni nada que anular. Eso define B y C de abajo.
+- **Hallazgo de paso**: `AdicionalesScreen` muestra montos a cualquier miembro de la obra, incluido
+  el constructor ("vista operativa sin montos", regla 7 de `UserContext`). `GestionObraTab` ya los
+  oculta con `puedeVerMontosGestionObra`; esta pantalla nunca lo hizo. La tarjeta nueva (certificado
+  + saldo) agrandaría lo que se muestra, así que conviene cerrarlo en esta misma tanda — ver §14.4.
+
+### 14.2 Ambigüedades — necesito tu respuesta antes de escribir
+
+**A. ¿Cómo se cobra lo certificado de un adicional?** Hoy lo único que se cobra por la app son los
+certificados de la obra (emitido → leído → pagado → cerrado).
+- **Opción 1 (recomendada): solo registro.** El monto certificado del adicional no entra a ningún
+  certificado ni pasa por esos estados: la app dice cuánto se certificó y cuánto falta, el cobro se
+  gestiona afuera, como hasta ahora. Es lo que dejó cerrado §7-C ("si con el uso resulta que un
+  adicional se cobra en partes como una obra chica, ahí se evalúa"). Consecuencia: no hay pendiente
+  de pago de adicionales en el cartel de inicio — nadie espera a nadie.
+- **Opción 2: sumarlo al próximo certificado de la obra** como línea aparte (se cobra por el
+  circuito existente sin tocar el % de avance de la obra). No duplica el ciclo, pero toca emitir,
+  totales, anticipo y fondo de reparo — una pieza bastante más grande.
+
+**B. ¿Quién certifica avance de un adicional?** Recomiendo **admin_maestro/profesional**: como cada
+carga es firme, equivale a emitir (que es de ellos), no a cargar un borrador (que sí suma al
+constructor). Alternativa: sumar al constructor, igual que la carga de avance de la obra.
+
+**C. ¿Qué pasa si se carga mal un porcentaje?** Sin ciclo no hay borrador ni anulación. Recomiendo
+que cada carga sea firme, con una confirmación explícita antes de guardar ("+20% → acumulado 60%,
+$ X. No se puede deshacer"), y que el acumulado nunca baje. Si con el uso aparece la necesidad de
+corregir, es una pieza aparte. Alternativa: "deshacer la última carga" — obliga a guardar cada
+carga como fila propia (una tabla de historial), más que dos columnas.
+
+**Decisiones menores que tomo así, salvo que digas otra cosa:**
+- `monto_certificado` se recalcula sobre el acumulado (`monto_total × acumulado / 100`,
+  redondeado), no sumando los montos redondeados de cada carga: al 100% da exacto lo aprobado.
+- Sin ajuste por CAC: el monto del adicional quedó fijo al aprobar (su propia foto, §10.1), y la
+  obra hija nace con `aplica_cac = false` (0113).
+- Historial de cargas en `audit_log` (cada una con su % y su monto), sin tabla nueva; la tarjeta
+  muestra solo el acumulado.
+- `mis_pendientes()` no suma rama: sin ciclo, no hay nada esperando a nadie.
+
+### 14.3 Cómo se ve — en la tarjeta del aprobado, en Adicionales
+
+Sí, ahí mismo, sin pantalla nueva. La tarjeta de un adicional aprobado suma, debajo del monto:
+una barra de avance con el %, una línea "Certificado $ X · Saldo $ Y", y — para quien puede
+certificar (B), mientras no llegue al 100% — un botón "Certificar avance". El diálogo es el mismo
+gesto que la carga de avance de la obra: campo "% de este período", acumulado y disponible a la
+vista, el monto del período calculado mientras se escribe, el aviso de "te queda X% disponible" si
+se pasa, y la confirmación de C antes de guardar. Al 100%, el botón desaparece y la barra queda
+completa. Quien no ve montos (§14.4) ve la barra y el %, sin pesos.
+
+### 14.4 Archivos (una vez cerradas A-C)
+
+**Supabase** — `0120_adicionales_seguimiento_avance.sql`: `porcentaje_avance` + `monto_certificado`
+(default 0, checks: rango 0-100, solo en adicionales aprobados) y `certificar_avance_adicional
+(modificacion_id, porcentaje)`: fila `for update`, adicional aprobado, autoridad (B), `0 <
+porcentaje <= 100 − acumulado`, recalcula el monto sobre el acumulado nuevo, audit_log. Grants y
+revoke de anon, como el resto.
+
+**Dart:**
+- `lib/data/models/modificacion_obra.dart` — `porcentajeAvance`, `montoCertificado`.
+- `lib/services/adicionales_repository.dart` — `certificarAvance(id, porcentaje)` con `_conLog`.
+- `lib/core/segurity/user_context.dart` — `puedeCertificarAvanceAdicional`, regla nueva mirroreada
+  contra la función (no reusar `puedeEmitirCertificado` aunque hoy coincida: otro circuito).
+- `lib/presentation/obra_detalle/screens/adicionales_screen.dart` — barra + certificado/saldo en la
+  tarjeta del aprobado, diálogo de carga, y el gate de montos del hallazgo: se muestran pesos si
+  `puedeVerMontosGestionObra` **o** quien puede aprobar/rechazar adicionales (el apoderado con
+  delegación permanente hoy no pasa `puedeVerMontosGestionObra` por la divergencia de §13.4, y no
+  puede aprobar un monto que no ve).
+
+**No se toca**: certificados de la obra, `calcular_avance_ponderado_obra` (el % de avance de la obra
+sigue sin enterarse de los adicionales, decisión de §4), `mis_pendientes()`, dashboard.
+
+### 14.5 Cerradas por Seba (2026-09-12)
+
+- **A. Solo registro.** "Sumarlo a los certificados de la obra tocaría anticipo, fondo de reparo y
+  totales, y todavía no sabemos si hace falta."
+- **B. Certifican admin_maestro, profesional y constructor** — corrige mi recomendación:
+  "Certificar avance no es emitir un certificado: es medir qué se hizo, y eso lo hace el que está en
+  la obra. Que sea firme lo vuelve delicado, pero la solución no es sacarle la carga al constructor —
+  es la confirmación del punto C."
+- **C. Confirmación antes de guardar, acumulado que nunca baja, y registro de quién hizo cada
+  carga** — resuelto en `audit_log` (una fila por carga: usuario de la sesión, sus roles en la obra,
+  % del período, montos), sin tabla nueva.
+- **Hallazgo de montos: se cierra en esta tanda.** "Que el constructor vea los montos del adicional
+  cuando en Gestión de Obra no los ve es una inconsistencia, y con la tarjeta nueva se agrava."
+- Decisiones menores de §14.2: aceptadas.
+
+**Migración escrita, sin aplicar**: `0120_adicionales_seguimiento_avance.sql`. Dart (lista de §14.4,
+con B corregida: `puedeCertificarAvanceAdicional` = admin_maestro/profesional/constructor, getter
+propio aunque hoy coincida con `puedeCargarAvance`) después de aplicarla.
