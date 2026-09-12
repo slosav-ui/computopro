@@ -51,3 +51,7 @@ env.json
 
 # Lockfiles transitorios de LibreOffice (ej. docs/seed/.~lock.*.ods#)
 .~lock.*#
+
+# Archivos de trabajo locales, no parte del proyecto (planillas de verificación, mapeos de carga)
+supabase/seed_staging/
+tempo/

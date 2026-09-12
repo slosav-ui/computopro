@@ -1,9 +1,12 @@
 # Rubros: código vs. número impreso, reordenamiento por obra — diseño de datos
 
-Estado: **diseño cerrado, implementación en curso.** Diagnóstico + 4 ambigüedades resueltas en
-conversación el 2026-08-31. Etapas A, B y C **verificadas en el teléfono**. Etapa D **código escrito,
-pendiente de aplicar la migración 0027 y de que el usuario lo verifique en el teléfono** — ver estado
-detallado en §4. Falta E (numeración en el PDF).
+Estado: **Etapas A, B, C y D verificadas en el teléfono, commiteadas y pusheadas** (rama
+`feature/reorganizacion-modular`, commits `ce2665f` y `6c46326`). Diseño cerrado, implementación
+completa salvo E. Ver estado detallado en §4.
+
+**Etapa E (numeración en el PDF) queda deliberadamente sin tocar**: es solo diseño hasta que exista
+un generador de PDF real en el proyecto (`pdf`/`printing` en `pubspec.yaml` siguen sin usarse en
+ningún archivo de `lib/`) — no tiene sentido implementarla antes.
 
 Retoma el tema anotado en la memoria `rubros-codigo-orden-numeracion` (originado el 2026-08-30 al
 diseñar la validación de código duplicado, migración `0025_rubros_codigo_unique_global.sql`, ya
@@ -219,9 +222,9 @@ yendo primero, ordenados por `rubros.orden`, igual que hoy.
     (`_restaurarAviso`) que ocupa el lugar del banner una vez descartado y lo vuelve a mostrar al
     tocarlo; no reaparece solo (eso seguía siendo lo pedido), pero queda accesible.
 - **D — Alta de rubro sin código**. Diagnóstico cerrado en conversación el 2026-08-31 (4 puntos, sin
-  ambigüedades reales — el usuario invitó una recomendación en el punto 4, no un fork). **Código
-  escrito el mismo día, pendiente de aplicar la migración y de verificación en el teléfono.** Qué se
-  tocó:
+  ambigüedades reales — el usuario invitó una recomendación en el punto 4, no un fork). **Verificada
+  en el teléfono el mismo día**: migración aplicada, alta con un solo campo (Nombre), diálogo de
+  borrado mostrando el número posicional. Commiteada y pusheada (`6c46326`). Qué se tocó:
   - `rubros.codigo` genera su valor solo, del lado de la base — `alter column codigo set default
     gen_random_uuid()::text` (migración `0027_rubros_codigo_default.sql`), mismo mecanismo que ya
     usa `rubros.id` en esta misma tabla. Elegido por sobre generarlo en Dart: cero dependencia
