@@ -225,3 +225,86 @@ cual, comportamiento sin cambios); `calcular_presupuesto_vivo_obra`/`calcular_av
 todo lo que compone el % de avance de la obra (a propósito — adicionales nunca deben tocar esto, es
 el punto central de
 tu decisión).
+
+## 10. Cómo se ven los adicionales en el dashboard — dato nuevo, sin construir (2026-09-12)
+
+Agregado a partir de la corrección del chip Pactado/Hoy del presupuesto congelado
+(`docs/presupuesto_congelado_validez_modelo_a_diseno.md`), que hizo aparecer la pregunta natural
+siguiente: cuando exista un adicional aprobado, ¿qué muestra la card de `ObrasListScreen`? Esto es
+**diseño, no implementación** — depende del circuito de Adicionales (§8, pospuesto), que sigue sin
+una sola línea de SQL escrita.
+
+### 10.1 Cada adicional tiene su propia foto, no hereda la del contrato
+
+Palabras de Seba: *"si en la obra original se pactó el precio con impuestos, cargas sociales y
+materiales y mano de obra, el adicional se puede pactar sin alguno de estos o sin ninguno."*
+
+Esto es una pieza de diseño real que §4/§7-C de este documento todavía no cubrían: la propuesta
+mínima de ahí (`porcentaje_avance`/`monto_certificado`) resuelve el *seguimiento* de un adicional ya
+aprobado, pero no dice nada sobre **cómo se fija su monto** ni **con qué configuración**. Con el
+hallazgo de §10 de `presupuesto_congelado_validez_modelo_a_diseno.md` fresco (un desfasaje solo es
+comparable si las dos puntas usan la misma configuración), la respuesta tiene que ser la misma que
+ya rige el presupuesto: **el adicional se congela con su propia foto** — monto y los 6 % + impuestos
+de Factor K vigentes en el momento en que se aprueba, mismo patrón que `presupuesto_config_congelado`
+(`0104`) pero una fila por adicional, no una por obra.
+
+**Que no se vuelva complicado (criterio de Seba para toda la app: flexible, intuitiva, fácil
+aplicación)**: el caso normal — la inmensa mayoría de los adicionales — se pacta en las mismas
+condiciones que el contrato. Proponer que el adicional **arranque con la config vigente de la obra
+al momento de crearlo** (copiada, no referenciada — mismo motivo que el propio presupuesto: si se
+referenciara y la config de la obra cambiara después, el adicional se movería solo) y que cambiarla
+sea una opción detrás de un toggle/expansor, no un paso obligatorio. El que hace lo habitual no
+toca nada; el que necesita pactar distinto, puede.
+
+**Y tiene que verse en texto claro, no en un desglose de porcentajes** — la propia palabra de Seba:
+*"si no, dentro de seis meses nadie sabe qué se pactó."* Una etiqueta corta por adicional
+("Con impuestos y cargas sociales" / "Solo mano de obra, sin impuestos" / etc.), derivada de
+comparar su config congelada contra la del contrato. **Dónde se ve esto, corregido en §10.2**: no
+en el dashboard — ver el criterio de pantalla principal que se sumó ahí.
+
+### 10.2 Dónde vive cada cosa — corregido (Seba, 2026-09-12): el dashboard no acumula datos
+
+**Criterio nuevo para toda la pantalla principal, no solo para esta pieza**: información clara y
+escueta en el dashboard — la información completa vive en la solapa Resumen (el tablero de
+situación de la obra) o al entrar a la obra, nunca en la card de `ObrasListScreen`. Corrige la
+primera versión de esta sección, que proponía mostrar una aclaración de "condiciones distintas" en
+el propio dashboard — eso ya es más dato del que la card tiene que cargar.
+
+**La card, con esto aplicado:**
+- **Pactado** sigue siendo el número grande (§8/§10 de la otra pieza, sin cambios) — el contrato
+  original, tal cual se firmó.
+- Debajo, una sola línea: **"Total con adicionales: $T (N aprobados)"** — la suma de Pactado + el
+  monto congelado de cada adicional aprobado. Nada más — sin desglose, sin aclaración de
+  condiciones mezcladas, sin etiquetas.
+- Esa línea es tappable y lleva a la obra — nunca abre el detalle ahí mismo.
+- Sin adicionales aprobados (caso de hoy, 100% de las obras): la card no cambia en nada.
+
+**Todo lo demás — cada adicional con su monto, su etiqueta de configuración (§10.1), la aclaración
+de condiciones mezcladas cuando corresponda, la entrada para ver/aprobar/observar uno — vive en la
+solapa Resumen o en la pantalla de detalle dentro de la obra**, nunca en el dashboard. Mismo
+criterio que ya separa "Pactado + Hoy + Desfasaje" (dashboard, resumido) de "Pactado + Saldo
+pendiente + aviso de índice" (`PresupuestoEstadoPanel`, dentro de Gestión de Obra, con más detalle)
+— la pieza anterior ya tenía este patrón sin nombrarlo; esto lo deja explícito para que la próxima
+pantalla lo siga sin tener que redescubrirlo.
+
+### 10.3 Cuándo construir esto — respondiendo lo que preguntás
+
+**Conviene hacerlo junto con el circuito de Adicionales, no antes ni aparte.** Tres motivos
+concretos:
+
+1. Esta pantalla no tiene nada que mostrar sin el circuito — no hay tabla, no hay `monto_total`, no
+   hay config congelada de adicional. Construirla antes sería una card vacía esperando datos que
+   todavía no existen.
+2. El circuito de Adicionales (§4/§7-B/§7-C, pospuesto) todavía tiene ambigüedades reales sin
+   cerrar (autoridad de aprobación, cuánto seguimiento propio) — la config congelada de §10.1 es una
+   pieza más de ese mismo diseño, no una capa aparte: cerrarla en el mismo diagnóstico evita firmar
+   dos veces el mismo tipo de decisión.
+3. Es plomería relativamente barata sumarla ahora que el circuito ya está sobre la mesa (una tabla
+   más -- `modificaciones_obra_config_congelada` o columnas en la propia fila -- siguiendo
+   exactamente el patrón que `presupuesto_config_congelado` ya dejó probado) — separarla en una
+   pieza aparte más adelante significaría releer y re-diagnosticar todo esto por segunda vez.
+
+**Siguiente paso concreto, cuando se retome Adicionales**: extender §4/§7 de este mismo documento
+con (a) la config congelada por adicional (§10.1) como parte de la propuesta mínima de seguimiento,
+y (b) el diseño de card de §10.2, antes de escribir la migración — mismo proceso que ya usa el
+proyecto (diseño primero, ambigüedades cerradas con el usuario, migración después).
