@@ -58,6 +58,12 @@ class _AdicionalesScreenState extends State<AdicionalesScreen> {
   // de los botones, mismo patrón que QuitasDemasiasScreen.
   final Set<String> _resolviendo = {};
 
+  // Los rechazados son información histórica, no algo que se mira seguido -- pedido de Seba
+  // (2026-09-12), mismo criterio que los certificados anulados en GestionObraTab: antes ocupaban el
+  // mismo lugar (Card completa) que un adicional vigente. Sección propia al final, colapsada por
+  // default -- se conservan (nunca se borran) pero no compiten por espacio.
+  bool _rechazadosExpandido = false;
+
   @override
   void initState() {
     super.initState();
@@ -533,6 +539,107 @@ class _AdicionalesScreenState extends State<AdicionalesScreen> {
     );
   }
 
+  Widget _buildSeccionRechazados(List<ModificacionObra> rechazados) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          InkWell(
+            onTap: () => setState(() => _rechazadosExpandido = !_rechazadosExpandido),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Row(
+                children: [
+                  const Icon(Icons.history, size: 15, color: Colors.black45),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Rechazados (${rechazados.length})',
+                    style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Colors.black54),
+                  ),
+                  const Spacer(),
+                  Icon(
+                    _rechazadosExpandido ? Icons.expand_less : Icons.expand_more,
+                    size: 18,
+                    color: Colors.black45,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (_rechazadosExpandido)
+            for (final m in rechazados) _buildFilaRechazado(m),
+        ],
+      ),
+    );
+  }
+
+  /// Fila chica por rechazado, sin `Card` propia. Un presupuestado sigue abriendo su obra hija al
+  /// tocarlo (para ver qué se había cotizado); uno de monto fijo no tiene detalle al que ir.
+  Widget _buildFilaRechazado(ModificacionObra m) {
+    final esPresupuestado = m.obraHijaId != null;
+    final motivo = m.comentarioResolucion;
+    return InkWell(
+      onTap: esPresupuestado ? () => _abrirObraHija(m.obraHijaId!) : null,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+        decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Colors.black12))),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.block, size: 13, color: Colors.red.shade300),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    m.descripcion,
+                    style: const TextStyle(fontSize: 12.5, color: Colors.black54),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 1),
+                    child: Text(
+                      '${m.aprobadoPor != null ? "Rechazado por ${_nombreUsuario(m.aprobadoPor!)}" : "Rechazado"}'
+                      ' el ${_fmtFecha(m.fechaResolucion)}'
+                      '${motivo != null && motivo.isNotEmpty ? " — $motivo" : ""}',
+                      style: const TextStyle(fontSize: 10.5, color: Colors.black38, fontStyle: FontStyle.italic),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (esPresupuestado) const Icon(Icons.chevron_right, size: 16, color: Colors.black26),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLista() {
+    final vigentes = _adicionales.where((m) => m.estado != EstadoModificacion.rechazado).toList();
+    final rechazados = _adicionales.where((m) => m.estado == EstadoModificacion.rechazado).toList();
+    return ListView(
+      padding: const EdgeInsets.all(12),
+      children: [
+        if (vigentes.isEmpty && rechazados.isNotEmpty)
+          const Padding(
+            padding: EdgeInsets.only(bottom: 12),
+            child: Text(
+              'No hay adicionales vigentes -- los de esta obra fueron rechazados (ver abajo).',
+              style: TextStyle(color: Colors.black45, fontSize: 12),
+            ),
+          ),
+        for (final m in vigentes) _buildAdicional(m),
+        if (rechazados.isNotEmpty) _buildSeccionRechazados(rechazados),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -559,11 +666,7 @@ class _AdicionalesScreenState extends State<AdicionalesScreen> {
                         ),
                       ),
                     )
-                  : ListView.builder(
-                      padding: const EdgeInsets.all(12),
-                      itemCount: _adicionales.length,
-                      itemBuilder: (context, index) => _buildAdicional(_adicionales[index]),
-                    ),
+                  : _buildLista(),
     );
   }
 }
