@@ -731,10 +731,13 @@ menos que construir.
 
 ### 12.9 Lista de archivos — hecha, sin aplicar/verificar todavía
 
-**Supabase, aplicado**: `supabase/migrations/0113_adicionales_obra_hija.sql`.
+**Supabase, aplicado**: `supabase/migrations/0113_adicionales_obra_hija.sql`, más el fix
+`0114_fix_adicional_presupuestado_monto_total.sql` (el insert del adicional no mandaba
+`monto_total`, `not null` sin default -- la función fallaba entera).
 
-**Dart, hecho, `flutter analyze` limpio (solo infos preexistentes) -- sin verificar en el
-emulador todavía:**
+**Dart, hecho y verificado por Seba en el emulador (2026-09-12)**: crear un adicional
+presupuestado lleva a las solapas de la obra hija, y la composición de una partida queda de
+solo lectura con el banner. Fix 0114 + log de la RPC en el commit `44525e6`.
 - `lib/services/obras_repository.dart` — `obraMadreId` mapeado en `_fromRow`; `getObras()` filtra
   `obra_madre_id is null`; `getObraPorId(obraId)` (traer la obra hija recién creada, sin el filtro
   de arriba); `esObraHija(obraId)` (chequeo liviano, una sola columna).
@@ -771,7 +774,7 @@ emulador todavía:**
   mejora futura, no bloqueante.
 - Importador de Excel/PDF (tercera vía) — sin wirear, deliberadamente. Necesita revisar
   `docs/importador_capa1_diseno_datos.md` con este uso en mente antes de conectarlo.
-- Tanda 2 (aprobación, todavía no empezada): `puede_aprobar_adicional` + rama de
+- Tanda 2 (aprobación) -- diagnóstico en §13, que corrige lo que sigue: `puede_aprobar_adicional` + rama de
   `modificaciones_obra_update` + `aprobar_adicional`, que ahora bifurca por camino -- si
   `obra_hija_id is not null`, llama `congelar_presupuesto_obra(obra_hija_id)` y suma
   `presupuesto_subitems_congelado` de esa obra para `monto_total`; si `costo_costo_base is not
@@ -787,3 +790,193 @@ migración es **§12.2 — qué hacer con `apu_composiciones` siendo por usuario
 recomendación es la Opción 1 (el adicional no toca composición propia por ahora, solo Factor K
 propio + precios de hoy), dejando la Opción 2 (obra_id en apu_composiciones) como pieza aparte si
 el uso real la termina pidiendo.
+
+## 13. Tanda 2 — aprobación del adicional: diagnóstico (2026-09-12)
+
+Punto de partida: 0112, 0113 y 0114 aplicadas y verificadas (§12.9). Hoy un adicional queda
+`pendiente` para siempre — no hay función ni pantalla para aprobarlo, rechazarlo ni congelarlo.
+
+Alcance de esta sección: aprobar y rechazar. El seguimiento de avance (§4,
+`certificar_avance_adicional`) y la línea "Total con adicionales" del dashboard (§10.2) siguen
+siendo Tanda 2, pero van después: necesitan adicionales aprobados reales para poder probarse.
+
+Ambigüedades de §13.2 cerradas por Seba el mismo día — ver §13.6. Orden acordado: primero el fix
+de seguridad de §13.5 (`0115`), después la migración de adicionales.
+
+### 13.1 Lo que encontré verificando contra el código
+
+**1. El monto cero no es el único agujero: hoy la base ya deja aprobar un adicional con un
+`UPDATE` directo, sin pasar por ninguna función.** `modificaciones_obra_update` (0109) manda todo
+lo que no es quita/demasía a `puede_aprobar_monto(obra_id, monto_total)`. Tres problemas, no uno:
+- admin_maestro y profesional pasan — contradice §7-B (cerrada: solo cliente_principal/apoderado).
+- el tope del apoderado se compara contra `monto_total`, que en un adicional presupuestado
+  pendiente es 0 (0114) — cualquier apoderado con `puede_aprobar_adicionales` pasa.
+- el mismo `UPDATE` puede escribir `monto_total` a mano: el trigger `calcular_monto_total_adicional`
+  solo recalcula mientras `estado = 'pendiente'`, así que `set estado = 'aprobado', monto_total = X`
+  queda con el X tipeado.
+- de yapa, la rama `devuelto` (0004): `with check (... or subido_por = auth.uid())` deja que quien
+  subió una fila devuelta la pase a cualquier estado, `aprobado` incluido. Para adicionales hoy no
+  se alcanza (nadie devuelve), pero queda cerrado con lo mismo.
+
+La app no hace hoy ningún `UPDATE` sobre adicionales, así que nada de esto se explota desde la
+pantalla — pero `aprobar_adicional` sola no alcanza. La rama `adicional` de la política tiene que
+cerrarse del todo: ninguna escritura directa sobre una fila de adicional, todas las transiciones
+por funciones SECURITY DEFINER con su propio chequeo de autoridad (mismo criterio que certificados,
+0010/0011).
+
+**2. `modificaciones_obra_insert` deja insertar un adicional con `obra_hija_id` apuntando a
+cualquier obra.** La política no mira esa columna. Un miembro podría crear un adicional "vinculado" a
+otra obra suya, real, ya congelada y certificando — y si la aprobación congela la obra hija, estaría
+re-congelando esa obra real. Doble cierre: la política de insert exige `obra_hija_id is null` (solo
+`crear_adicional_presupuestado`, DEFINER, la setea), y toda función que toque la obra hija valida
+`obras.obra_madre_id = modificaciones_obra.obra_id` antes de hacer nada.
+
+**3. `congelar_presupuesto_obra` no se puede llamar desde la aprobación del cliente.** Exige
+admin_maestro/profesional de la obra (en la obra hija el cliente tiene cliente_principal, copiado de
+la madre, no admin), y que el presupuesto esté presentado y no vencido (la obra hija nunca se
+presenta). SECURITY DEFINER no cambia `auth.uid()`: la función de adentro sigue viendo al cliente.
+
+**4. La composición de APU que se congela depende de quién congela.** `calcular_composicion_
+detalle_subitem` (0072) usa la receta propia de `auth.uid()` si existe, y si no la oficial. El
+bloqueo de §12.2 impide *editar* recetas dentro de la obra hija, pero las recetas personales que el
+que cotiza ya tiene de otras obras siguen aplicando cuando él mira la hija. Si congela el cliente, se
+congela con las recetas del cliente (casi siempre las oficiales): el monto aprobado no sería el que
+cotizó el constructor, sin ningún aviso.
+
+**5. Un aprobador que no es miembro de la obra hija congelaría partidas en cero.** El equipo de la
+hija es una foto al crearla (0113). Un cliente o apoderado invitado a la madre después no está en la
+hija: `calcular_composicion_detalle_subitem` le devuelve 0 filas, la partida congela en $0 y el tope
+se compara contra ese número. El mismo agujero del monto cero, por otro camino.
+
+### 13.2 Ambigüedades — necesito tu respuesta antes de escribir SQL
+
+**A. ¿Quién congela la obra hija, y cuándo? (la importante)**
+
+- **Opción 1 — congela el aprobador, al aprobar** (literal §12.5/§11.6-D). Obliga a extraer el
+  snapshot de `congelar_presupuesto_obra` a una función interna sin sus candados (tocar una función
+  ya verificada), y arrastra 13.1-4 y 13.1-5: congela con las recetas del cliente, y en cero si no es
+  miembro de la hija. Taparlos exige pasarle "de quién es la receta" a toda la cadena de precios
+  (`calcular_factor_k_subitem` → `calcular_composicion_detalle_subitem`) — cambio de alto alcance.
+- **Opción 2 (recomendada) — congela quien cotiza, al enviar a aprobación; el aprobador aprueba
+  ese número.** Paso nuevo "Enviar para aprobación": una función que, con la identidad de quien envía
+  (admin_maestro/profesional de la obra hija, los mismos que ya pueden editar su cómputo, 0019),
+  llama `presentar_presupuesto_obra` + `congelar_presupuesto_obra` sobre la hija **tal como están
+  hoy** — cero cambios en funciones verificadas — y copia la suma congelada a `modificaciones_obra.
+  monto_total`. Recetas y precios del que cotizó; el cliente ve y aprueba un número fijo; el tope se
+  valida contra ese número. Mientras siga pendiente, quien cotiza puede corregir y reenviar
+  (recongela: la hija nunca tiene certificados, así que el candado de recongelamiento no la frena).
+
+  Cómo queda §11.6-D con esto: D se cerró pensando en la config de la **madre** cambiando entre la
+  solicitud y la aprobación. En la obra hija ese riesgo no existe (su Factor K es propio, solo lo
+  cambia quien cotiza); lo que se mueve es el precio de los insumos, y lo razonable es aprobar el
+  precio que se cotizó — igual que el presupuesto principal, que lo congela quien cotiza
+  (admin/profesional), no el cliente. Para el monto fijo, D queda tal cual: se recalcula al aprobar.
+
+**B. ¿Refrescar el equipo de la hija al enviar?** Con la Opción 2 el aprobador no necesita ser
+miembro de la hija para aprobar (lee `monto_total`, que vive en la madre), pero sí para abrir el
+detalle y ver qué está aprobando. Propongo que "enviar" vuelva a copiar el equipo activo de la madre
+(el mismo insert `on conflict do nothing` de la 0113): sigue siendo una foto, solo que más reciente.
+No saca a nadie.
+
+**C. Obra sin cliente_principal.** Con §7-B, si la obra no tiene cliente_principal ni apoderado
+cargado en la app, nadie puede aprobar un adicional: queda pendiente para siempre. ¿Alcanza con eso
+(se invita al cliente, o quien hace todo se suma también el rol cliente_principal — autogestión) o
+querés una salida, por ejemplo que admin_maestro apruebe solo cuando la obra no tiene ningún
+cliente_principal activo? Recomiendo no abrir excepción: §7-B pierde sentido si hay un camino
+alternativo.
+
+**Decisiones menores que tomo así, salvo que digas otra cosa:**
+- Rechazar: misma autoridad que aprobar, sin tope (decir que no no compromete plata). Un adicional
+  presupuestado se puede rechazar aunque todavía no se haya enviado.
+- Sin "devolver para corregir" en esta tanda (§11.4 listaba aprobar/rechazar). Con la Opción 2 el
+  caso común no lo necesita: quien cotiza reenvía mientras está pendiente.
+- Guarda contra "el monto cambió mientras lo miraba": `aprobar_adicional` recibe el monto que vio
+  el aprobador y rechaza si no coincide con el que va a quedar (reenvío de la hija, o cambio de
+  config de la madre en un monto fijo, en el medio).
+- Sin candado de validez al aprobar: la hija se presenta con la validez default (30 días) solo
+  porque congelar lo exige; que venza no frena la aprobación. Si querés que un adicional enviado
+  venza como el presupuesto, es una línea más.
+- Obra hija ya aprobada o rechazada: queda (historial, se borra con la madre), no se reenvía. No hay
+  un modo de solo lectura reutilizable en las solapas (buscado) — en vez de inventarlo, un banner:
+  "Adicional aprobado por $X — cambios acá no modifican el monto aprobado". Lo financiero ya está
+  protegido por el congelamiento.
+
+### 13.3 Qué se escribe (Opción 2, confirmada en §13.6)
+
+**Supabase** (después del fix de §13.5, que va primero y aparte):
+- `modificaciones_obra.enviado_a_aprobacion_en timestamptz` — null = en preparación. Lo mira la
+  pantalla sin tener que leer la obra hija (que el aprobador puede no ver).
+- `puede_aprobar_adicional(obra_id, monto)` — `puede_aprobar_monto` sin admin_maestro/profesional.
+- `enviar_adicional_a_aprobacion(modificacion_id)` — valida pendiente + camino obra hija +
+  `obra_madre_id`; refresca equipo (B); presentar + congelar la hija; `monto_total` = suma de
+  `presupuesto_subitems_congelado` de la hija; `enviado_a_aprobacion_en = now()`; audit_log.
+- `aprobar_adicional(modificacion_id, monto_visto, comentario)` — fila `for update`. Monto fijo:
+  recalcula `calcular_precio_adicional` (D). Obra hija: exige enviado y vuelve a sumar lo congelado.
+  Compara contra `monto_visto`, y recién con el monto real resuelto valida
+  `puede_aprobar_adicional(obra_id, monto)`. Aprueba + audit_log, todo en una transacción.
+- `rechazar_adicional(modificacion_id, comentario)`.
+- `modificaciones_obra_update`: `tipo <> 'adicional'` en las tres ramas. `modificaciones_obra_
+  insert`: `obra_hija_id is null and enviado_a_aprobacion_en is null`.
+
+**Dart:**
+- `AdicionalesRepository`: `enviarAAprobacion`, `aprobarAdicional`, `rechazarAdicional` (con `_conLog`).
+- `ModificacionObra`: `enviadoAAprobacionEn`.
+- `UserContext.puedeAprobarAdicional(double monto)` / `puedeRechazarAdicional`, mirroreados contra
+  la función SQL (ver §13.4).
+- `AdicionalesScreen`: "Enviado para aprobación — $X" vs. "Presupuestándose con la app"; botón
+  Enviar/Reenviar para admin_maestro/profesional; Aprobar/Rechazar con el monto a la vista en el
+  diálogo, para quien puede.
+- `PresupuestosScreen` de una obra hija resuelta: el banner de las decisiones menores.
+
+### 13.4 Divergencia Dart/SQL encontrada de paso
+
+`UserContext._delegacionVigente` devuelve `false` si la delegación no tiene fechas; la base
+(`puede_aprobar_monto`, 0004; funciones de certificados, 0011) la trata como permanente, o sea
+vigente. Hoy un apoderado con delegación permanente puede marcar un certificado como pagado en la
+base, pero la app le esconde el botón. `puedeAprobarAdicional` heredaría lo mismo si reusa ese
+helper. Propongo alinear el helper a la base (una línea) — toca también los getters de
+certificados, por eso lo marco en vez de hacerlo de pasada.
+
+**Seba (2026-09-12): pendiente aparte, no se toca en esta pieza** — afecta a certificados. Para
+no heredarlo, `puedeAprobarAdicional` replica la regla de la base (sin fechas = permanente) en
+su propio chequeo, sin pasar por `_delegacionVigente`; cuando se alinee el helper, se unifican.
+
+### 13.5 Regresión de seguridad en la 0110, ajena a adicionales
+
+La 0110 hizo `drop` + `create` de `calcular_factor_k_subitem` para sumarle `p_config_congelada`, y
+en el camino se perdieron dos cosas que la 0085 había cerrado:
+- el gate de membresía (`autorizado`/`is_obra_member`) en la CTE `config`: un usuario autenticado
+  que no es miembro vuelve a poder leer los % de Factor K (GG, beneficio, etc.) de una obra ajena si
+  conoce su id — exactamente el caso de la verificación 1 de la 0085;
+- el `revoke ... from public, anon`: una función creada de nuevo nace ejecutable por PUBLIC, así que
+  anon también puede llamarla.
+
+Fix chico e independiente: `create or replace` con el mismo cuerpo más el gate en las dos ramas de
+`config`, y el revoke. Propuesto como migración propia, antes que la de adicionales.
+
+**Escrita como `0115_fix_factor_k_subitem_gate_revoke.sql`, sin aplicar todavía.** Al armarla
+apareció una tercera pérdida del mismo `drop` + `create`: el redondeo de salida a 2 decimales de
+la 0078 (no es de seguridad; la 0110 decía comportarse "EXACTO igual que hoy" y no era así). Va
+en la misma migración. Auditoría pedida por Seba sobre las 69 funciones de `supabase/migrations/`
+(simulando create/replace/drop/grant/revoke/alter en orden): ningún otro gate perdido, ninguna
+otra SECURITY DEFINER abierta a anon salvo `previsualizar_invitacion` (a propósito, 0096/0101), y
+tres SECURITY INVOKER sin `search_path` (`calcular_totales_certificado` y
+`calcular_monto_periodo_avance`, perdidos al recrearlas en la 0105; `calcular_monto_total_
+adicional`, que nunca lo tuvo) — cerrados en la misma 0115 con `alter function`.
+
+### 13.6 Ambigüedades — cerradas por Seba (2026-09-12)
+
+**A. Opción 2: congela quien cotiza, al enviar para aprobación.** Palabras de Seba: "se usan las
+recetas del que cotizó y el cliente aprueba un número fijo. Es como funciona en obra — te mandan
+un presupuesto cerrado, no una hoja de cálculo abierta." Para el monto fijo, §11.6-D sigue igual
+(se recalcula al aprobar).
+
+**B. Sí: "enviar" vuelve a copiar el equipo activo de la madre a la hija**, para que un cliente
+invitado después vea qué está aprobando.
+
+**C. Sin excepción para admin_maestro.** Palabras de Seba: "si no hay cliente en la obra, se lo
+invita o alguien se suma ese rol. Abrir una excepción rompería justamente lo que define el
+circuito."
+
+**Decisiones menores de §13.2: aceptadas tal como están propuestas.**
+
