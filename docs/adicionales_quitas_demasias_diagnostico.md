@@ -1012,3 +1012,32 @@ toques. `crearAdicional` ya inserta en `pendiente`, no cambia nada para la app.
 - `PresupuestosScreen` de una obra hija: aviso arriba de las solapas cuando está enviada,
   aprobada o rechazada. **Sin el monto** en el texto (§13.2 decía "aprobado por $X"): mostrarlo
   obligaba a repetir la conversión de moneda en esta pantalla; el monto se ve en Adicionales.
+
+**Pantalla de aprobación verificada por Seba (2026-09-12), commit `3e99bda`.**
+
+**Línea "Total con adicionales" del dashboard (§10.2) — hecha, `flutter analyze` limpio, sin
+verificar en el emulador:** `AdicionalesRepository.getAprobadosPorObra` (una consulta para toda la
+lista, suma en Dart de montos ya fijados, mismo criterio que `getMontoPactadoCongelado`) y una línea
+debajo del número grande de la card: "Total con adicionales: $T (N aprobados)" en obra congelada.
+**Decisión tomada al escribir**: en una obra sin congelar no se suma a un estimado que se sigue
+moviendo — se muestra "Adicionales aprobados: $X (N)". Sin aprobados, la card no cambia. Tocar la
+card ya lleva a la obra, no hizo falta un toque propio para la línea.
+
+Avisos de pendientes (pedido aparte, vale para todos los circuitos): `docs/avisos_pendientes_diseno.md`.
+
+**Bug real encontrado por Seba probando esa línea (2026-09-12)**: un adicional aprobado con
+`monto_total = 0` y un pendiente con decenas de decimales. `aprobar_adicional` (0116) sí exige que un
+presupuestado esté enviado — por la función no se aprueba uno sin enviar. Los dos caminos que quedan:
+(1) enviado en $ 0 (partidas tildadas con cantidad 0, el default) — `enviar_adicional_a_aprobacion`
+lo aceptaba; (2) UPDATE directo fuera de la función (antes de la 0116, o desde el SQL Editor, que
+saltea la RLS). **`0118_adicionales_redondeo_y_monto_cero.sql`, sin aplicar**: cierra (1) en enviar y
+en aprobar (un monto fijo tipeado en 0 sigue siendo aprobable: ese cero es el precio), redondea a 2
+decimales en `calcular_precio_adicional`/enviar/aprobar, y redondea los pendientes existentes. La
+cabecera trae la consulta de diagnóstico que dice por cuál camino llegó el aprobado en 0.
+Seba confirmó el camino 1 con el historial (crear, enviar y aprobar, las tres por las funciones).
+`0119_revertir_adicional_prueba_monto_cero.sql` (sin aplicar) vuelve ese dato de prueba a pendiente
+sin enviar y descongela su obra hija, con una fila en audit_log que lo explica.
+
+**0117, 0118 y 0119 aplicadas y verificadas por Seba (2026-09-12)**, junto con la línea "Total con
+adicionales" del dashboard y el cartel de pendientes: circuito completo con roles separados
+(profesional envía, cliente aprueba), total visible en la card con 2 decimales.

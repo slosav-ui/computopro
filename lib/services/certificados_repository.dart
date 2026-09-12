@@ -30,6 +30,13 @@ class CertificadosRepository {
         .toList();
   }
 
+  /// Un certificado puntual -- para abrir su detalle desde el aviso de pendientes del dashboard
+  /// (docs/avisos_pendientes_diseno.md), que solo trae el id.
+  Future<Certificado> getPorId(String certificadoId) async {
+    final data = await _client.from('certificados').select().eq('id', certificadoId).single();
+    return _fromRow(data);
+  }
+
   /// El Borrador abierto de la obra, si hay uno — `null` si no hay ninguno. `maybeSingle()` es
   /// seguro acá: el índice único parcial `certificados_un_borrador_por_obra` (0053) garantiza que
   /// nunca puede haber más de un `borrador` por obra, así que esta consulta nunca puede devolver

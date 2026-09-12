@@ -126,6 +126,31 @@ class AdicionalesRepository {
     });
   }
 
+  /// Total (en pesos) y cantidad de adicionales APROBADOS por obra, para la línea "Total con
+  /// adicionales" del dashboard (docs/adicionales_quitas_demasias_diagnostico.md §10.2). Una sola
+  /// consulta para toda la lista, no una por obra. Suma en Dart de montos que la base ya fijó al
+  /// aprobar (0116) -- mismo criterio que `ObrasRepository.getMontoPactadoCongelado`: una suma
+  /// simple de números ya calculados, no lógica de negocio. Obras sin aprobados no aparecen.
+  Future<Map<String, ({double totalArs, int cantidad})>> getAprobadosPorObra(List<String> obraIds) async {
+    if (obraIds.isEmpty) return {};
+    final rows = await _client
+        .from('modificaciones_obra')
+        .select('obra_id, monto_total')
+        .eq('tipo', 'adicional')
+        .eq('estado', 'aprobado')
+        .inFilter('obra_id', obraIds);
+    final porObra = <String, ({double totalArs, int cantidad})>{};
+    for (final row in rows as List) {
+      final obraId = row['obra_id'].toString();
+      final previo = porObra[obraId] ?? (totalArs: 0.0, cantidad: 0);
+      porObra[obraId] = (
+        totalArs: previo.totalArs + _aDouble(row['monto_total']),
+        cantidad: previo.cantidad + 1,
+      );
+    }
+    return porObra;
+  }
+
   /// El adicional que corresponde a una obra hija -- para el aviso de `PresupuestosScreen` cuando se
   /// abre la hija (enviado/aprobado/rechazado). `null` si no hay (o si la RLS no lo deja ver: la
   /// fila vive en la madre, `is_obra_member(madre)`), sin error -- el aviso es informativo.

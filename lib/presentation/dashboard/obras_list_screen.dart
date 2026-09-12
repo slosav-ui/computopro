@@ -1,12 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../core/segurity/user_context.dart';
 import '../../core/utils/parser_numero_ar.dart';
 import '../../data/models/invitacion.dart';
+import '../../data/models/pendiente.dart';
+import '../obra_detalle/screens/adicionales_screen.dart';
+import '../obra_detalle/screens/detalle_certificado_screen.dart';
 import '../obra_detalle/screens/presupuestos_screen.dart';
+import '../obra_detalle/screens/quitas_demasias_screen.dart';
+import 'cartel_pendientes.dart';
 import '../auth/aceptar_invitacion_screen.dart';
 import 'editar_perfil_screen.dart';
 import '../../services/obras_repository.dart';
+import '../../services/adicionales_repository.dart';
+import '../../services/certificados_repository.dart';
+import '../../services/pendientes_repository.dart';
 import '../../services/auth_service.dart';
 import '../../services/indices_economicos_repository.dart';
 import '../../services/invitaciones_repository.dart';
@@ -47,6 +56,13 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
   final InvitacionesRepository _invitacionesRepository = InvitacionesRepository();
   final IndicesEconomicosRepository _indicesEconomicosRepository = IndicesEconomicosRepository();
   final ObraMembersRepository _obraMembersRepository = ObraMembersRepository();
+  final AdicionalesRepository _adicionalesRepository = AdicionalesRepository();
+  final PendientesRepository _pendientesRepository = PendientesRepository();
+  final CertificadosRepository _certificadosRepository = CertificadosRepository();
+
+  // Lo que espera la acción del usuario, en todas sus obras (0117) -- cartel arriba de la lista y
+  // contador por card. Vacío si falla la carga: sin aviso, la lista de obras sigue igual.
+  List<Pendiente> _pendientes = [];
   List<Map<String, dynamic>> _obras = [];
   bool _cargando = true;
   String? _error;
@@ -254,6 +270,10 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
         for (final o in obras)
           _hoyConfigCongeladaSeguro(o['id'] as String, o['presupuestoCongeladoEn'] as DateTime?),
       ]);
+      // Adicionales aprobados (0116), una sola consulta para toda la lista. Fail-safe a vacío: si
+      // falla, ninguna card muestra la línea de adicionales -- el resto de la card no depende de esto.
+      final adicionalesAprobados = await _adicionalesAprobadosSeguro([for (final o in obras) o['id'] as String]);
+      final pendientes = await _pendientesSeguro();
       // Una sola consulta para toda la lista, no una por obra -- ver _esAdminDeObra. Fail-safe a
       // vacío: si falla, ningún ícono de administrador se muestra (fallo seguro, mismo criterio
       // que el resto de esta pantalla) en vez de romper la carga de toda la lista.
@@ -267,9 +287,16 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
       setState(() {
         _obras = [
           for (var i = 0; i < obras.length; i++)
-            _conMontosCalculados(obras[i], presupuestos[i], pactados[i], hoyConfigCongelada[i]),
+            _conMontosCalculados(
+              obras[i],
+              presupuestos[i],
+              pactados[i],
+              hoyConfigCongelada[i],
+              adicionalesAprobados[obras[i]['id']],
+            ),
         ];
         _obraIdsAdmin = obraIdsAdmin;
+        _pendientes = pendientes;
         _cargando = false;
       });
     } catch (e) {
@@ -296,6 +323,62 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
     } catch (_) {
       return null;
     }
+  }
+
+  Future<Map<String, ({double totalArs, int cantidad})>> _adicionalesAprobadosSeguro(List<String> obraIds) async {
+    try {
+      return await _adicionalesRepository.getAprobadosPorObra(obraIds);
+    } catch (_) {
+      return {};
+    }
+  }
+
+  Future<List<Pendiente>> _pendientesSeguro() async {
+    try {
+      return await _pendientesRepository.getMisPendientes();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Lleva a donde se resuelve cada pendiente: Adicionales, Quitas y Demasías, o el detalle del
+  /// certificado (ahí se marca leído -- solo con abrirlo --, pagado o cerrado, se resuelve la
+  /// anulación y se sube el PDF firmado). Esas pantallas necesitan el UserContext de ESA obra, que
+  /// el dashboard no tiene armado: se construye acá, igual que PresupuestosScreen. Recarga al
+  /// volver, para que el cartel ya no muestre lo que se acaba de resolver.
+  Future<void> _abrirPendiente(Pendiente p) async {
+    final usuarioId = _authService.usuarioActual?.id;
+    if (usuarioId == null) return;
+    try {
+      final miembros = await _obraMembersRepository.getMiembrosDeObra(p.obraId);
+      final userContext = UserContext.desdeObraMembers(
+        userId: usuarioId,
+        obraId: p.obraId,
+        todasLasMembresias: miembros,
+      );
+      final Widget destino;
+      switch (p.tipo) {
+        case TipoPendiente.adicional:
+          destino = AdicionalesScreen(obraId: p.obraId, userContext: userContext);
+        case TipoPendiente.quita:
+        case TipoPendiente.demasia:
+          destino = QuitasDemasiasScreen(obraId: p.obraId, userContext: userContext);
+        case TipoPendiente.certificadoEmitido:
+        case TipoPendiente.certificadoLeido:
+        case TipoPendiente.certificadoPagado:
+        case TipoPendiente.anulacion:
+        case TipoPendiente.firmaFisica:
+          final certificado = await _certificadosRepository.getPorId(p.entidadId);
+          destino = DetalleCertificadoScreen(obraId: p.obraId, certificado: certificado, userContext: userContext);
+      }
+      if (!mounted) return;
+      await Navigator.push(context, MaterialPageRoute(builder: (_) => destino));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No se pudo abrir ese pendiente.')));
+    }
+    if (!mounted) return;
+    _cargarObras();
   }
 
   Future<double?> _hoyConfigCongeladaSeguro(String obraId, DateTime? congeladoEn) async {
@@ -344,8 +427,9 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
     Map<String, dynamic> obra,
     double montoVivoArs,
     double? montoPactadoArs,
-    double? montoHoyConfigCongeladaArs,
-  ) {
+    double? montoHoyConfigCongeladaArs, [
+    ({double totalArs, int cantidad})? adicionalesAprobados,
+  ]) {
     return {
       ...obra,
       'montoEstimadoArs': montoVivoArs,
@@ -356,6 +440,9 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
       'montoHoyConfigCongeladaUsd': montoHoyConfigCongeladaArs == null
           ? null
           : _convertirMonto(montoHoyConfigCongeladaArs, 'ARS', 'USD'),
+      'adicionalesAprobadosCantidad': adicionalesAprobados?.cantidad ?? 0,
+      'adicionalesAprobadosArs': adicionalesAprobados?.totalArs ?? 0.0,
+      'adicionalesAprobadosUsd': _convertirMonto(adicionalesAprobados?.totalArs ?? 0.0, 'ARS', 'USD'),
     };
   }
 
@@ -2037,6 +2124,11 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
             ),
           ),
 
+          // Lo que espera la acción del usuario (0117) -- al abrir la app, sin tener que entrar a
+          // cada obra (docs/avisos_pendientes_diseno.md). Nada si no hay pendientes.
+          if (!_cargando && _pendientes.isNotEmpty)
+            CartelPendientes(pendientes: _pendientes, onAbrir: _abrirPendiente),
+
           // Lista de Tarjetas de Obra
           Expanded(
             child: _cargando
@@ -2079,6 +2171,12 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                       final bool mostrarPactado = esCongelada && montoPactado != null;
                       final double monto = (esCongelada && montoPactado != null) ? montoPactado : montoVivo;
                       final bool tieneCac = obra['aplicaCac'] ?? false;
+                      final int cantidadAdicionales = obra['adicionalesAprobadosCantidad'] as int? ?? 0;
+                      final int pendientesDeObra = _pendientes.where((p) => p.obraId == obra['id']).length;
+                      final double montoAdicionales = (esArs
+                              ? obra['adicionalesAprobadosArs']
+                              : obra['adicionalesAprobadosUsd']) as double? ??
+                          0.0;
                       final String estadoServicio = obra['estadoServicioEspecial'] ?? 'Ninguno';
 
                       return Card(
@@ -2122,6 +2220,35 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                                         padding: const EdgeInsets.symmetric(horizontal: 6),
                                         onPressed: () => _mostrarModalEditarObra(obra),
                                       ),
+                                    // Cuántas cosas de esta obra esperan al usuario (0117) -- para
+                                    // ubicar dónde está lo que anuncia el cartel de arriba. El nombre
+                                    // es el que cede ancho (Expanded + ellipsis), esto es chico y fijo.
+                                    if (pendientesDeObra > 0) ...[
+                                      Tooltip(
+                                        message: pendientesDeObra == 1
+                                            ? '1 cosa esperándote'
+                                            : '$pendientesDeObra cosas esperándote',
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                                          decoration: BoxDecoration(
+                                            color: Colors.amber.shade100,
+                                            borderRadius: BorderRadius.circular(10),
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Icon(Icons.notifications_active_outlined, size: 12, color: Colors.amber.shade900),
+                                              const SizedBox(width: 2),
+                                              Text(
+                                                '$pendientesDeObra',
+                                                style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.amber.shade900),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                    ],
                                     Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                       decoration: BoxDecoration(
@@ -2209,6 +2336,22 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                                       _formatearMonto(monto, obra['moneda']),
                                       style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Color(0xFF1B365D)),
                                     ),
+                                    // Una sola línea, sin desglose (docs/adicionales_quitas_demasias_
+                                    // diagnostico.md §10.2): el detalle de cada adicional vive dentro
+                                    // de la obra, y tocar la card ya lleva ahí. Sin aprobados, la card
+                                    // no cambia. Obra sin congelar: no se suma a un estimado que se
+                                    // sigue moviendo -- se muestran los aprobados solos.
+                                    if (cantidadAdicionales > 0) ...[
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        mostrarPactado
+                                            ? 'Total con adicionales: ${_formatearMonto(monto + montoAdicionales, obra['moneda'])} '
+                                                '($cantidadAdicionales ${cantidadAdicionales == 1 ? "aprobado" : "aprobados"})'
+                                            : 'Adicionales aprobados: ${_formatearMonto(montoAdicionales, obra['moneda'])} '
+                                                '($cantidadAdicionales)',
+                                        style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF1B365D)),
+                                      ),
+                                    ],
                                     if (mostrarPactado && montoHoyConfigCongelada != null) ...[
                                       const SizedBox(height: 6),
                                       _buildComparacionCongelada(
