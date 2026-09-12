@@ -59,7 +59,7 @@ class CertificadoSubitemsAvanceRepository {
     final certificadoIds = filas.map((f) => (f as Map<String, dynamic>)['certificado_id'].toString()).toSet();
     final certificadosData = await _client
         .from('certificados')
-        .select('id, numero, estado')
+        .select('id, numero, version, estado')
         .inFilter('id', certificadoIds.toList());
     final certificadosPorId = <String, Map<String, dynamic>>{
       for (final c in certificadosData as List)
@@ -71,12 +71,18 @@ class CertificadoSubitemsAvanceRepository {
       final cert = certificadosPorId[fila['certificado_id'].toString()];
       return AvanceHistorialItem(
         numeroCertificado: (cert?['numero'] as num?)?.toInt() ?? 0,
+        versionCertificado: (cert?['version'] as num?)?.toInt() ?? 1,
         estadoCertificado: cert?['estado']?.toString() ?? '',
         porcentajePeriodo: (fila['porcentaje_periodo'] as num).toDouble(),
         montoPeriodo: (fila['monto_periodo'] as num).toDouble(),
       );
     }).toList();
-    items.sort((a, b) => a.numeroCertificado.compareTo(b.numeroCertificado));
+    // Por número y, dentro del mismo número, por versión -- mismo motivo que
+    // CertificadosRepository.getCertificadosDeObra: un anulado y su reemplazo comparten numero.
+    items.sort((a, b) {
+      final porNumero = a.numeroCertificado.compareTo(b.numeroCertificado);
+      return porNumero != 0 ? porNumero : a.versionCertificado.compareTo(b.versionCertificado);
+    });
     return items;
   }
 

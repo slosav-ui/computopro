@@ -36,16 +36,25 @@ class GestionObraTab extends StatefulWidget {
 }
 
 class _GestionObraTabState extends State<GestionObraTab> {
-  final CertificadosRepository _certificadosRepository = CertificadosRepository();
+  final CertificadosRepository _certificadosRepository =
+      CertificadosRepository();
   final AuthService _authService = AuthService();
   final ObrasRepository _obrasRepository = ObrasRepository();
-  final IndicesEconomicosRepository _indicesRepository = IndicesEconomicosRepository();
+  final IndicesEconomicosRepository _indicesRepository =
+      IndicesEconomicosRepository();
 
   List<Certificado> _certificados = [];
   bool _cargando = true;
   String? _error;
   String _moneda = 'ARS';
   double _cotizacionHoy = 0;
+
+  // Los anulados son información histórica, no algo que se mira todos los días -- corrección de
+  // Seba (2026-09-12): antes ocupaban el mismo lugar (misma Card completa) que un certificado
+  // vigente en la lista, y con más de uno o dos empezaban a dominar la solapa. Colapsados por
+  // default, en su propia sección al final -- se conservan (nunca se borran, 0056) pero no compiten
+  // por espacio con lo que sí hay que mirar seguido.
+  bool _anuladosExpandido = false;
 
   @override
   void initState() {
@@ -79,7 +88,9 @@ class _GestionObraTabState extends State<GestionObraTab> {
       _error = null;
     });
     try {
-      final certs = await _certificadosRepository.getCertificadosDeObra(widget.obraId);
+      final certs = await _certificadosRepository.getCertificadosDeObra(
+        widget.obraId,
+      );
       if (!mounted) return;
       setState(() {
         _certificados = certs;
@@ -98,7 +109,10 @@ class _GestionObraTabState extends State<GestionObraTab> {
     await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => QuitasDemasiasScreen(obraId: widget.obraId, userContext: widget.userContext),
+        builder: (_) => QuitasDemasiasScreen(
+          obraId: widget.obraId,
+          userContext: widget.userContext,
+        ),
       ),
     );
     // Aprobar una demasía/quita cambia obra_subitems.cantidad -- no afecta a esta lista de
@@ -124,7 +138,9 @@ class _GestionObraTabState extends State<GestionObraTab> {
   /// al servidor y, sobre todo, evita perderle el período recién tipeado al usuario por un error
   /// que se podía anticipar).
   Future<void> _onNuevoCertificado() async {
-    final borradorExistente = await _certificadosRepository.getBorradorAbierto(widget.obraId);
+    final borradorExistente = await _certificadosRepository.getBorradorAbierto(
+      widget.obraId,
+    );
     if (borradorExistente != null) {
       if (!mounted) return;
       await _abrirCargaAvance(borradorExistente);
@@ -158,8 +174,18 @@ class _GestionObraTabState extends State<GestionObraTab> {
   /// de crear.
   Future<String?> _pedirPeriodo() async {
     const meses = [
-      'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
-      'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre',
+      'enero',
+      'febrero',
+      'marzo',
+      'abril',
+      'mayo',
+      'junio',
+      'julio',
+      'agosto',
+      'septiembre',
+      'octubre',
+      'noviembre',
+      'diciembre',
     ];
     final ahora = DateTime.now();
     final mes = meses[ahora.month - 1];
@@ -168,15 +194,24 @@ class _GestionObraTabState extends State<GestionObraTab> {
     return showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Nuevo certificado', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+        title: const Text(
+          'Nuevo certificado',
+          style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+        ),
         content: TextField(
           controller: controller,
           autofocus: true,
-          decoration: const InputDecoration(labelText: 'Período', isDense: true),
+          decoration: const InputDecoration(
+            labelText: 'Período',
+            isDense: true,
+          ),
           style: const TextStyle(fontSize: 13),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancelar'),
+          ),
           TextButton(
             onPressed: () {
               final texto = controller.text.trim();
@@ -211,9 +246,10 @@ class _GestionObraTabState extends State<GestionObraTab> {
   /// en 0, sin nada congelado todavía) cae a la cotización de hoy.
   String _fmt(double montoArs, Certificado cert) {
     final cotizacion =
-        (cert.estado != EstadoCertificado.borrador && cert.cotizacionDolarPromedioAlEmitir != null)
-            ? cert.cotizacionDolarPromedioAlEmitir!
-            : _cotizacionHoy;
+        (cert.estado != EstadoCertificado.borrador &&
+            cert.cotizacionDolarPromedioAlEmitir != null)
+        ? cert.cotizacionDolarPromedioAlEmitir!
+        : _cotizacionHoy;
     final convertido = convertirArsAMoneda(montoArs, _moneda, cotizacion);
     final valorInt = convertido.round();
     final str = valorInt.toString();
@@ -253,7 +289,7 @@ class _GestionObraTabState extends State<GestionObraTab> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(
-          'Anular Certificado Nº ${cert.numero}',
+          'Anular Certificado Nº ${cert.numeroFormateado}',
           style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
         ),
         content: TextField(
@@ -264,7 +300,10 @@ class _GestionObraTabState extends State<GestionObraTab> {
           style: const TextStyle(fontSize: 13),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancelar'),
+          ),
           TextButton(
             onPressed: () {
               final texto = controller.text.trim();
@@ -278,12 +317,17 @@ class _GestionObraTabState extends State<GestionObraTab> {
     if (motivo == null) return;
 
     try {
-      await _certificadosRepository.proponerAnulacion(certificadoId: cert.id, motivo: motivo);
+      await _certificadosRepository.proponerAnulacion(
+        certificadoId: cert.id,
+        motivo: motivo,
+      );
       if (!mounted) return;
       await _cargarCertificados();
     } on PostgrestException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.message)));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -302,16 +346,25 @@ class _GestionObraTabState extends State<GestionObraTab> {
       final resultado = await showDialog<String>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('Rechazar anulación', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+          title: const Text(
+            'Rechazar anulación',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+          ),
           content: TextField(
             controller: controller,
             autofocus: true,
             maxLines: 2,
-            decoration: const InputDecoration(labelText: 'Motivo (opcional)', isDense: true),
+            decoration: const InputDecoration(
+              labelText: 'Motivo (opcional)',
+              isDense: true,
+            ),
             style: const TextStyle(fontSize: 13),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Volver')),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Volver'),
+            ),
             TextButton(
               onPressed: () => Navigator.pop(ctx, controller.text.trim()),
               child: const Text('Rechazar'),
@@ -325,15 +378,25 @@ class _GestionObraTabState extends State<GestionObraTab> {
       final confirmar = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('Aprobar anulación', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+          title: const Text(
+            'Aprobar anulación',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+          ),
           content: Text(
-            'El Certificado Nº ${cert.numero} pasa a Anulado y se crea un borrador de reemplazo '
-            'con el mismo número para corregirlo. ¿Confirmás?',
+            'El Certificado Nº ${cert.numeroFormateado} pasa a Anulado y se crea un borrador de reemplazo '
+            'con el mismo número, como el ${Certificado.formatearNumero(cert.numero, cert.version + 1)}, '
+            'para corregirlo. ¿Confirmás?',
             style: const TextStyle(fontSize: 13),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
-            TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Aprobar')),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Aprobar'),
+            ),
           ],
         ),
       );
@@ -350,7 +413,9 @@ class _GestionObraTabState extends State<GestionObraTab> {
       await _cargarCertificados();
     } on PostgrestException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.message)));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -365,8 +430,12 @@ class _GestionObraTabState extends State<GestionObraTab> {
   /// chip de estado — el circuito de anulación es exclusivamente entre profesional y constructor.
   Widget _buildBloqueAnulacionPendiente(Certificado cert) {
     final usuarioActualId = _authService.usuarioActual?.id;
-    final esQuienPropuso = cert.anulacionPropuestaPor != null && cert.anulacionPropuestaPor == usuarioActualId;
-    final puedeResolver = widget.userContext?.puedeGestionarAnulacionCertificado == true && !esQuienPropuso;
+    final esQuienPropuso =
+        cert.anulacionPropuestaPor != null &&
+        cert.anulacionPropuestaPor == usuarioActualId;
+    final puedeResolver =
+        widget.userContext?.puedeGestionarAnulacionCertificado == true &&
+        !esQuienPropuso;
 
     return Container(
       margin: const EdgeInsets.only(top: 8),
@@ -381,7 +450,11 @@ class _GestionObraTabState extends State<GestionObraTab> {
         children: [
           Text(
             'Anulación propuesta: ${cert.anulacionMotivo ?? ''}',
-            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.red.shade900),
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: Colors.red.shade900,
+            ),
           ),
           if (esQuienPropuso)
             Padding(
@@ -398,14 +471,29 @@ class _GestionObraTabState extends State<GestionObraTab> {
                 children: [
                   TextButton(
                     onPressed: () => _resolverAnulacion(cert, true),
-                    style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(0, 0)),
-                    child: const Text('Aprobar', style: TextStyle(fontSize: 12)),
+                    style: TextButton.styleFrom(
+                      padding: EdgeInsets.zero,
+                      minimumSize: const Size(0, 0),
+                    ),
+                    child: const Text(
+                      'Aprobar',
+                      style: TextStyle(fontSize: 12),
+                    ),
                   ),
                   const SizedBox(width: 16),
                   TextButton(
                     onPressed: () => _resolverAnulacion(cert, false),
-                    style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(0, 0)),
-                    child: Text('Rechazar', style: TextStyle(fontSize: 12, color: Colors.red.shade700)),
+                    style: TextButton.styleFrom(
+                      padding: EdgeInsets.zero,
+                      minimumSize: const Size(0, 0),
+                    ),
+                    child: Text(
+                      'Rechazar',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.red.shade700,
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -437,8 +525,13 @@ class _GestionObraTabState extends State<GestionObraTab> {
                   OutlinedButton.icon(
                     onPressed: _onNuevoCertificado,
                     icon: const Icon(Icons.add, size: 16),
-                    label: const Text('Nuevo certificado', style: TextStyle(fontSize: 11)),
-                    style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF1B365D)),
+                    label: const Text(
+                      'Nuevo certificado',
+                      style: TextStyle(fontSize: 11),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF1B365D),
+                    ),
                   ),
                 Row(
                   mainAxisSize: MainAxisSize.min,
@@ -450,15 +543,25 @@ class _GestionObraTabState extends State<GestionObraTab> {
                     OutlinedButton.icon(
                       onPressed: () => _abrirQuitasDemasias(),
                       icon: const Icon(Icons.rule_outlined, size: 16),
-                      label: const Text('Quitas y Demasías', style: TextStyle(fontSize: 11)),
-                      style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF1B365D)),
+                      label: const Text(
+                        'Quitas y Demasías',
+                        style: TextStyle(fontSize: 11),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF1B365D),
+                      ),
                     ),
                     const SizedBox(width: 8),
                     OutlinedButton.icon(
                       onPressed: _abrirConfigCertificacion,
                       icon: const Icon(Icons.settings_outlined, size: 16),
-                      label: const Text('Configuración', style: TextStyle(fontSize: 11)),
-                      style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF1B365D)),
+                      label: const Text(
+                        'Configuración',
+                        style: TextStyle(fontSize: 11),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF1B365D),
+                      ),
                     ),
                   ],
                 ),
@@ -481,7 +584,11 @@ class _GestionObraTabState extends State<GestionObraTab> {
               CartelFirmaPendiente(obraId: widget.obraId),
             const Text(
               'Historial de Certificados',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1B365D)),
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF1B365D),
+              ),
             ),
             const SizedBox(height: 12),
             _buildContenido(),
@@ -506,7 +613,11 @@ class _GestionObraTabState extends State<GestionObraTab> {
             children: [
               Icon(Icons.error_outline, color: Colors.red.shade400, size: 32),
               const SizedBox(height: 8),
-              Text(_error!, textAlign: TextAlign.center, style: const TextStyle(color: Colors.black54)),
+              Text(
+                _error!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.black54),
+              ),
             ],
           ),
         ),
@@ -530,114 +641,255 @@ class _GestionObraTabState extends State<GestionObraTab> {
         ),
       );
     }
-    return ListView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: _certificados.length,
-      itemBuilder: (context, index) {
-        final cert = _certificados[index];
-        return Card(
-          elevation: 2,
-          margin: const EdgeInsets.only(bottom: 12),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            // Corregido (Seba, al probar): un Borrador tiene que poder tocarse siempre -- es lo
-            // que permite corregir antes de emitir. Antes de esta pieza tocar la tarjeta no hacía
-            // nada (el único camino era el botón "Nuevo certificado" de arriba); ahora que el
-            // resto de la lista SÍ responde al toque, un Borrador que no responde se siente
-            // bloqueado, no "sin cambios". Borrador -> misma pantalla de carga de avance que ya
-            // usa "Nuevo certificado" para reabrirlo; cualquier otro estado -> el detalle nuevo
-            // (Leído/Pagado/Impactado).
-            onTap: cert.estado == EstadoCertificado.borrador
-                ? () => _abrirCargaAvance(cert)
-                : () => _abrirDetalle(cert),
-            child: Padding(
-            padding: const EdgeInsets.all(14.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        // (vN) solo a partir de la 2ª versión — un certificado nunca anulado no
-                        // necesita distinguirse de nada, agregarlo siempre sería ruido sin motivo.
-                        'Certificado Nº ${cert.numero.toString().padLeft(3, '0')}'
-                        '${cert.version > 1 ? ' (v${cert.version})' : ''} - ${cert.periodo}',
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF1B365D)),
-                      ),
-                    ),
-                    Chip(
-                      label: Text(
-                        cert.estado.label,
-                        style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
-                      ),
-                      backgroundColor: _getColorEstado(cert.estado),
-                      visualDensity: VisualDensity.compact,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                // Gateado por rol, no solo estético: el Constructor "vista operativa" no ve
-                // montos según la matriz de permisos — encontrado como agujero real al construir
-                // la pieza 3 (esta pantalla no tenía ningún UserContext hasta ahora), cerrado acá
-                // de una vez ya que se está conectando UserContext a este archivo por primera vez.
-                if (widget.userContext?.puedeVerMontosGestionObra == true) ...[
-                  Text(
-                    'Monto Certificado: ${_fmt(cert.monto, cert)}',
-                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.black54),
-                  ),
-                  // Desglose pactado/ajuste CAC (docs/cac_conectado_modelo_a_diseno.md §9,
-                  // ambigüedad B) -- solo si hay algo que explicar: montoPactado null son
-                  // certificados emitidos antes de esa migración (sin desglose guardado), y monto
-                  // == montoPactado es una obra sin CAC o sin ajuste ese mes -- en los dos casos no
-                  // hay nada nuevo que esta línea agregue.
-                  if (cert.montoPactado != null && cert.monto != cert.montoPactado)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 2),
-                      child: Text(
-                        'Pactado ${_fmt(cert.montoPactado!, cert)} · Ajuste CAC '
-                        '${_fmt(cert.monto - cert.montoPactado!, cert)}',
-                        style: TextStyle(fontSize: 11, color: Colors.blueGrey.shade600),
-                      ),
-                    ),
-                ],
-                Text(
-                  'Emisión: ${_fmtFecha(cert.fechaEmision)}${cert.diasPlazoPago != null ? ' | Plazo: ${cert.diasPlazoPago} días' : ''}',
-                  style: const TextStyle(fontSize: 11, color: Colors.black45),
-                ),
-                // Visible para cualquiera que ya vea el certificado (no gateado por rol): la
-                // anulación queda en el historial con motivo, nunca se borra (0056) — es
-                // información pública del certificado, no parte del circuito de propuesta/
-                // resolución en sí (eso sí está gateado, ver más abajo).
-                if (cert.estado == EstadoCertificado.anulado && cert.anulacionMotivo != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4),
+    final vigentes = _certificados
+        .where((c) => c.estado != EstadoCertificado.anulado)
+        .toList();
+    final anulados = _certificados
+        .where((c) => c.estado == EstadoCertificado.anulado)
+        .toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (vigentes.isEmpty && anulados.isNotEmpty)
+          const Padding(
+            padding: EdgeInsets.only(bottom: 12),
+            child: Text(
+              'No hay certificados vigentes -- todos los de esta obra fueron anulados (ver abajo).',
+              style: TextStyle(color: Colors.black45, fontSize: 12),
+            ),
+          ),
+        for (final cert in vigentes) _buildTarjetaCertificado(cert),
+        if (anulados.isNotEmpty) _buildSeccionAnulados(anulados),
+      ],
+    );
+  }
+
+  Widget _buildTarjetaCertificado(Certificado cert) {
+    return Card(
+      elevation: 2,
+      margin: const EdgeInsets.only(bottom: 12),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        // Corregido (Seba, al probar): un Borrador tiene que poder tocarse siempre -- es lo
+        // que permite corregir antes de emitir. Antes de esta pieza tocar la tarjeta no hacía
+        // nada (el único camino era el botón "Nuevo certificado" de arriba); ahora que el
+        // resto de la lista SÍ responde al toque, un Borrador que no responde se siente
+        // bloqueado, no "sin cambios". Borrador -> misma pantalla de carga de avance que ya
+        // usa "Nuevo certificado" para reabrirlo; cualquier otro estado -> el detalle nuevo
+        // (Leído/Pagado/Impactado).
+        onTap: cert.estado == EstadoCertificado.borrador
+            ? () => _abrirCargaAvance(cert)
+            : () => _abrirDetalle(cert),
+        child: Padding(
+          padding: const EdgeInsets.all(14.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
                     child: Text(
-                      'Anulado — ${cert.anulacionMotivo}',
-                      style: TextStyle(fontSize: 11, color: Colors.red.shade700, fontStyle: FontStyle.italic),
+                      // "bis"/"ter" solo a partir de la 2ª versión, vía Certificado.numeroFormateado
+                      // -- un certificado nunca anulado no necesita distinguirse de nada, agregarlo
+                      // siempre sería ruido sin motivo.
+                      'Certificado Nº ${cert.numeroFormateado} - ${cert.periodo}',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                        color: Color(0xFF1B365D),
+                      ),
                     ),
                   ),
-                if (cert.anulacionEstado == 'propuesta') _buildBloqueAnulacionPendiente(cert),
-                if (widget.userContext?.puedeGestionarAnulacionCertificado == true &&
-                    (cert.estado == EstadoCertificado.emitido || cert.estado == EstadoCertificado.leido) &&
-                    cert.anulacionEstado != 'propuesta')
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: TextButton(
-                      onPressed: () => _proponerAnulacion(cert),
-                      style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(0, 0)),
-                      child: Text('Anular', style: TextStyle(fontSize: 12, color: Colors.red.shade700)),
+                  Chip(
+                    label: Text(
+                      cert.estado.label,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    backgroundColor: _getColorEstado(cert.estado),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              // Gateado por rol, no solo estético: el Constructor "vista operativa" no ve
+              // montos según la matriz de permisos — encontrado como agujero real al construir
+              // la pieza 3 (esta pantalla no tenía ningún UserContext hasta ahora), cerrado acá
+              // de una vez ya que se está conectando UserContext a este archivo por primera vez.
+              if (widget.userContext?.puedeVerMontosGestionObra == true) ...[
+                Text(
+                  'Monto Certificado: ${_fmt(cert.monto, cert)}',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black54,
+                  ),
+                ),
+                // Desglose pactado/ajuste CAC (docs/cac_conectado_modelo_a_diseno.md §9,
+                // ambigüedad B) -- solo si hay algo que explicar: montoPactado null son
+                // certificados emitidos antes de esa migración (sin desglose guardado), y monto
+                // == montoPactado es una obra sin CAC o sin ajuste ese mes -- en los dos casos no
+                // hay nada nuevo que esta línea agregue.
+                if (cert.montoPactado != null &&
+                    cert.monto != cert.montoPactado)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(
+                      'Pactado ${_fmt(cert.montoPactado!, cert)} · Ajuste CAC '
+                      '${_fmt(cert.monto - cert.montoPactado!, cert)}',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.blueGrey.shade600,
+                      ),
                     ),
                   ),
               ],
-            ),
+              Text(
+                'Emisión: ${_fmtFecha(cert.fechaEmision)}${cert.diasPlazoPago != null ? ' | Plazo: ${cert.diasPlazoPago} días' : ''}',
+                style: const TextStyle(fontSize: 11, color: Colors.black45),
+              ),
+              // Visible para cualquiera que ya vea el certificado (no gateado por rol): la
+              // anulación queda en el historial con motivo, nunca se borra (0056) — es
+              // información pública del certificado, no parte del circuito de propuesta/
+              // resolución en sí (eso sí está gateado, ver más abajo).
+              if (cert.estado == EstadoCertificado.anulado &&
+                  cert.anulacionMotivo != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    'Anulado — ${cert.anulacionMotivo}',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.red.shade700,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ),
+              if (cert.anulacionEstado == 'propuesta')
+                _buildBloqueAnulacionPendiente(cert),
+              if (widget.userContext?.puedeGestionarAnulacionCertificado ==
+                      true &&
+                  (cert.estado == EstadoCertificado.emitido ||
+                      cert.estado == EstadoCertificado.leido) &&
+                  cert.anulacionEstado != 'propuesta')
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: () => _proponerAnulacion(cert),
+                    style: TextButton.styleFrom(
+                      padding: EdgeInsets.zero,
+                      minimumSize: const Size(0, 0),
+                    ),
+                    child: Text(
+                      'Anular',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.red.shade700,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Sección colapsada al final de la lista -- anulados nunca se borran (0056), pero son
+  /// información histórica, no algo que compita por espacio con los certificados vigentes. Fila
+  /// chica por anulado (sin `Card` propia), tappable al detalle igual que uno vigente.
+  Widget _buildSeccionAnulados(List<Certificado> anulados) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          InkWell(
+            onTap: () =>
+                setState(() => _anuladosExpandido = !_anuladosExpandido),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Row(
+                children: [
+                  Icon(Icons.history, size: 15, color: Colors.black45),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Anulados (${anulados.length})',
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black54,
+                    ),
+                  ),
+                  const Spacer(),
+                  Icon(
+                    _anuladosExpandido ? Icons.expand_less : Icons.expand_more,
+                    size: 18,
+                    color: Colors.black45,
+                  ),
+                ],
+              ),
             ),
           ),
-        );
-      },
+          if (_anuladosExpandido)
+            for (final cert in anulados) _buildFilaAnulado(cert),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFilaAnulado(Certificado cert) {
+    return InkWell(
+      onTap: () => _abrirDetalle(cert),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+        decoration: BoxDecoration(
+          border: Border(bottom: BorderSide(color: Colors.black12)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.block, size: 13, color: Colors.red.shade300),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Certificado Nº ${cert.numeroFormateado} — ${cert.periodo}',
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      color: Colors.black54,
+                    ),
+                  ),
+                  if (cert.anulacionMotivo != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 1),
+                      child: Text(
+                        cert.anulacionMotivo!,
+                        style: const TextStyle(
+                          fontSize: 10.5,
+                          color: Colors.black38,
+                          fontStyle: FontStyle.italic,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, size: 16, color: Colors.black26),
+          ],
+        ),
+      ),
     );
   }
 

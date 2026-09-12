@@ -510,9 +510,13 @@ class _CargaAvanceSubitemsScreenState extends State<CargaAvanceSubitemsScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: historial.map((item) {
           final esEsteBorrador = item.estadoCertificado == 'borrador';
+          // Certificate.formatearNumero, no el número crudo -- sin esto, un certificado anulado y
+          // su reemplazo (mismo numero, ver 0056) se mostraban acá como "Certificado N°1" los dos,
+          // indistinguibles (hallazgo de Seba, 2026-09-12).
+          final numero = Certificado.formatearNumero(item.numeroCertificado, item.versionCertificado);
           final texto = _puedeVerMontos
-              ? 'Certificado N°${item.numeroCertificado}: ${_fmtEntrada(item.porcentajePeriodo)}% — ${_fmtMonto(item.montoPeriodo)}'
-              : 'Certificado N°${item.numeroCertificado}: ${_fmtEntrada(item.porcentajePeriodo)}%';
+              ? 'Certificado N°$numero: ${_fmtEntrada(item.porcentajePeriodo)}% — ${_fmtMonto(item.montoPeriodo)}'
+              : 'Certificado N°$numero: ${_fmtEntrada(item.porcentajePeriodo)}%';
           return Padding(
             padding: const EdgeInsets.only(bottom: 2),
             child: Text(

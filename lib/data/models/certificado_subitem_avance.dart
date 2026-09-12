@@ -28,17 +28,25 @@ class CertificadoSubitemAvance {
 }
 
 /// Una línea del historial de avance de un subítem — su % en UN certificado puntual, con el
-/// número y estado de ese certificado para poder mostrarlo ("Certificado N°1: 15%"). No es una
-/// fila de `certificado_subitems_avance` directa: junta esa tabla con `certificados` (numero,
-/// estado), que `CertificadoSubitemAvance` no trae.
+/// número, versión y estado de ese certificado para poder mostrarlo ("Certificado N°1 bis: 15%").
+/// No es una fila de `certificado_subitems_avance` directa: junta esa tabla con `certificados`
+/// (numero, version, estado), que `CertificadoSubitemAvance` no trae.
+///
+/// `versionCertificado`: sin esto, un certificado anulado y su reemplazo (mismo `numero`, ver
+/// `resolver_anulacion_certificado`, 0056) eran indistinguibles acá -- las dos filas se mostraban
+/// como "Certificado N°1", aunque una perteneciera al anulado y la otra a su corrección (hallazgo
+/// de Seba, 2026-09-12). Usar junto con `Certificado.formatearNumero` para el mismo "1 bis"/"1 ter"
+/// que ya muestra el resto de las pantallas de certificados.
 class AvanceHistorialItem {
   final int numeroCertificado;
+  final int versionCertificado;
   final String estadoCertificado;
   final double porcentajePeriodo;
   final double montoPeriodo;
 
   const AvanceHistorialItem({
     required this.numeroCertificado,
+    required this.versionCertificado,
     required this.estadoCertificado,
     required this.porcentajePeriodo,
     required this.montoPeriodo,

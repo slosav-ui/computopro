@@ -598,3 +598,43 @@ pendiente que haya quedado afuera de `0056` por descuido.
 
 **Sin conectar a Dart/UI todavía** — la pantalla (proponer con motivo, aprobar o rechazar del otro
 lado) es la tanda siguiente, después de aplicar y verificar esta migración en Supabase.
+
+**Addendum 2026-09-12 — duda real de Seba sobre la numeración, resuelta sin tocar SQL.** Un
+certificado 2 "genuino" (no reemplazo de ninguna anulación) parecía, a primera vista, un hueco en
+la numeración de un certificado 1 recién anulado. Verificado contra la base: eran dos certificados
+distintos, los dos en versión 1, ninguno anulado — la numeración estaba bien, `resolver_anulacion_
+certificado` nunca se había ejecutado en ese caso. **El mecanismo de esta migración queda
+confirmado correcto**, ninguna corrección de SQL hacía falta.
+
+Lo que sí cambió, a partir de esa revisión: `Certificado.numeroFormateado` mostraba `"001 (v2)"`
+para el reemplazo de un anulado -- vocabulario de versión de software, no el que un profesional
+reconoce en obra. Pasa a `"1 bis"` / `"1 ter"` (`Certificado.formatearNumero`, sin padding de
+ceros), con `"(corrección N)"` como fallback más allá de la segunda corrección. Mismo cambio
+aplicado al historial de avance por partida (`AvanceHistorialItem`, `certificado_subitems_avance_
+repository.dart`), que hasta ahora mostraba el `numero` crudo sin `version` — un certificado
+anulado y su reemplazo eran indistinguibles ahí ("Certificado N°1" los dos). **Verificado por Seba
+en el emulador: "1 bis" sale bien.**
+
+**Addendum 2026-09-12 (segunda vuelta) — dos hallazgos reales probando el circuito completo con dos
+usuarios.**
+
+**1) Fila huérfana en el borrador de reemplazo — bug real, corregido en `0111`.** El paso de
+`resolver_anulacion_certificado` que copia `certificado_subitems_avance` del anulado al reemplazo
+(§ arriba, "El borrador nuevo arranca con una copia...") copiaba TODAS las filas sin filtrar,
+incluida una partida que se había destildado (`es_aplicable = false`) después de emitir el
+certificado original. Esa fila aparecía en la vista previa del reemplazo con su % de avance
+copiado y monto $0 (el trigger de la `0052` recalcula el monto contra `calcular_monto_obra_
+subitems`, que ya no incluye esa partida) — visible solo ahí, no como rubro del cómputo actual.
+Fix: el `insert` de la copia se acota a los `obra_subitem_id` que `calcular_monto_obra_subitems`
+todavía devuelve — la misma función que ya decide qué es certificable hoy (vivo o congelado,
+bifurca sola, `0104`), sin reimplementar ese criterio. Detalle completo en el comentario de `0111`.
+
+**2) Los anulados ocupaban el mismo lugar que un certificado vigente en la lista.** Corrección de
+criterio de Seba: un anulado es información histórica (nunca se borra, ver arriba) pero no algo que
+se mira todos los días — no puede competir por espacio con lo vigente. `gestion_obra_tab.dart`
+separa la lista en vigentes (Card completa, sin cambios) y una sección "Anulados (N)" colapsada por
+default al final, con una fila chica por anulado (número, período, motivo) en vez de la tarjeta
+entera — tappable al mismo detalle de siempre.
+
+Pendiente: Seba vuelve a probar el circuito completo (los dos usuarios) para verificar las dos
+cosas juntas antes de commitear.

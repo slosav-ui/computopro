@@ -132,4 +132,31 @@ class Certificado {
     this.anulacionResueltaFecha,
     this.anulacionMotivoRechazo,
   });
+
+  /// "1", "1 bis", "1 ter" -- el número que ve el usuario, en TODAS las pantallas que lo muestran
+  /// (antes de este getter, 6 de los 7 lugares que arman este string lo hacían a mano y se
+  /// olvidaban del sufijo de versión, mostrando el reemplazo de un certificado anulado idéntico al
+  /// original sin ninguna marca -- encontrado por Seba, 2026-09-11). El número en sí (`numero`)
+  /// NUNCA cambia al anular (`resolver_anulacion_certificado`, 0056, preserva `numero` y solo
+  /// incrementa `version`) -- a propósito, para no dejar un hueco en la numeración.
+  ///
+  /// "bis"/"ter", no "(v2)"/"(v3)" -- corrección de Seba (2026-09-12): es el vocabulario que un
+  /// profesional reconoce en obra para "la corrección del certificado N", no una versión de
+  /// software. Sin padding de ceros tampoco (antes "001") -- así es como se nombra en la práctica,
+  /// no como un código. Más allá de "ter" (2 correcciones sobre el mismo certificado, un caso ya
+  /// raro) cae a "corrección N", en vez de sumar más latinismos que ya nadie reconoce.
+  static const _sufijosVersion = ['', 'bis', 'ter'];
+
+  /// Extraído como estático para que `AvanceHistorialItem` (certificado_subitem_avance.dart) --
+  /// que no tiene un `Certificado` completo, solo `numero`/`version` sueltos traídos con un join
+  /// liviano -- pueda mostrar el mismo formato sin duplicar la lista de sufijos ni la regla de
+  /// cuándo cae a "(corrección N)".
+  static String formatearNumero(int numero, int version) {
+    if (version <= 1) return numero.toString();
+    final indice = version - 1;
+    if (indice < _sufijosVersion.length) return '$numero ${_sufijosVersion[indice]}';
+    return '$numero (corrección $version)';
+  }
+
+  String get numeroFormateado => formatearNumero(numero, version);
 }
