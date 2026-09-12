@@ -9,8 +9,9 @@ import '../data/models/modificacion_obra.dart';
 /// datos (costo manual + cascada, sin `obra_subitem_id`) son suficientemente distintos como para
 /// no compartir métodos.
 ///
-/// Solo creación y listado en esta tanda -- aprobar/rechazar/certificar avance son Tanda 2, una vez
-/// aplicada y verificada la `0112`.
+/// Creación, listado y, desde la Tanda 2 (0116), enviar/aprobar/rechazar -- todas las transiciones
+/// por RPC: la 0116 cerró cualquier `UPDATE` directo sobre una fila de adicional. Certificar avance
+/// sigue pendiente (Tanda 2, después).
 class AdicionalesRepository {
   final SupabaseClient _client = Supabase.instance.client;
 
@@ -125,12 +126,64 @@ class AdicionalesRepository {
     });
   }
 
-  // Sin "corregir mientras pendiente" a propósito -- verificado contra `modificaciones_obra_update`
-  // (0109): esa política solo deja tocar una fila `pendiente` a quien puede aprobarla
-  // (`puede_aprobar_monto` para todo lo que no es demasia/quita), no a `subido_por` en general --
-  // la rama `subido_por = auth.uid()` de esa política solo aplica con `estado = 'devuelto'`. Quien
-  // creó un adicional pendiente no puede autoeditarlo hoy, mismo límite que ya tiene Quitas/
-  // Demasías (sin edición, solo aprobar/rechazar). Si hace falta poder corregir un pendiente antes
-  // de que se resuelva, es un cambio de RLS a proponer en la Tanda 2, no algo que se pueda ofrecer
-  // en la UI sin esa base.
+  /// El adicional que corresponde a una obra hija -- para el aviso de `PresupuestosScreen` cuando se
+  /// abre la hija (enviado/aprobado/rechazado). `null` si no hay (o si la RLS no lo deja ver: la
+  /// fila vive en la madre, `is_obra_member(madre)`), sin error -- el aviso es informativo.
+  Future<ModificacionObra?> getAdicionalDeObraHija(String obraHijaId) async {
+    final row = await _client
+        .from('modificaciones_obra')
+        .select()
+        .eq('obra_hija_id', obraHijaId)
+        .maybeSingle();
+    return row == null ? null : ModificacionObra.fromRow(row);
+  }
+
+  /// Quien cotiza congela la obra hija y la manda a aprobar (0116, `enviar_adicional_a_aprobacion`
+  /// -- docs/adicionales_quitas_demasias_diagnostico.md §13.6-A). Sirve igual para reenviar mientras
+  /// siga pendiente. Devuelve el monto enviado (la suma congelada).
+  Future<double> enviarAAprobacion(String modificacionId) {
+    return _conLog('enviarAAprobacion', () async {
+      final monto = await _client.rpc('enviar_adicional_a_aprobacion', params: {
+        'p_modificacion_id': modificacionId,
+      });
+      return _aDouble(monto);
+    });
+  }
+
+  /// `montoVisto`: el `montoTotal` crudo (en pesos, sin redondear ni convertir) de la fila que el
+  /// aprobador tenía en pantalla -- `aprobar_adicional` rechaza si no coincide con el monto real que
+  /// va a quedar (reenvío o cambio de config en el medio), y recién con ese monto valida el tope.
+  /// Devuelve el monto aprobado.
+  Future<double> aprobarAdicional({
+    required String modificacionId,
+    required double montoVisto,
+    String? comentario,
+  }) {
+    return _conLog('aprobarAdicional', () async {
+      final monto = await _client.rpc('aprobar_adicional', params: {
+        'p_modificacion_id': modificacionId,
+        'p_monto_visto': montoVisto,
+        'p_comentario': comentario,
+      });
+      return _aDouble(monto);
+    });
+  }
+
+  Future<void> rechazarAdicional({required String modificacionId, String? comentario}) {
+    return _conLog('rechazarAdicional', () async {
+      await _client.rpc('rechazar_adicional', params: {
+        'p_modificacion_id': modificacionId,
+        'p_comentario': comentario,
+      });
+    });
+  }
+
+  // `numeric` de Postgres puede llegar como número o como texto según su tamaño -- mismo resguardo
+  // en los dos casos, nunca un cast directo.
+  double _aDouble(dynamic valor) =>
+      valor is num ? valor.toDouble() : double.tryParse(valor?.toString() ?? '') ?? 0.0;
+
+  // Sin "corregir mientras pendiente" a propósito: desde la 0116 ninguna escritura directa sobre una
+  // fila de adicional pasa la RLS, ni siquiera para quien la subió. Para el camino obra hija, corregir
+  // es editar el cómputo de la hija y reenviar; para el monto fijo, rechazar y volver a cargarlo.
 }

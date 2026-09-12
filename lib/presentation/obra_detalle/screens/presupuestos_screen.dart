@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import '../../../data/models/apu_precio_subitem.dart';
+import '../../../data/models/modificacion_obra.dart';
 import '../../../data/models/obra_model.dart';
 import '../../../core/segurity/user_context.dart';
+import '../../../services/adicionales_repository.dart';
 import '../../../services/auth_service.dart';
 import '../../../services/obra_members_repository.dart';
 import '../tabs/apu_listado_tab.dart';
@@ -27,6 +29,10 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> with SingleTick
   late Map<String, dynamic> _obraDatos;
   String? _obraId;
   bool _esObraHija = false;
+
+  // Solo obra hija: el adicional al que pertenece, para el aviso de arriba de las solapas una vez
+  // enviado/aprobado/rechazado (ver `_buildAvisoAdicional`). null si no se pudo leer -- sin aviso.
+  ModificacionObra? _adicionalDeEstaObra;
 
   // Coeficientes dinámicos para Resumen Final
   double _gastosGeneralesPorcentaje = 15.0;
@@ -112,6 +118,55 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> with SingleTick
 
     _tabController = TabController(length: _esObraHija ? 5 : 6, vsync: this);
     _cargarUserContext();
+    if (_esObraHija && _obraId != null) _cargarAdicionalDeEstaObra();
+  }
+
+  // Silencioso ante error a propósito: el aviso es informativo, lo financiero ya lo protege el
+  // congelamiento (0116), no esta pantalla.
+  Future<void> _cargarAdicionalDeEstaObra() async {
+    try {
+      final adicional = await AdicionalesRepository().getAdicionalDeObraHija(_obraId!);
+      if (!mounted) return;
+      setState(() => _adicionalDeEstaObra = adicional);
+    } catch (_) {}
+  }
+
+  /// Obra hija ya enviada o resuelta (docs/adicionales_quitas_demasias_diagnostico.md §13.2,
+  /// decisiones menores): no hay un modo de solo lectura reutilizable en las solapas -- en vez de
+  /// inventarlo, se avisa. Lo que se aprueba es la suma congelada al enviar, no lo que se edite acá
+  /// después. En preparación (sin enviar) no hay nada que avisar.
+  Widget? _buildAvisoAdicional() {
+    final a = _adicionalDeEstaObra;
+    if (a == null) return null;
+    final String texto;
+    final Color fondo;
+    switch (a.estado) {
+      case EstadoModificacion.aprobado:
+        texto = 'Adicional aprobado -- el monto quedó fijo. Los cambios que hagas acá no lo modifican.';
+        fondo = Colors.green.shade50;
+      case EstadoModificacion.rechazado:
+        texto = 'Adicional rechazado -- lo que cambies acá no se vuelve a enviar.';
+        fondo = Colors.red.shade50;
+      case EstadoModificacion.pendiente:
+        if (a.enviadoAAprobacionEn == null) return null;
+        texto = 'Enviado para aprobación. Si cambiás algo del cómputo, reenvialo desde Adicionales '
+            'para que el cliente apruebe el número nuevo.';
+        fondo = Colors.amber.shade50;
+      case EstadoModificacion.devuelto:
+        return null;
+    }
+    return Container(
+      width: double.infinity,
+      color: fondo,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: Row(
+        children: [
+          const Icon(Icons.info_outline, size: 16, color: Colors.black54),
+          const SizedBox(width: 8),
+          Expanded(child: Text(texto, style: const TextStyle(fontSize: 11.5, color: Colors.black87))),
+        ],
+      ),
+    );
   }
 
   Future<void> _cargarUserContext() async {
@@ -223,31 +278,38 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> with SingleTick
           ],
         ),
       ),
-      body: TabBarView(
-        controller: _tabController,
+      body: Column(
         children: [
-          _obraId != null
-              ? RubrosTab(
-                  obra: obraModelParaTab,
-                  obraId: _obraId!,
-                  puedeEditarComputo: _userContext?.puedeEditarComputo == true,
-                  puedeVerMontosYAPU: _userContext?.puedeVerMontosYAPU == true,
-                  onAbrirComposicion: _abrirComposicionDesdeComputo,
-                )
-              : const Center(child: Text('No se pudo determinar la obra.')),
-          _buildTabApu(),
-          _obraId != null
-              ? MatYMoTab(
-                  obraId: _obraId!,
-                  puedeVerMontosYAPU: _userContext?.puedeVerMontosYAPU == true,
-                )
-              : const Center(child: Text('No se pudo determinar la obra.')),
-          if (!_esObraHija)
-            _obraId != null
-                ? GestionObraTab(obraId: _obraId!, userContext: _userContext)
-                : const Center(child: Text('No se pudo determinar la obra.')),
-          _buildTabResumenFinal(),
-          _buildTabProveedores(),
+          ?_buildAvisoAdicional(),
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                _obraId != null
+                    ? RubrosTab(
+                        obra: obraModelParaTab,
+                        obraId: _obraId!,
+                        puedeEditarComputo: _userContext?.puedeEditarComputo == true,
+                        puedeVerMontosYAPU: _userContext?.puedeVerMontosYAPU == true,
+                        onAbrirComposicion: _abrirComposicionDesdeComputo,
+                      )
+                    : const Center(child: Text('No se pudo determinar la obra.')),
+                _buildTabApu(),
+                _obraId != null
+                    ? MatYMoTab(
+                        obraId: _obraId!,
+                        puedeVerMontosYAPU: _userContext?.puedeVerMontosYAPU == true,
+                      )
+                    : const Center(child: Text('No se pudo determinar la obra.')),
+                if (!_esObraHija)
+                  _obraId != null
+                      ? GestionObraTab(obraId: _obraId!, userContext: _userContext)
+                      : const Center(child: Text('No se pudo determinar la obra.')),
+                _buildTabResumenFinal(),
+                _buildTabProveedores(),
+              ],
+            ),
+          ),
         ],
       ),
     );

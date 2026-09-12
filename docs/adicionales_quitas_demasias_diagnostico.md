@@ -995,4 +995,20 @@ profesional + constructor insertar directo en `aprobado`). Un adicional aprobado
 el `monto_total` tipeado, sin cascada; la misma persona lo aprueba con `aprobar_adicional` en dos
 toques. `crearAdicional` ya inserta en `pendiente`, no cambia nada para la app.
 
-Dart (§13.3) después de aplicar y verificar la `0116`.
+**`0116` aplicada y verificada por Seba (2026-09-12), commit `da86f8b`.**
+
+**Dart, hecho — `flutter analyze` limpio, sin verificar en el emulador todavía:**
+- `ModificacionObra.enviadoAAprobacionEn`.
+- `AdicionalesRepository`: `enviarAAprobacion`, `aprobarAdicional(montoVisto: montoTotal crudo)`,
+  `rechazarAdicional` (con `_conLog`), `getAdicionalDeObraHija` (para el aviso de la hija).
+- `UserContext`: `puedeRechazarAdicional`, `puedeAprobarAdicional(monto)` (reglas 16, mirror de la
+  0116 con la delegación según la base, sin `_delegacionVigente` — §13.4) y
+  `puedeEnviarAdicional(solicitadoPor)` (regla 17: admin_maestro/profesional de la madre, o quien
+  creó el adicional — admin de la hija por bootstrap).
+- `AdicionalesScreen`: por tile, Enviar para aprobación / Reenviar (quien cotiza), Aprobar /
+  Rechazar (cliente o apoderado); aprobar muestra el monto en el diálogo; "Supera tu tope" cuando
+  el apoderado puede rechazar pero no aprobar ese monto; recarga siempre después de una
+  transición, también ante error (monto cambiado).
+- `PresupuestosScreen` de una obra hija: aviso arriba de las solapas cuando está enviada,
+  aprobada o rechazada. **Sin el monto** en el texto (§13.2 decía "aprobado por $X"): mostrarlo
+  obligaba a repetir la conversión de moneda en esta pantalla; el monto se ve en Adicionales.

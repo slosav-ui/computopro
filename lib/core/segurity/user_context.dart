@@ -192,6 +192,50 @@ class UserContext {
   bool get puedeAprobarQuitaDemasia =>
       _tieneAlgunRol([RolProyecto.profesional, RolProyecto.constructor]);
 
+  // Regla de visibilidad 16: ¿puede aprobar/rechazar un Adicional? Mirroreada EXACTO contra
+  // `puede_aprobar_adicional`/`puede_rechazar_adicional` (0116): cliente_principal sin tope, o
+  // invitado_apoderado con `puedeAprobarAdicionales` + delegación vigente (+ tope, solo al aprobar
+  // -- rechazar no compromete plata). Nunca admin_maestro ni profesional: "si el profesional o el
+  // administrador pueden aprobar un adicional, deja de ser una aprobación del que paga" (docs/
+  // adicionales_quitas_demasias_diagnostico.md §7-B), sin excepción aunque la obra no tenga cliente
+  // (§13.6-C). La base igual valida el tope contra el monto REAL, no contra este.
+  bool get puedeRechazarAdicional =>
+      _tieneAlgunRol([RolProyecto.clientePrincipal]) || membresias.any(_esApoderadoDeAdicionales);
+
+  bool puedeAprobarAdicional(double monto) =>
+      _tieneAlgunRol([RolProyecto.clientePrincipal]) ||
+      membresias.any((m) =>
+          _esApoderadoDeAdicionales(m) &&
+          (m.permisosEspeciales.topeMontoAprobacion == null ||
+              monto <= m.permisosEspeciales.topeMontoAprobacion!));
+
+  bool _esApoderadoDeAdicionales(ObraMember m) =>
+      m.rol == RolProyecto.invitadoApoderado &&
+      m.permisosEspeciales.puedeAprobarAdicionales &&
+      _delegacionVigenteSegunBase(m);
+
+  // Regla de visibilidad 17: ¿puede enviar (o reenviar) para aprobación un adicional presupuestado
+  // con la app? En la base (`enviar_adicional_a_aprobacion`, 0116) es admin_maestro/profesional de
+  // la OBRA HIJA -- quienes cotizan. Desde la madre eso es: admin_maestro/profesional de acá (el
+  // equipo se copia a la hija, y se vuelve a copiar al enviar) o quien creó el adicional (el
+  // bootstrap de 0033 lo hace admin_maestro de la hija, tenga el rol que tenga en la madre).
+  bool puedeEnviarAdicional({required String solicitadoPor}) =>
+      puedeEditarComputo || solicitadoPor == userId;
+
+  // La regla de la BASE para la delegación (0004/0011/0116): sin fechas = permanente, vigente; con
+  // las dos fechas, dentro del rango; con una sola, no. Distinta de `_delegacionVigente` a propósito:
+  // ese helper trata "sin fechas" como NO vigente -- divergencia anotada como pendiente aparte
+  // (§13.4, afecta a certificados), así que los getters de adicionales no lo reusan. Cuando se
+  // alinee el helper, se unifican.
+  bool _delegacionVigenteSegunBase(ObraMember m) {
+    final inicio = m.permisosEspeciales.delegacionTemporalInicio;
+    final fin = m.permisosEspeciales.delegacionTemporalFin;
+    if (inicio == null && fin == null) return true;
+    if (inicio == null || fin == null) return false;
+    final ahora = DateTime.now();
+    return !ahora.isBefore(inicio) && !ahora.isAfter(fin);
+  }
+
   bool _delegacionVigente(ObraMember m) {
     final inicio = m.permisosEspeciales.delegacionTemporalInicio;
     final fin = m.permisosEspeciales.delegacionTemporalFin;

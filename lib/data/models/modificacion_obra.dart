@@ -105,8 +105,14 @@ class ModificacionObra {
   /// demasias_diagnostico.md §12), mutuamente excluyente con `costoCostoBase` (el check de la base
   /// exige exactamente uno de los dos para `tipo == adicional`). Esa obra tiene sus propias solapas
   /// de Rubros/APU/Materiales, con Factor K propio y precios de hoy -- `monto_total` de esta fila
-  /// queda en 0 hasta que se congela al aprobar (Tanda 2, todavía sin construir).
+  /// queda en 0 mientras se presupuesta, y pasa a ser la suma congelada de la obra hija cuando quien
+  /// lo cotiza lo envía para aprobación (0116, ver `enviadoAAprobacionEn`).
   final String? obraHijaId;
+
+  /// Solo camino obra hija (0116): null = en preparación; seteada = enviado para aprobación, con
+  /// `montoTotal` ya igual a lo congelado. Se puede reenviar mientras siga pendiente (se pisa). Vive
+  /// en esta fila -- no en la obra hija -- para que la lista lo sepa sin poder leer la hija.
+  final DateTime? enviadoAAprobacionEn;
 
   final String solicitadoPor;
   final String subidoPor;
@@ -133,6 +139,7 @@ class ModificacionObra {
     this.incluyeMateriales = true,
     this.incluyeImpuestos = true,
     this.obraHijaId,
+    this.enviadoAAprobacionEn,
     required this.solicitadoPor,
     required this.subidoPor,
     this.estado = EstadoModificacion.pendiente,
@@ -158,6 +165,9 @@ class ModificacionObra {
       incluyeMateriales: row['incluye_materiales'] == null ? true : row['incluye_materiales'] == true,
       incluyeImpuestos: row['incluye_impuestos'] == null ? true : row['incluye_impuestos'] == true,
       obraHijaId: row['obra_hija_id']?.toString(),
+      enviadoAAprobacionEn: row['enviado_a_aprobacion_en'] != null
+          ? DateTime.tryParse(row['enviado_a_aprobacion_en'].toString())
+          : null,
       solicitadoPor: row['solicitado_por'].toString(),
       subidoPor: row['subido_por'].toString(),
       estado: _estadoDesdeColumna(row['estado']?.toString()),

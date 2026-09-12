@@ -12,9 +12,14 @@ import '../../../services/obras_repository.dart';
 import '../../../services/perfil_repository.dart';
 import 'presupuestos_screen.dart';
 
-/// Historial + creación de Adicionales de una obra (docs/adicionales_quitas_demasias_
-/// diagnostico.md §11/§12). Deliberadamente SIN aprobar/rechazar todavía (Tanda 2, autoridad de
-/// cliente_principal/apoderado) ni seguimiento de avance certificado.
+/// Historial, creación y aprobación de Adicionales de una obra (docs/adicionales_quitas_demasias_
+/// diagnostico.md §11/§12/§13). Todavía SIN seguimiento de avance certificado (Tanda 2, después).
+///
+/// Circuito de aprobación (0116, §13.6): un adicional presupuestado con la app lo **envía** quien lo
+/// cotiza (congela la obra hija con sus recetas y precios -- "te mandan un presupuesto cerrado, no
+/// una hoja de cálculo abierta") y recién ahí se puede aprobar; uno de monto fijo se aprueba
+/// directo. Aprobar/rechazar: solo cliente_principal o apoderado habilitado (§7-B) -- el tope del
+/// apoderado lo valida la base contra el monto real, este tile solo lo anticipa.
 ///
 /// El "+" ofrece las 3 vías de carga (§12.6): **Monto fijo** (Tanda 1, un precio cerrado, cascada
 /// de Factor K aplicada sobre un costo tipeado a mano), **Presupuestar con la app** (la principal
@@ -48,6 +53,10 @@ class _AdicionalesScreenState extends State<AdicionalesScreen> {
 
   String _moneda = 'ARS';
   double _cotizacionHoy = 0;
+
+  // Adicionales con una transición en curso (enviar/aprobar/rechazar) -- spinner en su tile en vez
+  // de los botones, mismo patrón que QuitasDemasiasScreen.
+  final Set<String> _resolviendo = {};
 
   @override
   void initState() {
@@ -97,7 +106,7 @@ class _AdicionalesScreenState extends State<AdicionalesScreen> {
 
   String _nombreUsuario(String usuarioId) => _perfilPorUsuarioId[usuarioId]?.nombre ?? usuarioId;
 
-  String _fmtFecha(DateTime f) => '${f.day}/${f.month}/${f.year}';
+  String _fmtFecha(DateTime? f) => f == null ? '—' : '${f.day}/${f.month}/${f.year}';
 
   /// `montoArs`: siempre en pesos (el sistema de precios entero trabaja en ARS) -- convierte a la
   /// moneda de la obra antes de formatear, mismo patrón que el resto de Gestión de Obra.
@@ -244,6 +253,286 @@ class _AdicionalesScreenState extends State<AdicionalesScreen> {
     );
   }
 
+  /// Corre una transición con el spinner del tile y recarga SIEMPRE al terminar -- también ante
+  /// error: si `aprobar_adicional` rechaza porque el monto cambió desde que se abrió la lista, la
+  /// lista tiene que mostrar el monto nuevo antes de volver a intentar. El error real ya queda en
+  /// consola (`AdicionalesRepository._conLog`); acá solo se muestra el mensaje.
+  Future<void> _transicion(
+    ModificacionObra m,
+    Future<String> Function() accion,
+    String errorGenerico,
+  ) async {
+    setState(() => _resolviendo.add(m.id));
+    String mensaje;
+    try {
+      mensaje = await accion();
+    } on PostgrestException catch (e) {
+      mensaje = e.message;
+    } catch (_) {
+      mensaje = errorGenerico;
+    }
+    if (!mounted) return;
+    setState(() => _resolviendo.remove(m.id));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(mensaje)));
+    await _cargarDatos();
+  }
+
+  Future<void> _enviar(ModificacionObra m) async {
+    final reenvio = m.enviadoAAprobacionEn != null;
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(
+          reenvio ? 'Reenviar para aprobación' : 'Enviar para aprobación',
+          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+        ),
+        content: Text(
+          '${reenvio ? "Se vuelve a congelar" : "Se congela"} el presupuesto de este adicional con las '
+          'cantidades y los precios de hoy, y el cliente va a aprobar ese número. Si después cambiás '
+          'algo del cómputo, lo tenés que reenviar.',
+          style: const TextStyle(fontSize: 13),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Volver')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(reenvio ? 'Reenviar' : 'Enviar'),
+          ),
+        ],
+      ),
+    );
+    if (confirmar != true || !mounted) return;
+    await _transicion(m, () async {
+      final monto = await _repo.enviarAAprobacion(m.id);
+      return 'Enviado para aprobación: ${_fmtMonto(monto)}';
+    }, 'No se pudo enviar el adicional.');
+  }
+
+  Future<void> _aprobar(ModificacionObra m) async {
+    final comentario = await _pedirComentario(
+      titulo: 'Aprobar adicional',
+      detalle: 'Vas a aprobar ${_fmtMonto(m.montoTotal)} por "${m.descripcion}". Queda fijo: no se '
+          'vuelve a recalcular.',
+      etiqueta: 'Comentario (opcional)',
+      accion: 'Aprobar',
+    );
+    if (comentario == null || !mounted) return;
+    await _transicion(m, () async {
+      // El monto crudo de la fila (pesos, sin redondear ni convertir) -- el mismo contra el que la
+      // base compara, no el texto formateado de arriba.
+      final monto = await _repo.aprobarAdicional(
+        modificacionId: m.id,
+        montoVisto: m.montoTotal,
+        comentario: comentario.isEmpty ? null : comentario,
+      );
+      return 'Adicional aprobado: ${_fmtMonto(monto)}';
+    }, 'No se pudo aprobar el adicional.');
+  }
+
+  Future<void> _rechazar(ModificacionObra m) async {
+    final motivo = await _pedirComentario(
+      titulo: 'Rechazar adicional',
+      detalle: '"${m.descripcion}" queda rechazado y no se puede volver a enviar.',
+      etiqueta: 'Motivo (opcional)',
+      accion: 'Rechazar',
+    );
+    if (motivo == null || !mounted) return;
+    await _transicion(m, () async {
+      await _repo.rechazarAdicional(modificacionId: m.id, comentario: motivo.isEmpty ? null : motivo);
+      return 'Adicional rechazado.';
+    }, 'No se pudo rechazar el adicional.');
+  }
+
+  /// `null` = "Volver"; texto vacío = confirmó sin comentario.
+  Future<String?> _pedirComentario({
+    required String titulo,
+    required String detalle,
+    required String etiqueta,
+    required String accion,
+  }) {
+    final controller = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(titulo, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(detalle, style: const TextStyle(fontSize: 13)),
+            const SizedBox(height: 10),
+            TextField(
+              controller: controller,
+              maxLines: 2,
+              decoration: InputDecoration(labelText: etiqueta, isDense: true),
+              style: const TextStyle(fontSize: 13),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Volver')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: Text(accion),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAdicional(ModificacionObra m) {
+    final esPendiente = m.estado == EstadoModificacion.pendiente;
+    final esPresupuestado = m.obraHijaId != null;
+    final enviado = m.enviadoAAprobacionEn != null;
+    // En preparación: presupuestado con la app y todavía sin enviar -- monto_total sigue en 0 hasta
+    // que quien lo cotiza lo envía (0116); mostrar "$ 0" ahí sería mentir por omisión, mismo
+    // criterio que el chip de desfasaje del dashboard.
+    final enPreparacion = esPresupuestado && esPendiente && !enviado;
+
+    final ctx = widget.userContext;
+    final puedeEnviar =
+        esPresupuestado && esPendiente && ctx?.puedeEnviarAdicional(solicitadoPor: m.solicitadoPor) == true;
+    final puedeRechazar = esPendiente && ctx?.puedeRechazarAdicional == true;
+    // Un presupuestado solo se aprueba una vez enviado -- antes no hay número que aprobar.
+    final aprobable = esPendiente && (!esPresupuestado || enviado);
+    final puedeAprobar = aprobable && ctx?.puedeAprobarAdicional(m.montoTotal) == true;
+    final superaTope = aprobable && puedeRechazar && !puedeAprobar;
+    final resolviendoEste = _resolviendo.contains(m.id);
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      child: InkWell(
+        onTap: esPresupuestado ? () => _abrirObraHija(m.obraHijaId!) : null,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      m.descripcion,
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5),
+                    ),
+                  ),
+                  Chip(
+                    label: Text(
+                      m.estado.label,
+                      style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                    ),
+                    backgroundColor: _colorEstado(m.estado),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              if (enPreparacion)
+                const Text(
+                  'Presupuestándose con la app -- tocá para seguir cargando el cómputo.',
+                  style: TextStyle(fontSize: 12.5, color: Colors.black54, fontStyle: FontStyle.italic),
+                )
+              else
+                Text(
+                  _fmtMonto(m.montoTotal),
+                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1B365D)),
+                ),
+              const SizedBox(height: 2),
+              Wrap(
+                spacing: 8,
+                children: [
+                  if (!m.incluyeImpuestos)
+                    const Text('Sin impuestos', style: TextStyle(fontSize: 10.5, color: Colors.black45)),
+                  if (!m.incluyeMateriales)
+                    const Text('Sin materiales', style: TextStyle(fontSize: 10.5, color: Colors.black45)),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Solicitado por ${_nombreUsuario(m.solicitadoPor)} — ${_fmtFecha(m.fechaSolicitud)}',
+                style: const TextStyle(fontSize: 10.5, color: Colors.black38),
+              ),
+              if (esPendiente && !esPresupuestado)
+                const Padding(
+                  padding: EdgeInsets.only(top: 4),
+                  child: Text(
+                    'Todavía es una propuesta, pendiente de aprobación.',
+                    style: TextStyle(fontSize: 10, color: Colors.black38, fontStyle: FontStyle.italic),
+                  ),
+                ),
+              if (esPendiente && esPresupuestado && enviado)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    'Enviado para aprobación el ${_fmtFecha(m.enviadoAAprobacionEn)}. Si se cambia el '
+                    'cómputo, hay que reenviarlo.',
+                    style: const TextStyle(fontSize: 10, color: Colors.black38, fontStyle: FontStyle.italic),
+                  ),
+                ),
+              if (!esPendiente && m.aprobadoPor != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    '${m.estado.label} por ${_nombreUsuario(m.aprobadoPor!)} el ${_fmtFecha(m.fechaResolucion)}'
+                    '${m.comentarioResolucion != null && m.comentarioResolucion!.isNotEmpty ? " — ${m.comentarioResolucion}" : ""}',
+                    style: const TextStyle(fontSize: 11, color: Colors.black45, fontStyle: FontStyle.italic),
+                  ),
+                ),
+              if (superaTope)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    'Supera tu tope de aprobación -- lo tiene que aprobar el cliente principal.',
+                    style: TextStyle(fontSize: 10.5, color: Colors.red.shade700),
+                  ),
+                ),
+              if (puedeEnviar || puedeRechazar || puedeAprobar)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: resolviendoEste
+                        ? const SizedBox(height: 14, width: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                        // Wrap, no Row: en pantalla angosta los tres botones pasan de renglón en
+                        // vez de desbordar.
+                        : Wrap(
+                            spacing: 12,
+                            runSpacing: 4,
+                            alignment: WrapAlignment.end,
+                            children: [
+                              if (puedeEnviar)
+                                TextButton(
+                                  onPressed: () => _enviar(m),
+                                  style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(0, 0)),
+                                  child: Text(
+                                    enviado ? 'Reenviar' : 'Enviar para aprobación',
+                                    style: const TextStyle(fontSize: 12),
+                                  ),
+                                ),
+                              if (puedeRechazar)
+                                TextButton(
+                                  onPressed: () => _rechazar(m),
+                                  style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(0, 0)),
+                                  child: Text('Rechazar', style: TextStyle(fontSize: 12, color: Colors.red.shade700)),
+                                ),
+                              if (puedeAprobar)
+                                TextButton(
+                                  onPressed: () => _aprobar(m),
+                                  style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(0, 0)),
+                                  child: const Text('Aprobar', style: TextStyle(fontSize: 12)),
+                                ),
+                            ],
+                          ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -273,82 +562,7 @@ class _AdicionalesScreenState extends State<AdicionalesScreen> {
                   : ListView.builder(
                       padding: const EdgeInsets.all(12),
                       itemCount: _adicionales.length,
-                      itemBuilder: (context, index) {
-                        final m = _adicionales[index];
-                        final esPendiente = m.estado == EstadoModificacion.pendiente;
-                        final esPresupuestado = m.obraHijaId != null;
-                        return Card(
-                          margin: const EdgeInsets.only(bottom: 10),
-                          child: InkWell(
-                            onTap: esPresupuestado ? () => _abrirObraHija(m.obraHijaId!) : null,
-                            child: Padding(
-                              padding: const EdgeInsets.all(12),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Expanded(
-                                        child: Text(
-                                          m.descripcion,
-                                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5),
-                                        ),
-                                      ),
-                                      Chip(
-                                        label: Text(
-                                          m.estado.label,
-                                          style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
-                                        ),
-                                        backgroundColor: _colorEstado(m.estado),
-                                        visualDensity: VisualDensity.compact,
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 4),
-                                  // Presupuestado con la app, todavía pendiente: monto_total sigue
-                                  // en 0 hasta que se apruebe y se congele la obra hija (Tanda 2) --
-                                  // mostrar "$ 0" ahí sería mentir por omisión, mismo criterio que
-                                  // ya se aplicó en el chip de desfasaje del dashboard.
-                                  if (esPresupuestado && esPendiente)
-                                    const Text(
-                                      'Presupuestándose con la app -- tocá para seguir cargando el cómputo.',
-                                      style: TextStyle(fontSize: 12.5, color: Colors.black54, fontStyle: FontStyle.italic),
-                                    )
-                                  else
-                                    Text(
-                                      _fmtMonto(m.montoTotal),
-                                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1B365D)),
-                                    ),
-                                  const SizedBox(height: 2),
-                                  Wrap(
-                                    spacing: 8,
-                                    children: [
-                                      if (!m.incluyeImpuestos)
-                                        const Text('Sin impuestos', style: TextStyle(fontSize: 10.5, color: Colors.black45)),
-                                      if (!m.incluyeMateriales)
-                                        const Text('Sin materiales', style: TextStyle(fontSize: 10.5, color: Colors.black45)),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    'Solicitado por ${_nombreUsuario(m.solicitadoPor)} — ${_fmtFecha(m.fechaSolicitud)}',
-                                    style: const TextStyle(fontSize: 10.5, color: Colors.black38),
-                                  ),
-                                  if (esPendiente && !esPresupuestado)
-                                    const Padding(
-                                      padding: EdgeInsets.only(top: 4),
-                                      child: Text(
-                                        'Todavía es una propuesta, pendiente de aprobación.',
-                                        style: TextStyle(fontSize: 10, color: Colors.black38, fontStyle: FontStyle.italic),
-                                      ),
-                                    ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        );
-                      },
+                      itemBuilder: (context, index) => _buildAdicional(_adicionales[index]),
                     ),
     );
   }
