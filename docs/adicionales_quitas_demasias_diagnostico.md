@@ -980,3 +980,19 @@ circuito."
 
 **Decisiones menores de §13.2: aceptadas tal como están propuestas.**
 
+### 13.7 Migración escrita — `0116_adicionales_aprobacion.sql` (sin aplicar)
+
+`0115` aplicada y verificada por Seba (2026-09-12), commit `755d395`. `0116` implementa §13.3 con las
+respuestas de §13.6: `enviado_a_aprobacion_en` + check; `puede_aprobar_adicional(obra, monto)` y
+`puede_rechazar_adicional(obra)`; `enviar_adicional_a_aprobacion` (refresca equipo, presenta y congela
+la hija con la identidad de quien cotiza, copia la suma a `monto_total`); `aprobar_adicional(id,
+monto_visto, comentario)` (autoridad sin tope → monto real → monto visto → tope contra el monto real);
+`rechazar_adicional`; y las políticas de update/insert sin escritura directa sobre adicionales.
+
+**Una decisión que no estaba en §13.2, tomada al escribir**: la política de insert también exige
+`estado = 'pendiente'` para adicionales en autogestión (la 0004 dejaba a quien es cliente +
+profesional + constructor insertar directo en `aprobado`). Un adicional aprobado a mano quedaría con
+el `monto_total` tipeado, sin cascada; la misma persona lo aprueba con `aprobar_adicional` en dos
+toques. `crearAdicional` ya inserta en `pendiente`, no cambia nada para la app.
+
+Dart (§13.3) después de aplicar y verificar la `0116`.
