@@ -7,6 +7,7 @@ import '../../../services/auth_service.dart';
 import '../../../services/certificados_repository.dart';
 import '../../../services/indices_economicos_repository.dart';
 import '../../../services/obras_repository.dart';
+import '../screens/adicionales_screen.dart';
 import '../screens/carga_avance_rubros_screen.dart';
 import '../screens/detalle_certificado_screen.dart';
 import '../screens/quitas_demasias_screen.dart';
@@ -118,6 +119,21 @@ class _GestionObraTabState extends State<GestionObraTab> {
     // Aprobar una demasía/quita cambia obra_subitems.cantidad -- no afecta a esta lista de
     // certificados, así que no hace falta recargar acá (a diferencia de _abrirDetalle/
     // _abrirCargaAvance, que sí tocan certificados).
+  }
+
+  Future<void> _abrirAdicionales() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AdicionalesScreen(
+          obraId: widget.obraId,
+          userContext: widget.userContext,
+        ),
+      ),
+    );
+    // Un adicional aprobado nunca entra al cómputo/certificación (decisión ya cerrada, §4 del
+    // diagnóstico: "diluiría el % de avance") -- no afecta esta lista de certificados, no hace
+    // falta recargar acá, mismo criterio que _abrirQuitasDemasias.
   }
 
   Future<void> _abrirConfigCertificacion() async {
@@ -513,9 +529,15 @@ class _GestionObraTabState extends State<GestionObraTab> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Un solo Wrap con los 4 -- antes "Nuevo certificado" estaba en el Wrap exterior y
+            // los otros 3 metidos en un Row interno de ancho fijo, que no podía reflowar entre
+            // ellos: con fuente del sistema grande o pantalla angosta, los 3 juntos desbordaban
+            // (69px, encontrado por Seba, 2026-09-13) porque un Row nunca baja de línea solo, a
+            // diferencia de un Wrap. Achatado a un solo nivel para que cualquiera de los 4 baje de
+            // línea según lo que entre, nunca recorte texto ni desplace lateral.
             Wrap(
-              alignment: WrapAlignment.spaceBetween,
-              runSpacing: 6,
+              spacing: 8,
+              runSpacing: 8,
               children: [
                 // Visible para admin_maestro/profesional/constructor — los 3 mismos roles que
                 // certificados_insert/certificados_update (0009/0010) ya autorizan a crear o
@@ -533,37 +555,47 @@ class _GestionObraTabState extends State<GestionObraTab> {
                       foregroundColor: const Color(0xFF1B365D),
                     ),
                   ),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Visible para cualquiera -- es informativo para todos (el propietario se
-                    // entera de una demasía/quita comentando ahí, no aprobándola, docs/
-                    // adicionales_quitas_demasias_diagnostico.md §6). Aprobar/rechazar/crear se
-                    // gatean adentro de la pantalla, no acá.
-                    OutlinedButton.icon(
-                      onPressed: () => _abrirQuitasDemasias(),
-                      icon: const Icon(Icons.rule_outlined, size: 16),
-                      label: const Text(
-                        'Quitas y Demasías',
-                        style: TextStyle(fontSize: 11),
-                      ),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: const Color(0xFF1B365D),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    OutlinedButton.icon(
-                      onPressed: _abrirConfigCertificacion,
-                      icon: const Icon(Icons.settings_outlined, size: 16),
-                      label: const Text(
-                        'Configuración',
-                        style: TextStyle(fontSize: 11),
-                      ),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: const Color(0xFF1B365D),
-                      ),
-                    ),
-                  ],
+                // Visible para cualquiera -- es informativo para todos (el propietario se
+                // entera de una demasía/quita comentando ahí, no aprobándola, docs/
+                // adicionales_quitas_demasias_diagnostico.md §6). Aprobar/rechazar/crear se
+                // gatean adentro de la pantalla, no acá.
+                OutlinedButton.icon(
+                  onPressed: () => _abrirQuitasDemasias(),
+                  icon: const Icon(Icons.rule_outlined, size: 16),
+                  label: const Text(
+                    'Quitas y Demasías',
+                    style: TextStyle(fontSize: 11),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFF1B365D),
+                  ),
+                ),
+                // Visible para cualquiera, mismo criterio que "Quitas y Demasías" -- cualquier
+                // miembro puede solicitar un adicional (ambigüedad E,
+                // docs/adicionales_quitas_demasias_diagnostico.md §11.3), la barrera real es
+                // la aprobación, gateada adentro de la pantalla (Tanda 2, todavía sin construir
+                // -- por ahora esta pantalla solo permite crear y ver el historial).
+                OutlinedButton.icon(
+                  onPressed: () => _abrirAdicionales(),
+                  icon: const Icon(Icons.add_business_outlined, size: 16),
+                  label: const Text(
+                    'Adicionales',
+                    style: TextStyle(fontSize: 11),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFF1B365D),
+                  ),
+                ),
+                OutlinedButton.icon(
+                  onPressed: _abrirConfigCertificacion,
+                  icon: const Icon(Icons.settings_outlined, size: 16),
+                  label: const Text(
+                    'Configuración',
+                    style: TextStyle(fontSize: 11),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFF1B365D),
+                  ),
                 ),
               ],
             ),

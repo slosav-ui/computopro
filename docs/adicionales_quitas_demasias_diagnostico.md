@@ -4,8 +4,9 @@ Verificado contra el código real (`supabase/migrations/`, `lib/`), no contra lo
 donde diverge — encontré una divergencia real, ver §3.
 
 **Estado: las 3 ambigüedades de §7 quedaron cerradas con el usuario. La migración
-`0109_quitas_demasias.sql` quedó escrita — sin aplicar ni verificar en Supabase todavía.**
-Adicionales queda pospuesto a propósito (§8, confirmado): pieza aparte, después.
+`0109_quitas_demasias.sql` quedó aplicada y verificada en producción, con dos usuarios reales.**
+Adicionales (pospuesto en §8) se retoma en §11 — diseño cerrado, diagnóstico técnico y lista de
+archivos, sin escribir SQL todavía.
 
 ## 1. Los dos circuitos — ¿alcanza una sola tabla?
 
@@ -308,3 +309,481 @@ concretos:
 con (a) la config congelada por adicional (§10.1) como parte de la propuesta mínima de seguimiento,
 y (b) el diseño de card de §10.2, antes de escribir la migración — mismo proceso que ya usa el
 proyecto (diseño primero, ambigüedades cerradas con el usuario, migración después).
+
+## 11. Adicionales — diagnóstico técnico y lista de archivos (2026-09-13)
+
+Diseño ya cerrado por Seba, en esta sesión y en §10: propia foto (monto + config de Factor K),
+arranca con la config vigente de la obra por default, etiqueta corta solo cuando difiere,
+aprobación de cliente_principal/apoderado (nunca profesional/admin_maestro), seguimiento mínimo
+(% + monto, sin ciclo propio). Esta sección verifica contra el código real qué de eso ya existe,
+qué falta, y qué preguntas quedan genuinamente abiertas antes de poder escribir la migración.
+
+### 11.1 Lo que ya existe y se puede reusar tal cual
+
+- **`modificaciones_obra`** (`0002`/`0008`/`0109`) ya tiene `tipo='adicional'` en su check, y las
+  columnas genéricas alcanzan sin agregar ninguna para el dato base: `descripcion`, `cantidad`,
+  `precio_unitario_heredado`, `monto_total`, `solicitado_por`/`subido_por`, `estado`
+  (`pendiente`/`devuelto`/`aprobado`/`rechazado`), `aprobado_por`, fechas. `obra_subitem_id` (0109)
+  correctamente NO aplica a adicional (el check de esa migración ya lo exige nulo para este tipo).
+- **`puede_aprobar_monto(obra_id, monto)`** (`0004`) ya tiene la mitad correcta de la regla nueva:
+  `cliente_principal` sin tope, `invitado_apoderado` con `puede_aprobar_adicionales` + tope +
+  delegación vigente. Le sobra `admin_maestro` y `profesional` — no se puede reusar tal cual (ver
+  §3, la contradicción que ya había encontrado este documento), hace falta una función angosta
+  nueva, mismo patrón que `puede_aprobar_quita_demasia` (0109) copiado y recortado.
+- **`PermisosEspeciales.puedeAprobarAdicionales`/`topeMontoAprobacion`/delegación** (`lib/data/
+  models/obra_member.dart`) ya existen en Dart y en la base (`obra_members`, columnas de `0001`) —
+  cero trabajo de schema para esto, es literalmente el campo que hoy no conecta nada (confirmado en
+  §3 del diagnóstico original).
+- **`UserContext.puedeMarcarCertificadoPagado(monto)`** (`user_context.dart:170-177`) es el mirror
+  exacto en Dart de la regla que hace falta — mismo cálculo, mismo campo de `PermisosEspeciales`
+  (ahí es `puedeAprobarCertificados`, acá sería `puedeAprobarAdicionales`). Copiar ese patrón, no
+  reinventar uno nuevo.
+- **`presupuesto_config_congelado`** (`0104`) es el molde exacto para la config propia del
+  adicional (§10.1): mismas 8 columnas (`tipo_presupuesto` + 6 % + `impuestos_pct_total`), mismo
+  criterio de "una tabla aparte, no columnas sueltas repetidas".
+- **`ModificacionesObraRepository`/`QuitasDemasiasScreen`** ya prueban el patrón completo de
+  pantalla (historial + expandir + aprobar/rechazar + observar) — Adicionales necesita su propio
+  repositorio/pantalla (el propio comentario de cabecera de ambos archivos ya lo dice: "acotado a
+  demasia/quita", "deliberadamente NO incluye Adicionales"), pero no un patrón nuevo, el mismo
+  clonado y adaptado a la autoridad distinta.
+- **`docs/presupuesto_congelado_validez_modelo_a_diseno.md` §10.2** (esta misma sesión) ya cierra
+  cómo se ve en el dashboard: Pactado grande + una línea "Total con adicionales" tappable, nada de
+  detalle ahí — ver §10.2 de este documento.
+
+### 11.2 Lo que falta construir
+
+**Schema (migración nueva, después de `0111`):**
+1. `modificaciones_obra_config_congelada` — 1:1 con una fila de `modificaciones_obra` (no con la
+   obra), mismas columnas que `presupuesto_config_congelado`. Se llena al **crear** el adicional
+   (no al aprobar — la foto es de las condiciones pactadas al solicitarlo, discutible, ver
+   ambigüedad D más abajo).
+2. `puede_aprobar_adicional(p_obra_id uuid, p_monto numeric)` — copia de `puede_aprobar_monto` sin
+   las ramas `admin_maestro`/`profesional`.
+3. `modificaciones_obra_update`, rama `adicional` separada de `demasia`/`quita` (ya ramificada,
+   0109) y de `ajuste_contrato` (que sigue con `puede_aprobar_monto`, sin tocar — Modelo B, fuera
+   de alcance de esta pieza).
+4. `crear_adicional(...)` — inserta la fila + su config congelada en una transacción (mismo
+   criterio atómico que `congelar_presupuesto_obra`), snapshoteando la config VIGENTE de la obra
+   como default.
+5. `aprobar_adicional`/`rechazar_adicional` — mismo patrón que `aprobar_quita_demasia`, pero sin
+   tocar `obra_subitems`/`presupuesto_subitems_congelado` (un adicional nunca entra al cómputo, por
+   decisión ya cerrada en §4: "diluiría el % de avance").
+6. Columnas de seguimiento (§4 de este documento, propuesta mínima ya cerrada): `porcentaje_avance
+   numeric default 0`, `monto_certificado numeric default 0`, con check `entre 0 y 100` y
+   `certificar_avance_adicional(modificacion_id, porcentaje)` (valida que no pase de 100%
+   acumulado, recalcula `monto_certificado`).
+7. `calcular_total_adicionales_aprobados(obra_id)` — para la línea "Total con adicionales" del
+   dashboard (§10.2) y la solapa Resumen.
+
+**Dart:**
+- `ModificacionObra` gana los campos de la config congelada (o un modelo aparte,
+  `ModificacionConfigCongelada`, unido por `modificacionId`) y `porcentajeAvance`/`montoCertificado`.
+- `ModificacionesObraRepository` gana `crearAdicional`/`aprobarAdicional`/`rechazarAdicional`/
+  `certificarAvanceAdicional`/`getAdicionalesDeObra` — o un repositorio nuevo,
+  `AdicionalesRepository`, dado que la autoridad y el shape de datos difieren bastante de
+  quitas/demasías (a decidir en la lista de archivos final, ver Tandas).
+- `UserContext.puedeAprobarAdicional(double monto)` — nuevo getter, mismo patrón que
+  `puedeMarcarCertificadoPagado`.
+- Pantalla `AdicionalesScreen` (historial + crear + aprobar/rechazar) — no una pestaña de
+  `QuitasDemasiasScreen`, por la misma razón que esa pantalla ya se negó a incluirlos: autoridad y
+  forma de los datos distintas.
+- `ObrasListScreen`: línea "Total con adicionales" (§10.2), ya diseñada, falta conectar.
+- Etiqueta corta de condiciones distintas (§10.1) — función pura en Dart que compara la config
+  congelada del adicional contra `presupuesto_config_congelado` de la obra y arma el texto
+  ("Con impuestos y cargas sociales" / etc.), sin necesitar SQL propio.
+
+### 11.3 Ambigüedades reales, no cerradas todavía — necesito tu respuesta antes de escribir SQL
+
+**A. ¿Cómo se carga el "costo base" del adicional, antes de aplicarle la cascada de Factor K?**
+No hay ningún subítem de catálogo detrás de un adicional (es scope nuevo, §2) — así que no hay
+ninguna composición de APU de la que derivar un Costo-Costo automáticamente, a diferencia de una
+partida normal. Veo dos caminos:
+- **Opción 1 (recomendada): monto manual.** Quien carga el adicional tipea directamente el
+  Costo-Costo (o el monto final, si elige no aplicar cascada) — mismo criterio que ya usan los
+  rubros de precio manual del cómputo (1/18/19/20/custom): no todo tiene que salir de una
+  composición de insumos. `cantidad`/`precio_unitario_heredado` (columnas que ya existen en la
+  tabla) alcanzan para esto sin agregar nada.
+- **Opción 2: composición de APU propia** (`apu_privado_id`, mencionado en §2 de este documento
+  desde el diagnóstico original) — el usuario arma una composición de insumos igual que una
+  partida real, y se le aplica la misma cascada completa. Es la opción más potente pero es una
+  pieza aparte considerable (un editor de composición de APU sin subítem de catálogo detrás, hoy no
+  existe nada parecido) — la marcaría como una extensión futura, no parte de esta pieza.
+- Mi recomendación es la Opción 1 para esta pieza, dejando la Opción 2 anotada para si en algún
+  momento hace falta (el "flexible, intuitivo, fácil aplicación" que pediste para toda la app
+  encaja mejor con tipear un monto que con armar una composición de insumos para un solo uso).
+
+**B. Si es Opción 1: ¿la cascada de Factor K se recalcula en la base (una función nueva, chica) o
+alcanza con que Dart la calcule para la vista previa y la base solo la valide/guarde?**
+El criterio "no duplicar la cascada" (0090) aplica a `calcular_factor_k_subitem`, que resuelve
+Costo-Costo desde una composición real — acá no hay composición, el Costo-Costo YA es un número
+que alguien tipeó. La fórmula que queda por aplicar (producto de factores sobre un número ya dado)
+es mucho más chica que toda `calcular_factor_k_subitem`, así que no sería "una segunda
+implementación de la misma cascada" en el sentido que preocupaba a esa decisión — sería una fórmula
+distinta, más simple, para un insumo de entrada distinto. Aun así, prefiero preguntarte: ¿una
+función SQL nueva y chica (`calcular_precio_adicional`, dinero calculado server-side, mismo
+criterio que el resto del proyecto) o te alcanza con que la valide del lado de Dart porque total el
+monto final lo tipea/confirma una persona antes de guardar? Mi recomendación es la función SQL —
+"el dinero se calcula en la base" es el criterio que ya sigue todo el resto del proyecto, no le
+haría una excepción a esta pieza.
+
+**C. ¿Qué conceptos de la cascada son togglables para un adicional, exactamente?**
+Tus palabras: "se puede pactar sin alguno de estos [impuestos, cargas sociales, materiales y mano
+de obra] o sin ninguno." Materiales/mano de obra ya tiene un selector real (`tipo_presupuesto`,
+con/sin materiales — pero eso solo tiene sentido si hay composición con insumos de material, que
+en la Opción 1 no existe: un monto manual no se separa solo en materiales/mano de obra). Impuestos
+sí es directo (aplicar o no el `impuestos_pct_total` de la config). "Cargas sociales" no es un
+concepto de la cascada de Factor K (es un multiplicador previo sobre el valor-hora de mano de
+obra, `ObraPresupuestoConfig.aplicaCargasSociales`) — no tiene ningún efecto sobre un Costo-Costo
+ya tipeado a mano. Necesito que me confirmes: para un adicional con Opción 1 (monto manual), ¿los
+togglables reales son únicamente los 6 conceptos de Factor K + impuestos (igual que
+`presupuesto_config_congelado`), cada uno con su propio on/off además de su %? Eso es una columna
+booleana más por concepto (o un array/jsonb de "conceptos activos"), no estaba en el diseño
+original de `presupuesto_config_congelado` (que asume los 6 siempre activos, solo varía el %) —
+sería una diferencia real de shape entre las dos tablas, no una reutilización 1:1 como asumí en
+§10.1.
+
+**D. ¿La foto se toma al crear el adicional, o al aprobarlo?**
+Entre que el Constructor solicita y el Cliente/Apoderado aprueba puede pasar tiempo — si la config
+de la obra cambia en el medio (por ejemplo, se agrega un impuesto nuevo), ¿el adicional se congela
+con la config de cuando se solicitó, o con la vigente al momento en que el Cliente dice que sí?
+Mismo tipo de pregunta que ya resolvió el presupuesto (ahí la respuesta fue "al firmar/congelar",
+no al presentar) — sospecho que la respuesta simétrica acá es "al aprobar", no "al solicitar", pero
+lo dejo para que lo confirmes en vez de asumirlo.
+
+**E. (Menor) ¿Quién puede crear/solicitar un adicional?**
+La política de `INSERT` de `modificaciones_obra` (`0004`) no chequea rol hoy, solo
+`solicitado_por = subido_por = auth.uid()` — cualquier miembro de la obra podría insertar una fila
+de tipo `adicional` en `pendiente`, incluido el propio Cliente. ¿Alcanza con dejarlo así (la
+aprobación es la barrera real, no la creación) o preferís acotar quién puede crear a
+profesional/constructor/admin_maestro, dejando al Cliente solo del lado de la aprobación? No
+bloquea la escritura de la migración (es un ajuste angosto si hace falta), pero prefiero
+preguntarlo ahora que decidirlo solo.
+
+### 11.4 Archivos (para cuando se cierren las ambigüedades de arriba)
+
+**Supabase, migración nueva (`0112`, después de `0111`):**
+- `modificaciones_obra_config_congelada` (o el nombre que resulte de la ambigüedad C) + RLS
+  (select para `is_obra_member`, sin política de escritura directa — mismo criterio que
+  `presupuesto_config_congelado`).
+- Columnas de seguimiento en `modificaciones_obra`: `porcentaje_avance`, `monto_certificado`.
+- `puede_aprobar_adicional(obra_id, monto)`.
+- `modificaciones_obra_update`: rama `adicional` separada.
+- `crear_adicional(...)`, `aprobar_adicional(...)`, `rechazar_adicional(...)` (o `update` directo
+  para rechazar, como ya hace `rechazarModificacion` de demasía/quita — no tiene efecto colateral
+  que coordinar).
+- `certificar_avance_adicional(modificacion_id, porcentaje)`.
+- `calcular_total_adicionales_aprobados(obra_id)`.
+- Si la ambigüedad B se cierra a favor de una función SQL: `calcular_precio_adicional(...)`.
+
+**Dart:**
+- `lib/data/models/modificacion_obra.dart` — campos nuevos de config congelada + seguimiento.
+- `lib/services/modificaciones_obra_repository.dart` (o `adicionales_repository.dart` nuevo) —
+  métodos de creación/aprobación/rechazo/certificación/listado de adicionales.
+- `lib/core/segurity/user_context.dart` — `puedeAprobarAdicional(double monto)`, y un getter
+  angosto para "puede solicitar" si la ambigüedad E se cierra a favor de acotarlo.
+- `lib/presentation/obra_detalle/screens/adicionales_screen.dart` (nueva) — historial + crear +
+  aprobar/rechazar, mismo patrón que `QuitasDemasiasScreen` adaptado a la autoridad distinta.
+- `lib/presentation/obra_detalle/tabs/gestion_obra_tab.dart` — botón "Adicionales", mismo lugar que
+  "Quitas y Demasías".
+- `lib/presentation/dashboard/obras_list_screen.dart` — línea "Total con adicionales" (§10.2).
+- Solapa Resumen — detalle de cada adicional (monto, etiqueta de condiciones, link a
+  `AdicionalesScreen`) — pieza que ya está en el orden que pediste (después de Modelo B/
+  subcontratos/libro de obra en tu lista original, o antes si el detalle de adicionales necesita
+  vivir ahí desde el arranque — a confirmar cuando se llegue).
+
+### 11.5 ¿Conviene partir esto en dos tandas?
+
+**Sí, mismo criterio que ya usó el proyecto para separar Quitas/Demasías (schema+backend) del resto
+(pantalla), y para separar esta pieza entera de Quitas/Demasías en primer lugar.** Motivos
+concretos, no solo por tamaño:
+
+- **Tanda 1 — schema + backend + creación.** Todo lo de §11.4 del lado de Supabase, más el
+  repositorio Dart y la pantalla de CREAR un adicional (con la vista previa del monto calculado).
+  Esto ya es verificable de punta a punta sin la aprobación: se puede crear un adicional, ver que
+  queda `pendiente` con su config congelada, y confirmar que el cálculo cierra.
+- **Tanda 2 — aprobación + seguimiento + dashboard.** `puede_aprobar_adicional` conectado a
+  pantalla, aprobar/rechazar con dos usuarios reales (mismo patrón de verificación que ya usó
+  Quitas/Demasías: cliente_principal o apoderado aprueba, profesional ve que NO puede), la
+  certificación de avance en partes, y la línea del dashboard (que necesita que ya haya al menos un
+  adicional aprobado para tener algo real que mostrar).
+
+La frontera entre las dos tandas es la misma que ya separa "algo existe y se puede probar" de "el
+circuito completo con dos roles distintos" — igual que Tanda 1/Tanda 2 de la pieza 4 de Gestión de
+Obra (vista previa+emitir primero, después lo que dependía de tener certificados reales para
+probar).
+
+### 11.6 Ambigüedades — cerradas por Seba (2026-09-13)
+
+**A.** Costo manual, confirmado ("el que lo cotiza pone su precio") — composición de APU propia
+queda como extensión futura, no parte de esta pieza.
+
+**B.** La cascada se calcula en la base — confirmado, mismo criterio del resto del proyecto.
+
+**C. Corrección sobre el pedido original, no ambigüedad de la pregunta.** Los 6 conceptos de
+Factor K NO son togglables — son la estructura de costos del contratista, se heredan tal cual del
+contrato. Lo único elegible por adicional es si lleva impuestos y si incluye materiales. Ver la
+simplificación explícita en `0112` (comentario de cabecera): "Gestión de materiales de terceros"
+(el 6º concepto) no se aplica a un adicional manual, porque ese concepto necesita un split
+materiales/mano de obra de una partida real para tener sentido — un adicional cotizado con un solo
+número no lo tiene. Los otros 5 (GG, Imprevistos, EPP, Costo Financiero, Beneficio) sí se aplican
+siempre. **Marcada para confirmar** cuando se pruebe la Tanda 1 — es un cambio de una línea si no
+es lo que Seba quiso decir.
+
+**D.** La foto se toma al aprobar (Tanda 2), simétrico al presupuesto — mientras pendiente, el
+monto se recalcula en cada edición (implementado vía trigger, `0112`).
+
+**E.** Sin restricción de rol para crear — la política `modificaciones_obra_insert` (0004) ya
+alcanza tal cual, no se tocó.
+
+### 11.7 Tanda 1 — hecha, sin aplicar ni verificar todavía
+
+Migración `0112_adicionales_creacion.sql`: columnas nuevas (`costo_costo_base`,
+`incluye_materiales`, `incluye_impuestos`) + check por tipo, `calcular_precio_adicional` (la
+cascada de 5 conceptos + impuestos condicional) y el trigger que recalcula `monto_total` en vivo
+mientras el adicional sigue `pendiente`.
+
+Dart: `AdicionalesRepository` (repositorio propio, no una extensión de
+`ModificacionesObraRepository` — confirmado que la autoridad y el shape de datos difieren lo
+suficiente); `ModificacionObra` con los 3 campos nuevos; pantalla `AdicionalesScreen` (historial +
+crear, con vista previa del monto en el diálogo de creación); botón "Adicionales" en
+`gestion_obra_tab.dart`, mismo lugar que "Quitas y Demasías".
+
+**Recorte real encontrado al escribir, no anticipado en el diagnóstico**: "corregir mientras
+pendiente" (que sí ofrece el análogo del presupuesto, presentar→actualizar) no es viable con la RLS
+actual — `modificaciones_obra_update` (0109) solo deja tocar una fila `pendiente` a quien puede
+aprobarla, no a `subido_por` en general (esa rama solo aplica con `estado = 'devuelto'`). Se sacó
+del alcance de la Tanda 1 en vez de proponer un cambio de RLS sin que Seba lo pidiera — mismo límite
+que ya tiene Quitas/Demasías (sin edición, solo aprobar/rechazar). Si hace falta poder corregir un
+adicional antes de que se resuelva, es una decisión para la Tanda 2.
+
+Sin conectar todavía: aprobación (`puede_aprobar_adicional`, Tanda 2), seguimiento de avance
+certificado, línea "Total con adicionales" del dashboard (§10.2), etiqueta corta de condiciones
+distintas (§10.1) — todo pendiente de la Tanda 2 y de aplicar/verificar la `0112` primero.
+
+## 12. Corrección de alcance (2026-09-13): el adicional es un presupuesto propio, no un número
+
+Seba se corrigió sobre el pedido de §11: un adicional no es un monto que alguien tipea — es **"una
+obra dentro de una obra"**, presupuestada con las mismas solapas de cómputo/APU/materiales que una
+obra real, a los precios del día en que se pide (no los del contrato) y con Factor K
+potencialmente propio. El monto manual de la Tanda 1 (`0112`) **no se descarta** — pasa a ser una
+de tres vías de carga, no la única. Diagnóstico técnico, sin código todavía (pedido explícito).
+
+### 12.1 Respuesta directa a la pregunta central
+
+**Sí, conviene que el adicional sea literalmente una fila de `obras`**, con una columna nueva
+`obra_madre_id uuid references obras(id)` (nula para toda obra real). Verificado contra el schema
+real, no supuesto: `obra_subitems`, `apu_composiciones`... casi todo lo que hace falta (cómputo,
+tildado de partidas, precios de insumos, congelamiento) ya cuelga de un `obra_id` genérico — una
+obra nueva hereda las 5 solapas relevantes (Rubros, Materiales, Mat y MO, APU, Resumen) gratis, sin
+reescribir ninguna. Es la misma lógica que ya usa `presupuesto_config_congelado`/`obra_presupuesto_
+config`: si el adicional tiene su PROPIO `obra_id`, automáticamente tiene su PROPIA fila de config
+de Factor K — "puede ser propio" sale solo, sin ningún mecanismo nuevo.
+
+**Pero hay un problema real con este camino, y es serio — lo digo antes de que lo descartes vos, no
+lo escondo.**
+
+### 12.2 El problema real: `apu_composiciones` es por usuario, no por obra
+
+Verificado en `0018_apu_composiciones.sql`: la tabla es `unique(subitem_id, creador_usuario_id)` —
+**una composición propia es global para ese usuario, en TODAS sus obras**, no una por obra. Hoy eso
+no importa (nadie edita composición pensando en más de una obra a la vez), pero es exactamente lo
+que rompería tu ejemplo: *"en ese adicional sí puedo cambiar las APU... capaz que cambió"* — si el
+administrador ajusta su propia composición de Steel Frame PARA el adicional (porque en obra dentro
+de obra el adicional es "una obra más" que usa el mismo mecanismo de composición propia), esa
+composición corregida pasaría a aplicarse también a CUALQUIER OTRA obra real de ese mismo
+administrador que use Steel Frame con su propia receta — silencioso, sin ningún aviso, porque hoy
+nada distingue "mi receta para esta obra" de "mi receta en general".
+
+Tres salidas, ninguna gratis, para que elijas antes de seguir:
+
+1. **Alcance por esta pieza: el adicional NO toca `apu_composiciones` propia.** Puede tildar
+   partidas con la receta OFICIAL (`creador_usuario_id is null`) tal cual, y ajustar el Factor K
+   propio de su `obra_presupuesto_config`/`obra_impuestos` (eso sí es 100% seguro, ya es por obra).
+   Si hace falta una composición distinta para un adicional puntual, queda para cuando se resuelva
+   el problema de fondo — no se ofrece en la UI del adicional. Es la opción de menor riesgo y menor
+   trabajo, a costa de no cubrir el 100% de tu ejemplo ("cambiar la APU") todavía.
+2. **Agregar `obra_id` a `apu_composiciones`** (nullable, `null` = sigue siendo la composición
+   "general" del usuario, con `obra_id` = específica de esa obra) — resuelve el problema de raíz,
+   pero es una migración de schema real sobre una tabla ya poblada, con RLS que hoy no distingue
+   por obra en ningún lado (`0018` está armada enteramente alrededor de usuario/oficial) — no es
+   una pieza chica, y probablemente convenga como su propia migración, no colgada de Adicionales.
+3. **Copiar (no referenciar) la composición propia del usuario hacia una fila nueva, atada al
+   `obra_id` del adicional**, en el momento en que decide "quiero cambiar la receta para esto" —
+   técnicamente es la Opción 2 sin la columna `obra_id` (usa `apu_composiciones` de una obra que
+   NO es la del usuario general), pero necesita que la RLS/lectura de composición sepa buscar
+   "la propia de este obra_id" antes que "la propia general" — mismo problema de fondo que la
+   Opción 2, con menos alcance.
+
+**Mi recomendación: Opción 1 para arrancar.** Cubre el caso de "precios de hoy" y "Factor K
+propio" (que es donde está el 90% del valor real, según tus propios ejemplos: precios cambian
+siempre, Factor K a veces, la composición casi nunca) sin tocar una tabla delicada. Si con el uso
+real aparece la necesidad de veras de cambiar composición por adicional, ahí se evalúa la Opción 2
+como pieza aparte — mismo criterio que ya usó el proyecto para no construir de más "por si acaso".
+
+### 12.3 Membresía — quién puede entrar al cómputo del adicional
+
+`is_obra_member(obra_id)`/`tiene_rol_en_obra` (0004) gobiernan CASI TODA la RLS del proyecto, y
+leen `obra_members` filtrando por ese `obra_id` exacto — un `obra_id` nuevo sin sus propias filas
+de `obra_members` bloquea todo (nadie puede tildar, tocar precios, ni nada) para cualquiera, incluido
+quien lo creó.
+
+Dos caminos, con costos muy distintos:
+- **Copiar la membresía de la madre al crear el adicional** (mismos usuarios, mismos roles, una
+  sola vez) — barato, contenido, no toca ninguna función usada en todo el resto del proyecto. Costo
+  real: si el equipo de la obra madre cambia después, el del adicional no se entera solo — mismo
+  tipo de "foto, no en vivo" que ya acepta el resto del congelamiento.
+- **Enseñarle a `is_obra_member` a resolver hacia la madre cuando el `obra_id` es un adicional** —
+  resuelve el problema de raíz pero toca la función más usada de todo el schema (decenas de
+  políticas y funciones `security definer` dependen de ella) — el tipo de cambio de alto riesgo y
+  alta superficie que este proyecto viene evitando activamente en toda la sesión.
+
+**Recomiendo copiar membresía al crear**, mismo motivo que la Opción 1 de arriba: menor blast
+radius, el costo aceptado (foto, no sincronización viva) ya es un patrón que el proyecto usa en
+todos lados.
+
+**Efecto colateral a tener en cuenta, no a resolver ahora**: crear una obra hoy dispara el bootstrap
+existente (creador → `admin_maestro`, defaults de `mes_base_cac`, etc. — `0033` y afines). Crear el
+adicional por el mismo camino de `insert into obras` hereda esa maquinaria automáticamente; copiar
+el resto del equipo de la madre es un paso ADICIONAL después del insert, no un reemplazo de lo que
+ya existe.
+
+### 12.4 Qué se comparte y qué no — confirmando tu lectura, con el detalle que falta
+
+Tu lectura (rubros/partidas compartidos, precios del momento, Factor K propio) es correcta y
+verificable así:
+- **Catálogo de rubros/subítems** (`rubros`, `subitems`) — global, sin `obra_id`, se comparte
+  automáticamente con solo usar el mismo catálogo. Nada que construir.
+- **Precios de insumos** (`obra_insumo_precios`, por `obra_id`) — un adicional recién creado
+  arranca VACÍO en esta tabla, y la cascada de precios ya tiene un tercer nivel de fallback al
+  promedio del catálogo global de corralones (`precios`, sin `obra_id` — confirmado en
+  `calcular_precio_apu_subitems`, 0059/0090) cuando no hay override cargado. Esto significa que
+  "precios de hoy" sale SOLO, sin copiar nada — un adicional sin ningún precio propio ya cotiza al
+  promedio de mercado vigente. Si en algún momento se quisiera heredar los precios PUNTUALES que
+  la obra madre negoció (no el promedio de mercado), ahí sí hace falta copiar `obra_insumo_precios`
+  de la madre al crear — lo dejo como mejora, no como bloqueante.
+- **Factor K/impuestos** (`obra_presupuesto_config`/`obra_impuestos`, por `obra_id`) — un `obra_id`
+  propio le da al adicional su propia fila desde el arranque. Recomiendo copiar los valores
+  vigentes de la madre como default (mismo criterio que ya se cerró para el resto de la pieza:
+  "arranca con la config vigente, cambiarla es una opción"), no dejarlos en el default genérico de
+  una obra nueva.
+- **Composición de APU** — ver §12.2, el problema real, no compartido de forma segura todavía.
+
+### 12.5 Cómo se congela — mejor de lo que parecía
+
+Tu lectura ("se congela al aprobarse, con su propia foto, igual que el presupuesto") no solo sigue
+valiendo — **se resuelve casi gratis reusando el mecanismo que ya existe.** Al aprobar el
+adicional, llamar literalmente a `congelar_presupuesto_obra(adicional_obra_id)` congela su cómputo
+completo (cantidad + precio final de cada partida tildada) con el 100% de la lógica ya escrita y
+verificada (`0104`) — nada que reimplementar. El monto final del adicional
+(`modificaciones_obra.monto_total`) pasa a ser la suma de `presupuesto_subitems_congelado` de ESE
+`obra_id`, en vez de un número tipeado a mano. La foto de Factor K (§10.1, `presupuesto_config_
+congelado`) también sale gratis, ya congela los 6% + impuestos vigentes en ese momento — es
+literalmente la misma tabla, sin duplicar nada.
+
+### 12.6 Las tres vías, conviviendo sin perder al usuario
+
+- **Monto fijo** (ya construido, Tanda 1/`0112`) — sin cómputo, un número tipeado + la cascada de
+  Factor K aplicada. Sigue existiendo tal cual.
+- **Presupuestar con la app** — crea el `obra_id` hijo (bootstrap + copia de membresía + defaults
+  de Factor K de la madre, §12.3/§12.4), abre las mismas pantallas de Rubros/Materiales/Mat y
+  MO/APU pero SIN la solapa Gestión de Obra/certificación (un adicional nunca certifica por su
+  cuenta, decisión ya cerrada en §4 — la certificación queda oculta por navegación, no bloqueada a
+  nivel de RLS, mismo criterio ya aceptado en otras piezas de este proyecto: "no hay trigger que lo
+  impida, la app no ofrece el camino"). Al aprobar, `congelar_presupuesto_obra` (§12.5).
+- **Importar de Excel/PDF** — mismo importador de la solapa Cómputo, apuntado al `obra_id` hijo en
+  vez de a una obra real. No debería necesitar cambios propios más allá de aceptar ese `obra_id`
+  (a confirmar cuando se lea `docs/importador_capa1_diseno_datos.md` con este uso en mente).
+
+El "+" de `AdicionalesScreen` pasa de abrir un solo diálogo a elegir entre las tres — un selector
+simple (3 opciones con una línea de qué es cada una), no una pantalla nueva por sí sola.
+
+### 12.7 Chequeo pendiente, no bloqueante
+
+Verificar si algún límite de plan Free/PRO cuenta obras por cantidad — si lo hay, un adicional
+"obra dentro de obra" no debería contar contra ese límite (es parte de la obra madre, no una obra
+nueva del usuario). No encontré evidencia de que ese límite exista hoy (el botón Free/PRO del
+dashboard es cosmético, según memoria de sesión), pero no lo di por descartado sin buscarlo primero
+si se llega a construir esto.
+
+### 12.8 Migración escrita — `0113_adicionales_obra_hija.sql`
+
+`obras.obra_madre_id` (FK a sí misma, `on delete cascade`) + `modificaciones_obra.obra_hija_id`
+(FK a `obras`, `unique`) + check ajustado (exactamente uno de `costo_costo_base`/`obra_hija_id`) +
+`crear_adicional_presupuestado(obra_id, descripcion)`: crea la obra hija, pisa su config/impuestos
+default con los valores reales de la madre, copia el equipo activo de la madre, y crea la fila de
+`modificaciones_obra` ya vinculada — todo en una transacción. Detalle completo y verificación en el
+propio archivo.
+
+**Corrección sobre mi primer borrador, encontrada escribiendo, no antes:** había diseñado la función
+para "vincular una obra hija a un adicional YA creado" — chocaba de frente contra el check
+constraint (un adicional sin `costo_costo_base` ni `obra_hija_id` todavía no es una fila válida, no
+hay ningún `modificacion_id` pendiente al que engancharse). La función arma las dos cosas juntas:
+obra hija primero, adicional recién después, ya con el vínculo resuelto.
+
+**Simplificación real que aparece de esto, no anticipada en §11**: la tabla
+`modificaciones_obra_config_congelada` que había propuesto en §11.2/§11.4 **deja de hacer falta**.
+Para el camino "presupuestado con la app", el propio `congelar_presupuesto_obra` (al aprobar, Tanda
+2) ya congela la config de Factor K de la obra hija en SU PROPIA `presupuesto_config_congelado` —
+es la misma tabla que ya existe, sin duplicar nada. Para el camino de monto fijo, no hace falta
+ninguna foto aparte: sus campos (`costo_costo_base`/`incluye_materiales`/`incluye_impuestos`) dejan
+de poder editarse solos en cuanto `estado` deja de ser `pendiente` (RLS ya lo impide). Una tabla
+menos que construir.
+
+### 12.9 Lista de archivos — hecha, sin aplicar/verificar todavía
+
+**Supabase, aplicado**: `supabase/migrations/0113_adicionales_obra_hija.sql`.
+
+**Dart, hecho, `flutter analyze` limpio (solo infos preexistentes) -- sin verificar en el
+emulador todavía:**
+- `lib/services/obras_repository.dart` — `obraMadreId` mapeado en `_fromRow`; `getObras()` filtra
+  `obra_madre_id is null`; `getObraPorId(obraId)` (traer la obra hija recién creada, sin el filtro
+  de arriba); `esObraHija(obraId)` (chequeo liviano, una sola columna).
+- `lib/data/models/modificacion_obra.dart` — campo `obraHijaId`.
+- `lib/services/adicionales_repository.dart` — `crearAdicionalPresupuestado(obraId, descripcion)`
+  (RPC a `crear_adicional_presupuestado` + traer la fila completa).
+- `lib/presentation/obra_detalle/screens/adicionales_screen.dart` — el "+" abre
+  `_SelectorViaAdicionalDialog` (3 opciones); "Presupuestar con la app" pide solo la descripción,
+  llama `crearAdicionalPresupuestado` y navega a `PresupuestosScreen` de la obra hija; "Importar"
+  muestra un aviso de "todavía no conectado" (no wireado, ver abajo); un adicional presupuestado
+  pendiente queda tappable en el historial para volver a entrar a seguir cargando el cómputo, con
+  "$ 0" reemplazado por un texto explícito en vez de mentir por omisión.
+- `lib/presentation/obra_detalle/screens/presupuestos_screen.dart` — `_esObraHija` (de
+  `obra['obraMadreId']`) esconde la solapa "Gestión de Obra" y su `TabBarView` (`TabController`
+  pasa a `length: 5`) -- oculto por navegación, no bloqueado por RLS, mismo criterio ya aceptado en
+  otras piezas de este proyecto.
+- `lib/presentation/obra_detalle/screens/composicion_apu_screen.dart` — **la mitigación real de
+  §12.2**. Autocontenida: llama `ObrasRepository.esObraHija(obraId)` ella misma (no necesita que
+  ningún llamador se lo pase), así que los 3 call sites existentes (`SubitemsScreen`,
+  `ApuListadoTab`, esta misma pantalla) quedan protegidos sin tocarlos. En una obra hija: sin
+  "Agregar"/"Quitar" en materiales y equipos, sin el toque de editar rendimiento/precio por línea
+  (ver nota de alcance abajo), sin el botón "Volver a la oficial" del banner de personalización
+  (ese botón borra la receta personal del usuario en TODAS sus obras, no solo esta), y un banner
+  fijo explicando por qué. El Factor K de la obra hija (Gastos Generales, Beneficio, etc., por
+  `BloqueFactorKPartida`) sigue editable sin cambios -- eso sí es seguro, ya es por obra.
+
+  **Nota de alcance, no resuelta del todo a propósito**: el toque de "editar" de cada línea abre un
+  único diálogo con rendimiento Y precio juntos (`PanelEditarItemApu`) -- solo el rendimiento clona
+  la receta personal (el precio ya vive en `obra_insumo_precios`, seguro por obra). Bloqueé el
+  diálogo entero en vez de separar los dos campos, para no dejar el gate a medio verificar tocando
+  ese panel sin revisarlo con cuidado. Costo real: en una obra hija tampoco se puede cargar precio
+  a mano insumo por insumo desde acá -- no es grave (los precios ya caen solos al promedio de
+  corralones, §12.4), pero es una restricción más de la estrictamente necesaria. Separarlo es una
+  mejora futura, no bloqueante.
+- Importador de Excel/PDF (tercera vía) — sin wirear, deliberadamente. Necesita revisar
+  `docs/importador_capa1_diseno_datos.md` con este uso en mente antes de conectarlo.
+- Tanda 2 (aprobación, todavía no empezada): `puede_aprobar_adicional` + rama de
+  `modificaciones_obra_update` + `aprobar_adicional`, que ahora bifurca por camino -- si
+  `obra_hija_id is not null`, llama `congelar_presupuesto_obra(obra_hija_id)` y suma
+  `presupuesto_subitems_congelado` de esa obra para `monto_total`; si `costo_costo_base is not
+  null`, el monto ya está fijo desde que se cargó (sin tabla de config congelada propia, ver
+  §12.8-bis).
+
+### 12.10 Resumen para decidir
+
+**"Obra dentro de obra" es el camino correcto** — reusa cómputo/APU/materiales/congelamiento
+enteros, y el costo real (copiar membresía, filtrar el dashboard, no exponer Gestión de Obra) es
+manejable y de bajo riesgo. El único punto que necesita tu decisión antes de escribir una sola
+migración es **§12.2 — qué hacer con `apu_composiciones` siendo por usuario, no por obra.** Mi
+recomendación es la Opción 1 (el adicional no toca composición propia por ahora, solo Factor K
+propio + precios de hoy), dejando la Opción 2 (obra_id en apu_composiciones) como pieza aparte si
+el uso real la termina pidiendo.

@@ -12,6 +12,10 @@ import '../data/models/certificado_subitem_avance.dart';
 class ObrasRepository {
   final SupabaseClient _client = Supabase.instance.client;
 
+  /// `obra_madre_id is null`: sin esto, cada adicional presupuestado con la app (0113,
+  /// "obra dentro de obra", docs/adicionales_quitas_demasias_diagnostico.md §12) aparecería acá
+  /// como una obra suelta más -- el dashboard es para obras reales, un adicional se ve desde
+  /// `AdicionalesScreen`/Resumen de su obra madre, nunca en esta lista.
   Future<List<Map<String, dynamic>>> getObras() async {
     // ascending: false explícito a propósito: obras más nuevas primero, orden
     // esperado para un dashboard de proyectos. No confundir con el default
@@ -21,10 +25,31 @@ class ObrasRepository {
     final data = await _client
         .from('obras')
         .select()
+        .isFilter('obra_madre_id', null)
         .order('created_at', ascending: false);
     return (data as List)
         .map((row) => _fromRow(row as Map<String, dynamic>))
         .toList();
+  }
+
+  /// Una obra puntual por id -- a diferencia de `getObras()`, SIN filtrar `obra_madre_id`: hace
+  /// falta poder traer una obra hija recién creada (0113) para abrir sus solapas
+  /// (`PresupuestosScreen`) justo después de `crear_adicional_presupuestado`, que devuelve el id
+  /// pero no la fila completa.
+  Future<Map<String, dynamic>> getObraPorId(String obraId) async {
+    final row = await _client.from('obras').select().eq('id', obraId).single();
+    return _fromRow(row);
+  }
+
+  /// Chequeo liviano, una sola columna -- para pantallas que necesitan saber si están dentro de
+  /// una obra hija (adicional presupuestado, 0113) sin traer la fila completa. Usado para poner en
+  /// modo solo-lectura la composición de APU dentro de una obra hija (ver ComposicionApuScreen):
+  /// `apu_composiciones` es por usuario, no por obra (docs/adicionales_quitas_demasias_
+  /// diagnostico.md §12.2) -- editarla ahí afectaría en silencio cualquier otra obra real del mismo
+  /// usuario que use el mismo subítem con receta propia.
+  Future<bool> esObraHija(String obraId) async {
+    final row = await _client.from('obras').select('obra_madre_id').eq('id', obraId).single();
+    return row['obra_madre_id'] != null;
   }
 
   Future<Map<String, dynamic>> crearObra(Map<String, dynamic> obra) async {
@@ -254,6 +279,11 @@ class ObrasRepository {
       'presupuestoCongeladoEn': row['presupuesto_congelado_en'] != null
           ? DateTime.parse(row['presupuesto_congelado_en'] as String)
           : null,
+      // Obra hija de un adicional presupuestado con la app (0113) -- null para toda obra real.
+      // `PresupuestosScreen` la usa para esconder la solapa Gestión de Obra (un adicional nunca
+      // certifica por su cuenta); `ComposicionApuScreen` mira `esObraHija` (chequeo aparte, más
+      // liviano) para lo mismo del lado de la composición de APU.
+      'obraMadreId': row['obra_madre_id']?.toString(),
     };
   }
 

@@ -5,6 +5,7 @@ import '../../../data/models/apu_precio_subitem.dart';
 import '../../../services/apu_composiciones_repository.dart';
 import '../../../services/auth_service.dart';
 import '../../../services/insumos_repository.dart';
+import '../../../services/obras_repository.dart';
 import '../../../services/perfil_repository.dart';
 import '../../shared/pro_gate_dialog.dart';
 import '../tabs/bloque_factor_k_partida.dart';
@@ -51,6 +52,7 @@ class _ComposicionApuScreenState extends State<ComposicionApuScreen> {
   final ApuComposicionesRepository _repository = ApuComposicionesRepository();
   final InsumosRepository _insumosRepository = InsumosRepository();
   final PerfilRepository _perfilRepository = PerfilRepository();
+  final ObrasRepository _obrasRepository = ObrasRepository();
   final AuthService _authService = AuthService();
 
   List<ApuComposicionItemDetalle> _items = [];
@@ -59,6 +61,18 @@ class _ComposicionApuScreenState extends State<ComposicionApuScreen> {
   // Solo para el botón "Volver a la receta oficial" -- el resto de la pantalla no necesita saber
   // esto mientras carga.
   bool _verificandoProRestaurar = false;
+
+  // Riesgo real, marcado y NO resuelto por decisión de Seba (docs/adicionales_quitas_demasias_
+  // diagnostico.md §12.2): `apu_composiciones` es por USUARIO, no por obra -- personalizar/
+  // restaurar acá adentro de una obra hija (un adicional presupuestado con la app, 0113) tocaría
+  // la misma receta que el usuario usa en cualquier otra obra real suya con este subítem,
+  // silenciosamente. Mientras eso no se resuelva de raíz, una obra hija muestra la composición
+  // SOLO LECTURA -- Factor K (Gastos Generales, Beneficio, etc.) sí puede ser propio de la obra
+  // hija, la receta de insumos no. Default `false` (editable) hasta que se resuelva el chequeo --
+  // fail-closed sería más seguro, pero dejaría toda partida sin composición mientras carga
+  // pareciendo bloqueada por un instante; se acepta el mismo riesgo mínimo que ya asume el resto
+  // de esta pantalla (los botones no son tocables hasta que `_cargando` termina).
+  bool _esObraHija = false;
 
   /// Recalculado siempre desde `_items`, nunca desde `widget.precioAgregado` (ver comentario del
   /// campo en el widget) -- mismo COALESCE que ya hace `calcular_precio_apu_subitems`/
@@ -87,10 +101,19 @@ class _ComposicionApuScreenState extends State<ComposicionApuScreen> {
       _error = null;
     });
     try {
-      final items = await _repository.getComposicionDetalle(widget.obraId, widget.subitemId);
+      final itemsFuture = _repository.getComposicionDetalle(widget.obraId, widget.subitemId);
+      // Silencioso ante error -- si falla, cae al default `false` (editable) declarado arriba,
+      // fallando hacia el comportamiento de hoy en vez de romper la pantalla por un chequeo
+      // secundario. El riesgo real (§12.2) es sobre obras hijas nuevas, que si esto falla
+      // simplemente no lo detectan esta vez -- no hay ninguna obra hija en producción todavía.
+      final esObraHijaFuture = _obrasRepository.esObraHija(widget.obraId).catchError((_) => false);
+
+      final items = await itemsFuture;
+      final esObraHija = await esObraHijaFuture;
       if (!mounted) return;
       setState(() {
         _items = items;
+        _esObraHija = esObraHija;
         _cargando = false;
       });
     } catch (e) {
@@ -166,22 +189,25 @@ class _ComposicionApuScreenState extends State<ComposicionApuScreen> {
     return ListView(
       padding: const EdgeInsets.all(12),
       children: [
+        if (_esObraHija) _buildBannerSoloLecturaObraHija(),
         // Todas las líneas comparten la misma composición (oficial o personal) -- alcanza con
-        // mirar la primera para saber cuál se está mostrando.
+        // mirar la primera para saber cuál se está mostrando. El botón de "Volver a la oficial"
+        // queda afuera del todo en una obra hija (ver _buildBannerPersonalizado) -- restaurar
+        // borraría la receta personal del usuario en TODAS sus obras, no solo en esta.
         if (_items.first.esPersonal) _buildBannerPersonalizado(),
         if (manoDeObra.isNotEmpty) _buildSeccion('MANO DE OBRA', manoDeObra),
         _buildSeccion(
           'MATERIALES',
           materiales,
-          accionAgregar: () => _abrirAgregarItem('material'),
-          conAccionQuitar: true,
+          accionAgregar: _esObraHija ? null : () => _abrirAgregarItem('material'),
+          conAccionQuitar: !_esObraHija,
           textoVacio: 'Sin materiales cargados.',
         ),
         _buildSeccion(
           'EQUIPOS',
           equipos,
-          accionAgregar: () => _abrirAgregarItem('equipo'),
-          conAccionQuitar: true,
+          accionAgregar: _esObraHija ? null : () => _abrirAgregarItem('equipo'),
+          conAccionQuitar: !_esObraHija,
           textoVacio: 'Sin equipos cargados.',
           atenuarSiVacio: true,
         ),
@@ -199,6 +225,12 @@ class _ComposicionApuScreenState extends State<ComposicionApuScreen> {
   /// Aviso + acción cuando la receta que se está mostrando es la personal del usuario, no la
   /// oficial (ver `es_personal`, 0071). Solo informa/ofrece volver -- no dice qué se editó línea
   /// por línea, ese detalle ya se ve en las secciones de abajo.
+  ///
+  /// Sin el botón "Volver a la oficial" dentro de una obra hija: `restaurarRecetaOficial` borra la
+  /// receta personal del usuario para este subítem EN TODAS SUS OBRAS (es por usuario, no por
+  /// obra, §12.2) -- alguien que entra a mirar la composición de un adicional y toca ese botón
+  /// pensando que solo afecta a esta obra estaría borrando, sin saberlo, la personalización real
+  /// que usa en su obra de verdad.
   Widget _buildBannerPersonalizado() {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -218,10 +250,43 @@ class _ComposicionApuScreenState extends State<ComposicionApuScreen> {
               style: TextStyle(fontSize: 11, color: Colors.black87),
             ),
           ),
-          TextButton(
-            onPressed: _verificandoProRestaurar ? null : _onRestaurarOficial,
-            style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
-            child: Text(_verificandoProRestaurar ? 'Verificando...' : 'Volver a la oficial'),
+          if (!_esObraHija)
+            TextButton(
+              onPressed: _verificandoProRestaurar ? null : _onRestaurarOficial,
+              style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+              child: Text(_verificandoProRestaurar ? 'Verificando...' : 'Volver a la oficial'),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// Banner fijo (no descartable -- a diferencia de los avisos "primera vez" del resto de la app,
+  /// este es un límite real de la pantalla en esta obra puntual, no una explicación que deje de
+  /// hacer falta con el uso). Explica por qué no hay lápiz ni "Agregar"/"Quitar" acá: la receta de
+  /// insumos es del usuario, no de la obra (§12.2) -- el Factor K de esta obra hija sí es propio y
+  /// se ajusta desde la Solapa APU, sin este límite.
+  Widget _buildBannerSoloLecturaObraHija() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.blueGrey.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.blueGrey.shade100),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.lock_outline, size: 15, color: Colors.blueGrey.shade700),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Esta obra es un adicional -- la composición de insumos se ve de solo lectura para '
+              'no afectar tus otras obras. El % de Gastos Generales, Beneficio, etc. sí es propio '
+              'de esta obra.',
+              style: TextStyle(fontSize: 10.5, color: Colors.blueGrey.shade900),
+            ),
           ),
         ],
       ),
@@ -565,8 +630,16 @@ class _ComposicionApuScreenState extends State<ComposicionApuScreen> {
             width: _colPrecio,
             // Único toque para editar rendimiento y precio (ver PanelEditarItemApu) -- visible
             // para cualquiera (Free incluido), el gate de PRO es al Guardar, adentro del diálogo.
+            //
+            // Deshabilitado entero en una obra hija, aunque el precio en sí (`obra_insumo_precios`)
+            // ya es seguro por obra -- el rendimiento comparte el mismo diálogo y ESE sí clona la
+            // receta personal del usuario (ver comentario de `personalizarItem`), afectando sus
+            // otras obras reales en silencio (§12.2). Separar "editar precio" de "editar
+            // rendimiento" en dos entradas distintas resolvería esto sin perder la carga de precio
+            // acá -- lo dejo marcado como mejora, no la hice ahora para no dejar el gate a medias
+            // tocando `PanelEditarItemApu` sin verificarlo con cuidado.
             child: InkWell(
-              onTap: () => _abrirEdicion(item),
+              onTap: _esObraHija ? null : () => _abrirEdicion(item),
               child: Align(
                 alignment: Alignment.centerRight,
                 child: Text(
@@ -577,8 +650,10 @@ class _ComposicionApuScreenState extends State<ComposicionApuScreen> {
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
-                    color: sinPrecio ? Colors.orange[800] : const Color(0xFF1B365D),
-                    decoration: TextDecoration.underline,
+                    color: _esObraHija
+                        ? Colors.black45
+                        : (sinPrecio ? Colors.orange[800] : const Color(0xFF1B365D)),
+                    decoration: _esObraHija ? TextDecoration.none : TextDecoration.underline,
                     decorationColor: Colors.black26,
                   ),
                 ),

@@ -90,6 +90,24 @@ class ModificacionObra {
 
   final String? apuPrivadoId;
 
+  // Adicional (0112) -- costo tipeado a mano por quien lo cotiza, sin composición de APU (decisión
+  // de Seba, 2026-09-13: "el que lo cotiza pone su precio"). `montoTotal` es el resultado YA con
+  // la cascada de Factor K aplicada (calcular_precio_adicional/trigger, 0112) -- se recalcula solo
+  // mientras `estado == pendiente`; al aprobar (Tanda 2) queda fijo. `incluyeMateriales` es
+  // descriptivo (para la etiqueta de §10.1 cuando difiere del contrato) -- no cambia el cálculo,
+  // ver el comentario de cabecera de 0112 para por qué. `incluyeImpuestos` sí es un paso real de
+  // la cascada.
+  final double? costoCostoBase;
+  final bool incluyeMateriales;
+  final bool incluyeImpuestos;
+
+  /// Adicional presupuestado con la app (0113, "obra dentro de obra" -- docs/adicionales_quitas_
+  /// demasias_diagnostico.md §12), mutuamente excluyente con `costoCostoBase` (el check de la base
+  /// exige exactamente uno de los dos para `tipo == adicional`). Esa obra tiene sus propias solapas
+  /// de Rubros/APU/Materiales, con Factor K propio y precios de hoy -- `monto_total` de esta fila
+  /// queda en 0 hasta que se congela al aprobar (Tanda 2, todavía sin construir).
+  final String? obraHijaId;
+
   final String solicitadoPor;
   final String subidoPor;
 
@@ -111,6 +129,10 @@ class ModificacionObra {
     this.precioUnitarioHeredado,
     required this.montoTotal,
     this.apuPrivadoId,
+    this.costoCostoBase,
+    this.incluyeMateriales = true,
+    this.incluyeImpuestos = true,
+    this.obraHijaId,
     required this.solicitadoPor,
     required this.subidoPor,
     this.estado = EstadoModificacion.pendiente,
@@ -132,6 +154,10 @@ class ModificacionObra {
       precioUnitarioHeredado: (row['precio_unitario_heredado'] as num?)?.toDouble(),
       montoTotal: (row['monto_total'] as num?)?.toDouble() ?? 0.0,
       apuPrivadoId: row['apu_privado_id']?.toString(),
+      costoCostoBase: (row['costo_costo_base'] as num?)?.toDouble(),
+      incluyeMateriales: row['incluye_materiales'] == null ? true : row['incluye_materiales'] == true,
+      incluyeImpuestos: row['incluye_impuestos'] == null ? true : row['incluye_impuestos'] == true,
+      obraHijaId: row['obra_hija_id']?.toString(),
       solicitadoPor: row['solicitado_por'].toString(),
       subidoPor: row['subido_por'].toString(),
       estado: _estadoDesdeColumna(row['estado']?.toString()),

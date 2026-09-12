@@ -26,6 +26,7 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> with SingleTick
   late TabController _tabController;
   late Map<String, dynamic> _obraDatos;
   String? _obraId;
+  bool _esObraHija = false;
 
   // Coeficientes dinámicos para Resumen Final
   double _gastosGeneralesPorcentaje = 15.0;
@@ -57,7 +58,6 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> with SingleTick
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 6, vsync: this);
 
     String nombreObra = 'Proyecto Genérico';
     String propietario = 'Comitente Genérico';
@@ -74,6 +74,11 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> with SingleTick
         sup = (map['superficieM2'] as num?)?.toDouble() ?? (map['superficie'] as num?)?.toDouble() ?? sup;
         monto = (map['montoEstimadoArs'] as num?)?.toDouble() ?? (map['montoTotal'] as num?)?.toDouble() ?? monto;
         _obraId = map['id']?.toString();
+        // Obra hija de un adicional presupuestado con la app (0113) -- esconde la solapa Gestión
+        // de Obra/certificación más abajo: un adicional nunca certifica por su cuenta (decisión ya
+        // cerrada, docs/adicionales_quitas_demasias_diagnostico.md §4), congelar su cómputo es un
+        // paso de la aprobación, no algo que quien lo presupuesta dispare a mano.
+        _esObraHija = map['obraMadreId'] != null;
       } else {
         // Acceso seguro por casting dinámico para evitar errores de getters/métodos faltantes en ObraModel
         final dynamic o = widget.obra;
@@ -105,6 +110,7 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> with SingleTick
       'revision': 'Rev. 01',
     };
 
+    _tabController = TabController(length: _esObraHija ? 5 : 6, vsync: this);
     _cargarUserContext();
   }
 
@@ -204,13 +210,16 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> with SingleTick
           // a tocar este orden: `_abrirComposicionDesdeComputo` usa `animateTo(1)` para ir a APU --
           // sigue siendo correcto acá porque APU no se movió de posición, pero cualquier cambio que
           // mueva a APU de índice 1 tiene que actualizar ese `animateTo` también.
-          tabs: const [
-            Tab(text: 'Cómputo'),
-            Tab(text: 'APU'),
-            Tab(text: 'Mat y MO'),
-            Tab(text: 'Gestión de Obra'),
-            Tab(text: 'Resumen'),
-            Tab(text: 'Proveedores'),
+          tabs: [
+            const Tab(text: 'Cómputo'),
+            const Tab(text: 'APU'),
+            const Tab(text: 'Mat y MO'),
+            // Un adicional (obra hija, 0113) nunca certifica por su cuenta -- esta solapa queda
+            // afuera para esa obra, no solo deshabilitada. Ver docs/adicionales_quitas_demasias_
+            // diagnostico.md §4/§12.9.
+            if (!_esObraHija) const Tab(text: 'Gestión de Obra'),
+            const Tab(text: 'Resumen'),
+            const Tab(text: 'Proveedores'),
           ],
         ),
       ),
@@ -233,9 +242,10 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> with SingleTick
                   puedeVerMontosYAPU: _userContext?.puedeVerMontosYAPU == true,
                 )
               : const Center(child: Text('No se pudo determinar la obra.')),
-          _obraId != null
-              ? GestionObraTab(obraId: _obraId!, userContext: _userContext)
-              : const Center(child: Text('No se pudo determinar la obra.')),
+          if (!_esObraHija)
+            _obraId != null
+                ? GestionObraTab(obraId: _obraId!, userContext: _userContext)
+                : const Center(child: Text('No se pudo determinar la obra.')),
           _buildTabResumenFinal(),
           _buildTabProveedores(),
         ],
