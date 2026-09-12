@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../core/utils/conversion_dolar.dart';
+import '../../../services/indices_economicos_repository.dart';
 import '../../../services/obras_repository.dart';
 
 /// Presentar el presupuesto (con su validez), avisar cuando venció y ofrecer actualizarlo, y
@@ -36,6 +39,7 @@ class PresupuestoEstadoPanel extends StatefulWidget {
 
 class _PresupuestoEstadoPanelState extends State<PresupuestoEstadoPanel> {
   final ObrasRepository _obrasRepository = ObrasRepository();
+  final IndicesEconomicosRepository _indicesRepository = IndicesEconomicosRepository();
 
   bool _cargando = true;
   DateTime? _fechaPresentacion;
@@ -43,6 +47,43 @@ class _PresupuestoEstadoPanelState extends State<PresupuestoEstadoPanel> {
   DateTime? _congeladoEn;
   bool _aplicaCac = false;
   bool _enviando = false;
+
+  // Moneda de la obra + cotización de hoy -- todos los montos de este panel (presupuesto vivo,
+  // pactado, saldo pendiente) se guardan en ARS (ver comentarios de obras_repository.dart), la
+  // conversión es puramente de visualización. Mismo mecanismo que ya usa DetalleCertificadoScreen
+  // (`convertirArsAMoneda`) -- a diferencia de un certificado ya emitido, acá no hay ningún
+  // snapshot de cotización que congelar: pactado/saldo pendiente son una vista viva de un monto
+  // fijo en pesos, así que corresponde convertir siempre a la cotización de HOY, igual que
+  // ObrasListScreen hace con el presupuesto vivo.
+  String _moneda = 'ARS';
+  double _cotizacionHoy = 0;
+
+  // Aviso "el precio pactado queda fijo aunque cambien los interruptores de la Solapa APU" --
+  // descartable, primera vez, mismo mecanismo que el aviso de zona UOCRA de CartelCostoManoObra
+  // (SharedPreferences por obra, ícono chico para restaurarlo). Default false (visible) hasta que
+  // termine de cargar -- fail-closed hacia lo más seguro.
+  bool _avisoCongeladoDescartado = false;
+
+  String get _claveAvisoCongelado => 'presupuesto_congelado_aviso_descartado_${widget.obraId}';
+
+  Future<void> _cargarAvisoCongeladoDescartado() async {
+    final prefs = await SharedPreferences.getInstance();
+    final descartado = prefs.getBool(_claveAvisoCongelado) ?? false;
+    if (!mounted) return;
+    setState(() => _avisoCongeladoDescartado = descartado);
+  }
+
+  Future<void> _descartarAvisoCongelado() async {
+    setState(() => _avisoCongeladoDescartado = true);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_claveAvisoCongelado, true);
+  }
+
+  Future<void> _restaurarAvisoCongelado() async {
+    setState(() => _avisoCongeladoDescartado = false);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_claveAvisoCongelado, false);
+  }
 
   // Pactado/saldo ajustado (docs/cac_conectado_modelo_a_diseno.md §4) -- cargados aparte, solo
   // cuando la obra está congelada, para no pagar 3 llamadas más en los otros 3 estados del panel.
@@ -55,12 +96,18 @@ class _PresupuestoEstadoPanelState extends State<PresupuestoEstadoPanel> {
   void initState() {
     super.initState();
     _cargar();
+    _cargarAvisoCongeladoDescartado();
   }
 
   Future<void> _cargar() async {
     if (mounted) setState(() => _cargando = true);
     try {
-      final estado = await _obrasRepository.getEstadoPresupuesto(widget.obraId);
+      final estadoFuture = _obrasRepository.getEstadoPresupuesto(widget.obraId);
+      final monedaFuture = _obrasRepository.getMoneda(widget.obraId);
+      final cotizacionFuture = _indicesRepository.getCotizacionDolar();
+      final estado = await estadoFuture;
+      final moneda = await monedaFuture;
+      final cotizacion = await cotizacionFuture;
       if (!mounted) return;
       final congeladoEn = estado['congeladoEn'] as DateTime?;
       setState(() {
@@ -68,6 +115,8 @@ class _PresupuestoEstadoPanelState extends State<PresupuestoEstadoPanel> {
         _validezDias = estado['validezDias'] as int;
         _congeladoEn = congeladoEn;
         _aplicaCac = estado['aplicaCac'] as bool;
+        _moneda = moneda;
+        _cotizacionHoy = cotizacion?.promedio ?? 0;
         _cargando = false;
       });
       if (congeladoEn != null) await _cargarDetalleCac();
@@ -260,12 +309,15 @@ class _PresupuestoEstadoPanelState extends State<PresupuestoEstadoPanel> {
     }
   }
 
-  String _fmtMonto(double monto) {
-    final valorInt = monto.round();
+  /// `montoArs`: siempre en pesos (ver comentario de `_moneda` arriba) -- convierte a la moneda de
+  /// la obra antes de formatear. Mismo patrón que `DetalleCertificadoScreen._fmt`.
+  String _fmtMonto(double montoArs) {
+    final convertido = convertirArsAMoneda(montoArs, _moneda, _cotizacionHoy);
+    final valorInt = convertido.round();
     final str = valorInt.toString();
     final reg = RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))');
     final formateado = str.replaceAllMapped(reg, (Match m) => '${m[1]}.');
-    return '\$ $formateado';
+    return _moneda == 'USD' ? 'USD $formateado' : '\$ $formateado';
   }
 
   @override
@@ -356,8 +408,23 @@ class _PresupuestoEstadoPanelState extends State<PresupuestoEstadoPanel> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (!_avisoCongeladoDescartado) ...[
+            _buildAvisoCongelado(),
+            const SizedBox(height: 8),
+          ],
           const Divider(height: 1),
           const SizedBox(height: 8),
+          if (_avisoCongeladoDescartado)
+            Align(
+              alignment: Alignment.centerRight,
+              child: IconButton(
+                icon: const Icon(Icons.info_outline, size: 13, color: Colors.black38),
+                tooltip: 'Sobre el presupuesto pactado',
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                onPressed: _restaurarAvisoCongelado,
+              ),
+            ),
           _buildFilaMonto('Pactado', _montoPactado!),
           _buildFilaMonto(
             _aplicaCac ? 'Saldo pendiente (ajustado a hoy)' : 'Saldo pendiente',
@@ -389,6 +456,40 @@ class _PresupuestoEstadoPanelState extends State<PresupuestoEstadoPanel> {
               ),
             ),
           ],
+        ],
+      ),
+    );
+  }
+
+  /// Aviso descartable, primera vez -- explica que el pactado no se mueve con los interruptores de
+  /// la Solapa APU. Mismo mecanismo que el aviso de zona UOCRA (CartelCostoManoObra):
+  /// SharedPreferences por obra, ícono chico para restaurarlo.
+  Widget _buildAvisoCongelado() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.green.shade100.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.info_outline, size: 14, color: Colors.green.shade800),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              'Este precio queda fijo aunque después cambies las opciones de la Solapa APU '
+              '(impuestos, con/sin materiales, etc.) -- es el precio pactado.',
+              style: TextStyle(fontSize: 10.5, color: Colors.green.shade900),
+            ),
+          ),
+          IconButton(
+            icon: Icon(Icons.close, size: 14, color: Colors.green.shade800),
+            tooltip: 'Cerrar aviso',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+            onPressed: _descartarAvisoCongelado,
+          ),
         ],
       ),
     );

@@ -193,6 +193,20 @@ class ObrasRepository {
     return (data as num?)?.toDouble() ?? 0.0;
   }
 
+  /// "Hoy", pero con la MISMA configuración de Factor K con la que se congeló el presupuesto --
+  /// `calcular_presupuesto_hoy_config_congelada_obra`, `0110`. A diferencia de
+  /// `calcularPresupuestoVivo`, esta lee `presupuesto_config_congelado`, no los interruptores
+  /// vigentes de la Solapa APU -- el desfasaje contra `getMontoPactadoCongelado` mide solo el
+  /// costo de insumos de hoy, nunca un cambio de configuración. Solo tiene sentido para una obra
+  /// congelada (si no lo está, `presupuesto_config_congelado` no tiene fila y esto da 0).
+  Future<double> calcularPresupuestoHoyConfigCongelada(String obraId) async {
+    final data = await _client.rpc(
+      'calcular_presupuesto_hoy_config_congelada_obra',
+      params: {'p_obra_id': obraId},
+    );
+    return (data as num?)?.toDouble() ?? 0.0;
+  }
+
   /// Detalle por partida del ajuste de CAC -- `calcular_monto_congelado_ajustado`, `0105`/`0106`.
   /// Fuente para dos cosas distintas, en dos pantallas distintas: si alguna fila tiene
   /// `serieAplicada == 'sin_ajustar_indice_pendiente'` (el panel del presupuesto, aviso de índice
@@ -233,6 +247,13 @@ class ObrasRepository {
       'ultimaModif': row['updated_at'] ?? row['created_at'],
       'estadoServicioEspecial': row['estado_servicio_especial']?.toString() ?? 'Ninguno',
       'idAdminCreador': row['id_admin_creador']?.toString(),
+      // Presupuesto congelado (Modelo A) -- ObrasListScreen la usa para avisar que el "Monto
+      // Estimado Base" de la card es el valor de HOY, no el pactado, y para mostrar el chip de
+      // comparación. select() ya trae la columna (select sin acotar); antes no se mapeaba porque
+      // nadie del dashboard la necesitaba.
+      'presupuestoCongeladoEn': row['presupuesto_congelado_en'] != null
+          ? DateTime.parse(row['presupuesto_congelado_en'] as String)
+          : null,
     };
   }
 

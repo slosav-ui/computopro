@@ -189,6 +189,46 @@ desfasaje +Z%" — no un gráfico ni nada más elaborado por ahora. No lo doy po
 recomendación: el `alcance` que marcaste deja esto fuera de lo obligatorio de este corte, así que
 puede quedar señalado y no construido si preferís.
 
+**Actualización 2026-09-12 — de opcional a necesario, y en el dashboard, no en Gestión de Obra.**
+El origen real: `ObrasListScreen` mostraba el "Monto Estimado Base" de una obra congelada sin
+ninguna aclaración, así que un usuario lo leía como el pactado — exactamente la confusión que este
+párrafo ya anticipaba, pero en la pantalla equivocada (acá se proponía Gestión de Obra, que sí tiene
+el desglose Pactado/Saldo pendiente desde `cac_conectado_modelo_a_diseno.md` §4, pero el dashboard,
+donde vive la confusión real, había quedado sin tocar — ver §12, "no tocados").
+
+Cerrado por Seba: el dashboard tiene que decir explícitamente que ese monto es el de HOY, y el chip
+Pactado/Hoy/Desfasaje pasa a ser obligatorio ahí, no opcional. Primera implementación (2026-09-12,
+misma sesión): rótulo "Valor de HOY (no es el pactado)" + chip "Pactado $X · Hoy $Y · Desfasaje
+±Z%" comparando contra `calcular_presupuesto_vivo_obra`.
+
+**Corrección el mismo día, antes de aplicar nada (Seba, revisando el resultado): el número
+principal se invierte.** *"Una vez pactado, el número de la obra es el pactado... el precio de la
+obra debe ser en grande el que se pactó, por más que se quiera jugar con las opciones de APU."* La
+primera implementación dejaba el vivo como número grande -- exactamente lo que este documento (§8)
+nunca pidió; el pactado es el que tiene que ir en grande, sin rótulo que lo relativice, y el "Hoy"
+pasa a ser la referencia de abajo, junto con el desfasaje.
+
+**Y un bug real que esa revisión destapó**: el "Hoy" del chip venía de
+`calcular_presupuesto_vivo_obra`, que recalcula con la configuración VIGENTE de Factor K
+(`obra_presupuesto_config`/`obra_impuestos` -- los interruptores de la Solapa APU), no con la que
+regía al congelar. Caso real: obra congelada con impuestos aplicados (25,5%), interruptor de
+impuestos apagado después -- el chip mostraba 20,3% de desfasaje que no existía, era pura
+diferencia de configuración. Corrección en `0110_presupuesto_hoy_config_congelada.sql`: nueva
+función `calcular_presupuesto_hoy_config_congelada_obra`, que reutiliza `calcular_factor_k_subitem`
+(ahora con un parámetro `p_config_congelada`, sin duplicar la cascada -- mismo criterio que ya fijó
+0090) leyendo `presupuesto_config_congelado` en vez de la configuración vigente. Detalle completo
+en el comentario de esa migración.
+
+**Estado final de la card, obra congelada:**
+- Número grande: **Pactado**, sin aclaración (ícono de candado chico, nada más).
+- Debajo: "Hoy $Y · Desfasaje ±Z%", calculado con la MISMA configuración congelada -- mide
+  únicamente el costo de insumos de hoy, nunca un cambio de interruptor.
+- Fallback (pactado no pudo cargarse -- fallo de red puntual): vuelve al vivo con su aclaración
+  ("Valor de HOY, pactado no disponible") -- nunca un número sin decir qué es.
+- Aviso descartable (primera vez, SharedPreferences por obra, mismo mecanismo que la zona UOCRA de
+  `CartelCostoManoObra`) explicando qué mide el desfasaje, para no volver a generar la misma
+  confusión que esta sección documenta.
+
 ## 9. Cierre — el cruce con la certificación (ambigüedad E)
 
 **Cerrado por vos**: el presupuesto congelado es el número contra el que hay que certificar — "se

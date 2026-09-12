@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/utils/parser_numero_ar.dart';
 import '../../data/models/invitacion.dart';
@@ -55,6 +56,14 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
   // varios administradores ni que uno puede renunciar al rol. Ver `_esAdminDeObra`.
   Set<String> _obraIdsAdmin = {};
 
+  // Aviso "qué significa el desfasaje" (chip Pactado/Hoy de una obra congelada) -- descartable,
+  // por obra, mismo mecanismo que el aviso de zona UOCRA de CartelCostoManoObra: SharedPreferences,
+  // por dispositivo, con ícono chico para restaurarlo. Default false (aviso visible) hasta que
+  // termine de cargar -- mismo criterio "fail-closed hacia lo más seguro" que el resto del proyecto.
+  Set<String> _avisoDesfasajeDescartadoObras = {};
+
+  String _claveAvisoDesfasaje(String obraId) => 'desfasaje_congelado_aviso_descartado_$obraId';
+
   static const _nombresMeses = [
     'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
     'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
@@ -75,6 +84,35 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
     _cargarObras();
     _canjearInvitacionPendiente();
     _cargarIndicadoresEconomicos();
+    _cargarAvisosDesfasajeDescartados();
+  }
+
+  /// Todas las obras cuyo aviso de desfasaje ya fue descartado en este dispositivo -- una sola
+  /// pasada por las claves de SharedPreferences en vez de una lectura por obra (no se sabe qué
+  /// obras van a existir hasta que `_cargarObras` resuelve, así que no tiene sentido pedirlas de a
+  /// una).
+  Future<void> _cargarAvisosDesfasajeDescartados() async {
+    final prefs = await SharedPreferences.getInstance();
+    const prefijo = 'desfasaje_congelado_aviso_descartado_';
+    final descartados = prefs
+        .getKeys()
+        .where((k) => k.startsWith(prefijo) && (prefs.getBool(k) ?? false))
+        .map((k) => k.substring(prefijo.length))
+        .toSet();
+    if (!mounted) return;
+    setState(() => _avisoDesfasajeDescartadoObras = descartados);
+  }
+
+  Future<void> _descartarAvisoDesfasaje(String obraId) async {
+    setState(() => _avisoDesfasajeDescartadoObras = {..._avisoDesfasajeDescartadoObras, obraId});
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_claveAvisoDesfasaje(obraId), true);
+  }
+
+  Future<void> _restaurarAvisoDesfasaje(String obraId) async {
+    setState(() => _avisoDesfasajeDescartadoObras = {..._avisoDesfasajeDescartadoObras}..remove(obraId));
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_claveAvisoDesfasaje(obraId), false);
   }
 
   /// Reemplaza los placeholders de arriba por los valores reales -- `cotizacion_dolar_bna` (fila
@@ -199,6 +237,23 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
       final presupuestos = await Future.wait([
         for (final o in obras) _presupuestoVivoSeguro(o['id'] as String),
       ]);
+      // Pactado por obra congelada (Modelo A) -- solo para las que tienen `presupuestoCongeladoEn`
+      // (la mayoría no, así que la mayoría de estas llamadas ni se hacen). Fail-safe a null, mismo
+      // criterio que _presupuestoVivoSeguro: si falla, esa card simplemente no muestra el chip de
+      // comparación, no tumba el resto de la lista.
+      final pactados = await Future.wait([
+        for (final o in obras)
+          _montoPactadoSeguro(o['id'] as String, o['presupuestoCongeladoEn'] as DateTime?),
+      ]);
+      // "Hoy", con la MISMA configuración de Factor K con la que se congeló -- no
+      // `calcularPresupuestoVivo` (0091), que usa los interruptores VIGENTES de la Solapa APU.
+      // Comparar el pactado contra ese número mezclaba dos cosas (desfasaje de precio + desfasaje
+      // de configuración) -- ver 0110. Mismo criterio fail-safe que el resto: null si falla, sin
+      // chip para esa card.
+      final hoyConfigCongelada = await Future.wait([
+        for (final o in obras)
+          _hoyConfigCongeladaSeguro(o['id'] as String, o['presupuestoCongeladoEn'] as DateTime?),
+      ]);
       // Una sola consulta para toda la lista, no una por obra -- ver _esAdminDeObra. Fail-safe a
       // vacío: si falla, ningún ícono de administrador se muestra (fallo seguro, mismo criterio
       // que el resto de esta pantalla) en vez de romper la carga de toda la lista.
@@ -211,7 +266,8 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
       if (!mounted) return;
       setState(() {
         _obras = [
-          for (var i = 0; i < obras.length; i++) _conMontosCalculados(obras[i], presupuestos[i]),
+          for (var i = 0; i < obras.length; i++)
+            _conMontosCalculados(obras[i], presupuestos[i], pactados[i], hoyConfigCongelada[i]),
         ];
         _obraIdsAdmin = obraIdsAdmin;
         _cargando = false;
@@ -230,6 +286,24 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
       return await _obrasRepository.calcularPresupuestoVivo(obraId);
     } catch (_) {
       return 0.0;
+    }
+  }
+
+  Future<double?> _montoPactadoSeguro(String obraId, DateTime? congeladoEn) async {
+    if (congeladoEn == null) return null;
+    try {
+      return await _obrasRepository.getMontoPactadoCongelado(obraId);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<double?> _hoyConfigCongeladaSeguro(String obraId, DateTime? congeladoEn) async {
+    if (congeladoEn == null) return null;
+    try {
+      return await _obrasRepository.calcularPresupuestoHoyConfigCongelada(obraId);
+    } catch (_) {
+      return null;
     }
   }
 
@@ -266,11 +340,22 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
   /// ningún lado del sistema) -- así que acá se convierte siempre desde ARS, sin condicional.
   /// `moneda` sigue importando para otra cosa, sin cambios: qué campo de los dos (Ars/Usd) elige
   /// mostrar la card como principal (ver el uso de esRs más abajo en build()).
-  Map<String, dynamic> _conMontosCalculados(Map<String, dynamic> obra, double montoVivoArs) {
+  Map<String, dynamic> _conMontosCalculados(
+    Map<String, dynamic> obra,
+    double montoVivoArs,
+    double? montoPactadoArs,
+    double? montoHoyConfigCongeladaArs,
+  ) {
     return {
       ...obra,
       'montoEstimadoArs': montoVivoArs,
       'montoEstimadoUsd': _convertirMonto(montoVivoArs, 'ARS', 'USD'),
+      'montoPactadoArs': montoPactadoArs,
+      'montoPactadoUsd': montoPactadoArs == null ? null : _convertirMonto(montoPactadoArs, 'ARS', 'USD'),
+      'montoHoyConfigCongeladaArs': montoHoyConfigCongeladaArs,
+      'montoHoyConfigCongeladaUsd': montoHoyConfigCongeladaArs == null
+          ? null
+          : _convertirMonto(montoHoyConfigCongeladaArs, 'ARS', 'USD'),
     };
   }
 
@@ -281,6 +366,107 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
     final reg = RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))');
     final formateado = str.replaceAllMapped(reg, (Match m) => '${m[1]}.');
     return moneda == 'USD' ? 'USD $formateado' : '\$ $formateado';
+  }
+
+  /// Referencia "Hoy · Desfasaje" para obra congelada -- el pactado ya es el número grande de la
+  /// card (criterio de Seba, 2026-09-12: "el precio de la obra debe ser en grande el que se
+  /// pactó"), así que acá no se repite, solo el dato de comparación.
+  ///
+  /// `montoHoy` viene de `calcularPresupuestoHoyConfigCongelada` (0110) -- recalculado con la
+  /// MISMA configuración de Factor K con la que se congeló (`presupuesto_config_congelado`), no
+  /// con los interruptores vigentes de la Solapa APU. Antes de esta corrección el chip comparaba
+  /// contra `calcular_presupuesto_vivo_obra` (config vigente) y podía mostrar un desfasaje que en
+  /// realidad era un cambio de configuración, no de costos -- caso real: obra congelada con
+  /// impuestos aplicados, interruptor de impuestos apagado después, "desfasaje" de 20% que no
+  /// existía. `montoHoy`/`montoPactado` llegan ya convertidos a la misma moneda de visualización
+  /// -- el desfasaje da igual calculado en ARS o en USD (la conversión se cancela en la división).
+  ///
+  /// `Wrap`, no `Row` -- incluso con textos cortos, varias piezas de texto en una card angosta
+  /// (memoria de overflow en pantalla angosta) tienen que poder pasar a una segunda línea.
+  Widget _buildComparacionCongelada(String obraId, double montoHoy, double montoPactado, String moneda) {
+    final double? desfasajePct = montoPactado != 0 ? ((montoHoy - montoPactado) / montoPactado) * 100 : null;
+    final bool subio = (desfasajePct ?? 0) >= 0;
+    final bool avisoDescartado = _avisoDesfasajeDescartadoObras.contains(obraId);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.indigo.shade50,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: Colors.indigo.shade100),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Wrap(
+                  spacing: 10,
+                  runSpacing: 2,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Text(
+                      'Hoy ${_formatearMonto(montoHoy, moneda)}',
+                      style: TextStyle(fontSize: 10.5, color: Colors.indigo.shade900),
+                    ),
+                    if (desfasajePct != null)
+                      Text(
+                        'Desfasaje ${subio ? '+' : ''}${desfasajePct.toStringAsFixed(1)}%',
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.bold,
+                          color: subio ? Colors.red.shade700 : Colors.green.shade700,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              if (avisoDescartado)
+                IconButton(
+                  icon: Icon(Icons.info_outline, size: 13, color: Colors.indigo.shade300),
+                  tooltip: 'Qué significa el desfasaje',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  onPressed: () => _restaurarAvisoDesfasaje(obraId),
+                ),
+            ],
+          ),
+          if (!avisoDescartado) ...[
+            const SizedBox(height: 4),
+            _buildAvisoDesfasaje(obraId),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// Aviso descartable, primera vez -- explica qué es "Hoy" y el desfasaje sin invadir al que ya
+  /// lo sabe. Mismo mecanismo que el aviso de zona UOCRA (CartelCostoManoObra): SharedPreferences
+  /// por obra, ícono chico para restaurarlo.
+  Widget _buildAvisoDesfasaje(String obraId) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+      decoration: BoxDecoration(color: Colors.indigo.shade100.withValues(alpha: 0.5), borderRadius: BorderRadius.circular(4)),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Expanded(
+            child: Text(
+              'El desfasaje mide cuánto se corrió el costo de los materiales/mano de obra desde que '
+              'se firmó, con la misma configuración pactada. No cambia el precio contratado.',
+              style: TextStyle(fontSize: 9.5, color: Colors.black87),
+            ),
+          ),
+          IconButton(
+            icon: Icon(Icons.close, size: 13, color: Colors.indigo.shade700),
+            tooltip: 'Cerrar aviso',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+            onPressed: () => _descartarAvisoDesfasaje(obraId),
+          ),
+        ],
+      ),
+    );
   }
 
   /// Acepta coma o punto como separador decimal (mismo criterio que
@@ -678,7 +864,7 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                           // 0.0 directo, no una llamada a calcularPresupuestoVivo: una obra recién
                           // creada no tiene ningún obra_subitems todavía, la función de base daría
                           // 0 igual -- ahorra el viaje de red.
-                          setState(() => _obras.add(_conMontosCalculados(creada, 0.0)));
+                          setState(() => _obras.add(_conMontosCalculados(creada, 0.0, null, null)));
                           Navigator.pop(ctx);
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(content: Text('Nueva obra registrada exitosamente.')),
@@ -1878,7 +2064,20 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                       final obra = _obras[index];
                       final bool esCotizacion = obra['estado'] == 'Cotización';
                       final bool esArs = obra['moneda'] == 'ARS';
-                      final double monto = esArs ? obra['montoEstimadoArs'] : obra['montoEstimadoUsd'];
+                      final double montoVivo = esArs ? obra['montoEstimadoArs'] : obra['montoEstimadoUsd'];
+                      final bool esCongelada = obra['presupuestoCongeladoEn'] != null;
+                      final double? montoPactado =
+                          esArs ? obra['montoPactadoArs'] as double? : obra['montoPactadoUsd'] as double?;
+                      final double? montoHoyConfigCongelada = esArs
+                          ? obra['montoHoyConfigCongeladaArs'] as double?
+                          : obra['montoHoyConfigCongeladaUsd'] as double?;
+                      // Una vez pactado, el número de la obra ES el pactado -- criterio de Seba
+                      // (2026-09-12): los interruptores de la Solapa APU no pueden seguir moviendo
+                      // el precio de una obra ya firmada. Si el pactado no pudo cargarse (fallo de
+                      // red puntual), cae al vivo con su aclaración de siempre -- fallback, no el
+                      // caso normal.
+                      final bool mostrarPactado = esCongelada && montoPactado != null;
+                      final double monto = (esCongelada && montoPactado != null) ? montoPactado : montoVivo;
                       final bool tieneCac = obra['aplicaCac'] ?? false;
                       final String estadoServicio = obra['estadoServicioEspecial'] ?? 'Ninguno';
 
@@ -1984,12 +2183,41 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                                 Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    const Text('Monto Estimado Base', style: TextStyle(fontSize: 9, color: Colors.black45, fontWeight: FontWeight.bold)),
+                                    // Rótulo: el pactado se muestra SIN aclaración que lo
+                                    // relativice -- una vez firmado, ese es el precio de la obra,
+                                    // no una estimación (criterio de Seba, 2026-09-12). Solo si el
+                                    // pactado no pudo cargarse (fallback) se avisa que lo que se ve
+                                    // es el vivo, no el firmado.
+                                    Row(
+                                      children: [
+                                        if (mostrarPactado) ...[
+                                          Icon(Icons.lock_outline, size: 10, color: Colors.black45),
+                                          const SizedBox(width: 3),
+                                        ],
+                                        Text(
+                                          mostrarPactado
+                                              ? 'Presupuesto Pactado'
+                                              : (esCongelada
+                                                  ? 'Valor de HOY (pactado no disponible)'
+                                                  : 'Monto Estimado Base'),
+                                          style: const TextStyle(fontSize: 9, color: Colors.black45, fontWeight: FontWeight.bold),
+                                        ),
+                                      ],
+                                    ),
                                     const SizedBox(height: 2),
                                     Text(
                                       _formatearMonto(monto, obra['moneda']),
                                       style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Color(0xFF1B365D)),
                                     ),
+                                    if (mostrarPactado && montoHoyConfigCongelada != null) ...[
+                                      const SizedBox(height: 6),
+                                      _buildComparacionCongelada(
+                                        obra['id'] as String,
+                                        montoHoyConfigCongelada,
+                                        montoPactado,
+                                        obra['moneda'],
+                                      ),
+                                    ],
                                     const SizedBox(height: 8),
                                     Row(
                                       children: [
