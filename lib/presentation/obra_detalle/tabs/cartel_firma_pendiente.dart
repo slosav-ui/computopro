@@ -58,7 +58,7 @@ class _CartelFirmaPendienteState extends State<CartelFirmaPendiente> {
       builder: (ctx) {
         final controller = TextEditingController();
         return AlertDialog(
-          title: Text('Certificado Nº ${certificado.numero} — PDF firmado',
+          title: Text('Certificado Nº ${certificado.numeroFormateado} — PDF firmado',
               style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
           content: TextField(
             controller: controller,
@@ -139,7 +139,7 @@ class _CartelFirmaPendienteState extends State<CartelFirmaPendiente> {
                     children: [
                       Expanded(
                         child: Text(
-                          'Certificado Nº ${c.numero} — ${c.periodo}',
+                          'Certificado Nº ${c.numeroFormateado} — ${c.periodo}',
                           style: const TextStyle(fontSize: 12.5),
                         ),
                       ),

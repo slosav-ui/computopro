@@ -113,7 +113,7 @@ class _CargaAvanceRubrosScreenState extends State<CargaAvanceRubrosScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          'Certificado Nº ${widget.certificado.numero.toString().padLeft(3, '0')} — ${widget.certificado.periodo}',
+          'Certificado Nº ${widget.certificado.numeroFormateado} — ${widget.certificado.periodo}',
           style: const TextStyle(fontSize: 15),
         ),
         backgroundColor: const Color(0xFF1B365D),
@@ -205,7 +205,7 @@ class _CargaAvanceRubrosScreenState extends State<CargaAvanceRubrosScreen> {
       return Padding(
         padding: const EdgeInsets.only(bottom: 12),
         child: Text(
-          'Certificado Nº ${widget.certificado.numero} — en borrador',
+          'Certificado Nº ${widget.certificado.numeroFormateado} — en borrador',
           style: const TextStyle(fontSize: 12, color: Colors.black54, fontStyle: FontStyle.italic),
         ),
       );

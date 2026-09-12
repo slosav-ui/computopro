@@ -233,7 +233,7 @@ class _VistaPreviaCertificadoScreenState extends State<VistaPreviaCertificadoScr
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          'Certificado Nº ${widget.certificado.numero.toString().padLeft(3, '0')} — vista previa',
+          'Certificado Nº ${widget.certificado.numeroFormateado} — vista previa',
           style: const TextStyle(fontSize: 15),
         ),
         backgroundColor: const Color(0xFF1B365D),

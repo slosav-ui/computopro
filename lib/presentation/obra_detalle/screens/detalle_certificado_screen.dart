@@ -317,7 +317,7 @@ class _DetalleCertificadoScreenState extends State<DetalleCertificadoScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          'Certificado Nº ${_cert.numero.toString().padLeft(3, '0')}',
+          'Certificado Nº ${_cert.numeroFormateado}',
           style: const TextStyle(fontSize: 15),
         ),
         backgroundColor: const Color(0xFF1B365D),
