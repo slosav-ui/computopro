@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../data/models/modificacion_obra.dart';
 
@@ -12,6 +13,24 @@ import '../data/models/modificacion_obra.dart';
 /// aplicada y verificada la `0112`.
 class AdicionalesRepository {
   final SupabaseClient _client = Supabase.instance.client;
+
+  /// Mismo criterio que `InvitacionesRepository._conLog`: el error real (code/message/details/hint
+  /// de Postgres, o la excepción cruda) va a la consola antes de relanzarlo -- la pantalla que llama
+  /// sigue decidiendo qué mensaje ve el usuario.
+  Future<T> _conLog<T>(String etiqueta, Future<T> Function() accion) async {
+    try {
+      return await accion();
+    } on PostgrestException catch (e) {
+      debugPrint(
+        'AdicionalesRepository.$etiqueta falló (Postgrest) -- code=${e.code} message=${e.message} '
+        'details=${e.details} hint=${e.hint}',
+      );
+      rethrow;
+    } catch (e, st) {
+      debugPrint('AdicionalesRepository.$etiqueta falló: $e\n$st');
+      rethrow;
+    }
+  }
 
   /// Todos los adicionales de una obra (cualquier estado), más recientes primero -- mismo criterio
   /// que `getQuitasDemasiasDeObra`.
@@ -91,17 +110,19 @@ class AdicionalesRepository {
   Future<ModificacionObra> crearAdicionalPresupuestado({
     required String obraId,
     required String descripcion,
-  }) async {
-    final modificacionId = await _client.rpc('crear_adicional_presupuestado', params: {
-      'p_obra_id': obraId,
-      'p_descripcion': descripcion,
-    }) as String;
-    final row = await _client
-        .from('modificaciones_obra')
-        .select()
-        .eq('id', modificacionId)
-        .single();
-    return ModificacionObra.fromRow(row);
+  }) {
+    return _conLog('crearAdicionalPresupuestado', () async {
+      final modificacionId = await _client.rpc('crear_adicional_presupuestado', params: {
+        'p_obra_id': obraId,
+        'p_descripcion': descripcion,
+      }) as String;
+      final row = await _client
+          .from('modificaciones_obra')
+          .select()
+          .eq('id', modificacionId)
+          .single();
+      return ModificacionObra.fromRow(row);
+    });
   }
 
   // Sin "corregir mientras pendiente" a propósito -- verificado contra `modificaciones_obra_update`
