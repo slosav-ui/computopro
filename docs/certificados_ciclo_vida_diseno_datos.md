@@ -682,7 +682,84 @@ lo encuentra el que va a buscarlo, y una red de seguridad que hay que ir a busca
 El aviso aparece **aunque haya un borrador en curso** (que impediría crear el reemplazo ahora): el
 hueco existe igual, y el mensaje explica que primero hay que emitir o resolver ese borrador.
 
+> **Corregido a las pocas horas por la `0127` (§14): el reemplazo NO siempre nace con las partidas
+> copiadas.** Si hay certificados emitidos después del anulado, nace vacío — y eso vale también para
+> el camino automático, porque el supuesto roto venía de la 0056, no de la 0126.
+
 **Una duplicación deliberada, anotada**: la marca "Sin reemplazo" de la fila en `GestionObraTab` se
 calcula en Dart sobre la lista que la pantalla ya tiene en memoria, en vez de llamar a la función por
 cada anulado. Es **solo para pintar la marca** — la autoridad sigue siendo la función de la base, que
 revalida al crear. Si la regla cambia, cambiarla en el SQL y espejarla ahí.
+
+---
+
+## §14 — El reemplazo nace vacío si hay certificados posteriores (2026-09-13, `0127`)
+
+**De dónde salió**: Seba probó la red de seguridad de §13 sobre el caso real y vio lo que faltaba
+mirar. El certificado 2 estaba anulado, pero el 3 se había emitido, pagado y cerrado **después** de
+esa anulación. Si el 2 bis nace con las filas copiadas del 2, ese avance se puede contar dos veces:
+una en el 2 bis y otra en el 3, que se calculó sobre el acumulado ya sin el 2.
+
+### El supuesto roto viene de la 0056, no de la 0126
+
+`proponer_anulacion_certificado` solo exige que el certificado esté `emitido` o `leido`. **No exige
+que sea el último.** O sea que se puede anular el 2 con el 3 ya emitido, y el camino automático crea
+el reemplazo con las filas copiadas exactamente igual, con el mismo riesgo. **El diseño de la
+anulación asumió en silencio que el reemplazo nace pegado a su anulación, sin nada emitido en el
+medio.** La red de seguridad de la 0126 no introdujo nada: hizo visible ese supuesto, porque separó
+en el tiempo la anulación de la creación del reemplazo.
+
+Por eso el arreglo va en `crear_borrador_reemplazo`, el helper compartido, y vale para los dos
+caminos — que es justo para lo que la 0126 lo había extraído.
+
+### Por qué el candado del 100% no protege de esto
+
+`calcular_avance_acumulado_subitem` (0056) excluye borrador y anulado, así que al anular el 2 su
+avance dejó de contar. Después, `calcular_excesos_certificado` compara `intentado > 100 -
+acumulado_previo`, partida por partida:
+
+| Partida | 2 (anulado) | 3 (cerrado) | 2 bis intenta | acumulado previo | resultado |
+| --- | --- | --- | --- | --- | --- |
+| cerca del tope | 40% | 65% | 40% | 65% | **rechaza** (40 > 35) |
+| a mitad de camino | 20% | 30% | 20% | 30% | **pasa, y duplica 20 puntos** |
+
+Es un candado de **tope**, no un detector de doble conteo.
+
+### Lo que no se puede saber desde los datos
+
+Al cargar el 3, después de anular el 2, el usuario hizo una de dos cosas, y las dos dejan
+exactamente las mismas filas en la base:
+
+- **(a)** recertificó lo que medía el 2 más lo nuevo → el 2 bis duplicaría;
+- **(b)** cargó solo lo nuevo, contando con el 2 bis → el 2 bis es legítimo y el hueco es real.
+
+Decisión de Seba: **nace vacío**, con el aviso de cuántos certificados hay en el medio, y lo carga la
+persona que estuvo ahí, mirando el disponible que el candado ya muestra partida por partida.
+*"Adivinar sería peor que no hacer nada."* El aviso dice el número y no una advertencia genérica:
+*"se emitieron 2 certificados después de este, revisá qué falta certificar antes de cargar"* es
+accionable, *"tené cuidado"* no.
+
+"Posterior" se mide por `fecha_emision` y no por `numero`: un reemplazo lleva el número del anulado
+(2 bis es `numero` 2) y puede haberse emitido después del 3. El `audit_log` de las dos bocas deja
+dicho cuántos posteriores había y si el reemplazo nació vacío — dentro de seis meses eso explica por
+qué ese certificado no tiene las partidas del anulado, y evita que se lea como que alguien las borró.
+
+### Descartar un borrador — entró acá y no después
+
+Crear un borrador traba la creación de cualquier otro certificado (`certificados_un_borrador_por_obra`,
+0053) y hasta la 0127 no se podía sacar desde la app: `certificados` no tiene policy de DELETE. Con
+la red de seguridad eso dejó de ser teórico. Textual de Seba: *"si la red de seguridad puede crear un
+borrador que traba toda la certificación y solo se saca por SQL, la red genera un problema peor que
+el que resuelve. No puede quedar para después."*
+
+`descartar_borrador_certificado`, los tres roles técnicos, **solo** `estado = 'borrador'`. **La tabla
+sigue sin policy de DELETE**: el borrado pasa únicamente por esta función, que es SECURITY DEFINER —
+un certificado emitido, leído, pagado, cerrado o anulado no se puede borrar por ningún camino, y eso
+no cambia. Se borra de verdad y no se archiva (un borrador es trabajo en curso, no un documento); las
+filas de avance se van por el `on delete cascade` de la 0052, y el `audit_log` guarda qué había
+(número, versión, período, cuántas partidas con avance, y en qué punto del acuerdo estaba).
+
+Se permite descartar aunque el acuerdo esté `propuesto` o `conforme`: bloquearlo crearía justo la
+trampa que la función viene a sacar. Y si el borrador descartado era el reemplazo de un anulado, el
+hueco vuelve a existir y el aviso de §13 reaparece solo — es la propiedad que se busca, no un efecto
+colateral.
