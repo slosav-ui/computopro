@@ -48,6 +48,11 @@ class _DetalleCertificadoScreenState extends State<DetalleCertificadoScreen> {
   /// `falta_reemplazo_certificado`, la misma función que valida la creación, así que el botón no
   /// puede ofrecer algo que la base después rechace.
   bool _faltaReemplazo = false;
+
+  /// Cuántos certificados se emitieron después de este (0127). Decide si el reemplazo va a nacer
+  /// vacío, y el aviso lo dice con el número: "se emitieron 3 certificados después de este" es
+  /// accionable, "tené cuidado" no.
+  int _posteriores = 0;
   String _moneda = 'ARS';
   double _cotizacionHoy = 0;
 
@@ -103,10 +108,12 @@ class _DetalleCertificadoScreenState extends State<DetalleCertificadoScreen> {
       final fresco = await _certificadosRepository.getPorId(_cert.id);
       final falta = fresco.estado == EstadoCertificado.anulado &&
           await _certificadosRepository.faltaReemplazo(fresco.id);
+      final posteriores = falta ? await _certificadosRepository.contarPosteriores(fresco.id) : 0;
       if (!mounted) return false;
       setState(() {
         _cert = fresco;
         _faltaReemplazo = falta;
+        _posteriores = posteriores;
       });
       return fresco.estado != estadoAnterior;
     } catch (_) {
@@ -124,8 +131,11 @@ class _DetalleCertificadoScreenState extends State<DetalleCertificadoScreen> {
       if (!mounted) return;
       Navigator.pop(context, true);
       messenger.showSnackBar(SnackBar(
-        content: Text('Se creó el reemplazo del certificado N° ${_cert.numeroFormateado}, '
-            'en borrador, con las partidas del anulado.'),
+        content: Text(_posteriores == 0
+            ? 'Se creó el reemplazo del certificado N° ${_cert.numeroFormateado}, en borrador, con '
+                'las partidas del anulado.'
+            : 'Se creó el reemplazo del certificado N° ${_cert.numeroFormateado}, en borrador y sin '
+                'partidas cargadas.'),
       ));
     } on PostgrestException catch (e) {
       if (!mounted) return;
@@ -535,9 +545,14 @@ class _DetalleCertificadoScreenState extends State<DetalleCertificadoScreen> {
         border: Border.all(color: Colors.orange.shade200),
       ),
       child: Text(
-        'Este certificado no tiene reemplazo. Lo que medía no está certificado por ningún '
-        'certificado vigente. Al recrearlo nace un borrador con las partidas de este, para '
-        'corregirlo y volver a emitir.',
+        _posteriores == 0
+            ? 'Este certificado no tiene reemplazo. Lo que medía no está certificado por ningún '
+                'certificado vigente. Al recrearlo nace un borrador con las partidas de este, para '
+                'corregirlo y volver a emitir.'
+            : 'Este certificado no tiene reemplazo. Se ${_posteriores == 1 ? "emitió 1 certificado" : "emitieron $_posteriores certificados"} '
+                'después de este, así que el reemplazo nace VACÍO: revisá qué falta certificar antes '
+                'de cargarlo, porque esos certificados pueden haber cubierto parte de lo que este '
+                'medía.',
         style: TextStyle(fontSize: 12, color: Colors.orange.shade900),
       ),
     );

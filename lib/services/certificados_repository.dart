@@ -289,6 +289,22 @@ class CertificadosRepository {
     return data.toString();
   }
 
+  /// Cuántos certificados vigentes se emitieron DESPUÉS de este (0127). Si es > 0, el reemplazo de
+  /// un anulado nace vacío: no se puede saber si esos certificados ya recertificaron lo que medía el
+  /// anulado, y copiarlo lo contaría dos veces.
+  Future<int> contarPosteriores(String certificadoId) async {
+    final data = await _client
+        .rpc('contar_certificados_posteriores', params: {'p_certificado_id': certificadoId});
+    return (data as num?)?.toInt() ?? 0;
+  }
+
+  /// Descarta un borrador y sus filas de avance (0127). Solo borradores: la función rechaza
+  /// cualquier otro estado, y `certificados` sigue sin policy de DELETE -- este es el único camino.
+  Future<void> descartarBorrador(String certificadoId) async {
+    await _client
+        .rpc('descartar_borrador_certificado', params: {'p_certificado_id': certificadoId});
+  }
+
   Certificado _fromRow(Map<String, dynamic> row) {
     return Certificado(
       id: row['id'].toString(),

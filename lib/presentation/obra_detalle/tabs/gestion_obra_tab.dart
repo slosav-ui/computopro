@@ -364,6 +364,77 @@ class _GestionObraTabState extends State<GestionObraTab> {
     }
   }
 
+  /// Descarta un borrador entero, con sus filas de avance (0127). Es el único borrado de la app:
+  /// `certificados` no tiene policy de DELETE y la función solo acepta borradores.
+  ///
+  /// La confirmación es fuerte y dice QUÉ se pierde, con el número de partidas cargadas a la vista
+  /// -- un borrador con avance de tres semanas y uno recién creado se ven igual en la lista, y el
+  /// borrado no se deshace. El conteo se pide recién acá, al tocar: no vale cargarlo para toda la
+  /// lista por un botón que casi nunca se usa.
+  Future<void> _descartarBorrador(Certificado cert) async {
+    int partidas = 0;
+    try {
+      final avances = await _avanceRepository.getAvancesDeCertificado(cert.id);
+      partidas = avances.where((a) => a.porcentajePeriodo > 0).length;
+    } catch (_) {
+      // Si no se puede contar, se pregunta igual sin el número -- no se bloquea la acción por eso.
+    }
+    if (!mounted) return;
+
+    final confirmado = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(
+          'Descartar el borrador N° ${cert.numeroFormateado}',
+          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              partidas == 0
+                  ? 'Este borrador no tiene avance cargado. Se elimina y el período "${cert.periodo}" '
+                      'queda libre para volver a empezar.'
+                  : 'Este borrador tiene avance cargado en $partidas '
+                      '${partidas == 1 ? "partida" : "partidas"}. Se elimina junto con el borrador.',
+              style: const TextStyle(fontSize: 12.5),
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              'No se puede deshacer.',
+              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('Descartar', style: TextStyle(color: Colors.red.shade700)),
+          ),
+        ],
+      ),
+    );
+    if (confirmado != true) return;
+
+    try {
+      await _certificadosRepository.descartarBorrador(cert.id);
+      if (!mounted) return;
+      await _cargarCertificados();
+    } on PostgrestException catch (e) {
+      if (!mounted) return;
+      await _cargarCertificados();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No se pudo descartar el borrador.')),
+      );
+    }
+  }
+
   /// Propone anular un certificado emitido/leído — botón visible solo para profesional/constructor
   /// (0056: la dupla que arma el borrador, nunca el cliente). El motivo es obligatorio del lado del
   /// servidor; acá solo se evita el viaje si viene vacío.
@@ -933,6 +1004,26 @@ class _GestionObraTabState extends State<GestionObraTab> {
                 ),
               if (cert.anulacionEstado == 'propuesta')
                 _buildBloqueAnulacionPendiente(cert),
+              // Descartar un borrador: los tres roles técnicos, los mismos que lo crean y lo
+              // cargan (0127). Hasta esta migración un borrador creado por error trababa la
+              // certificación de la obra entera -- un solo borrador por obra, 0053 -- y solo se
+              // sacaba por SQL.
+              if (cert.estado == EstadoCertificado.borrador &&
+                  widget.userContext?.puedeCargarAvance == true)
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: () => _descartarBorrador(cert),
+                    style: TextButton.styleFrom(
+                      padding: EdgeInsets.zero,
+                      minimumSize: const Size(0, 0),
+                    ),
+                    child: Text(
+                      'Descartar borrador',
+                      style: TextStyle(fontSize: 12, color: Colors.red.shade700),
+                    ),
+                  ),
+                ),
               if (widget.userContext?.puedeGestionarAnulacionCertificado ==
                       true &&
                   (cert.estado == EstadoCertificado.emitido ||
