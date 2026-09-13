@@ -46,6 +46,15 @@ firmados son sumas/restas de esos valores históricos (nada se recalcula a hoy).
 una moneda distinta a la de la obra — eso es el Nivel 2 del relevamiento
 (`docs/adicionales_quitas_demasias_diagnostico.md` §15), pospuesto a propósito.
 
+**La documentación de la obra — tres circuitos** (los libros; el avance fotográfico con fecha y
+secuencia descargable; el archivo de documentación: remitos, facturas de corralón, presupuestos de
+subcontratos) — `docs/documentacion_obra_tres_circuitos.md`. Material que Seba tenía trabajado de la
+etapa con Gemini y no estaba en el repo: documentado el 2026-09-13, **sin diseño de datos**. Incluye
+la definición del **certificado externo** (registrar en la app uno emitido y firmado por fuera, que no
+es la firma física ni los subcontratos) y qué se apoya en lo que ya existe: Storage y `file_picker`
+sirven tal cual, los `*_adjuntos` de `certificados` son links pegados a mano y no archivos, y
+`libro_entradas.adjuntos` no es el lugar para fotos ni remitos.
+
 **Qué va en la pantalla principal y qué va en Resumen** — criterio cerrado por Seba el 2026-09-13,
 `docs/criterio_pantalla_principal_vs_resumen.md`. La portada (`ObrasListScreen`) es **panorámica y
 amable** (qué obras tenés, cómo van, qué te espera; es la primera llegada de cualquier usuario

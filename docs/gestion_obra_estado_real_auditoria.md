@@ -102,10 +102,10 @@ Todo esto tiene documento de diseño con decisiones cerradas y cero código.
 
 | Pieza | Evidencia de que no existe |
 | --- | --- |
-| **"Certificado externo"** | Sigue sin definición operativa, igual que en la auditoría anterior: solo el nombre, como bullet de "Segunda ola" en `docs/diagnostico_general_producto.md` §5. **Sigue bloqueado esperando que Seba diga qué es** — si es certificar a un subcontratista, es §2.5 con otro nombre |
-| **Fotos de obra** | Ninguna tabla es para esto; `pubspec.yaml` no tiene `image_picker` ni `camera` (sí `file_picker:23`). El lugar natural es `libro_entradas.adjuntos`, que no tiene ni repositorio |
+| **"Certificado externo"** | **DEFINIDO el 2026-09-13** (`docs/documentacion_obra_tres_circuitos.md` §4): registrar en la app un certificado emitido y firmado por fuera, para que la obra quede completa sin rehacerlo. No es la firma física (eso ya está construido: emitido acá, firmado en papel, vuelve escaneado) ni el registro de subcontratos. Sin diseño de datos |
+| **Fotos de obra** (avance fotográfico) | Alcance documentado el 2026-09-13 (`docs/documentacion_obra_tres_circuitos.md` §2: fotos con fecha, secuencia descargable, el video lo arma el profesional) pero **sin diseño de datos**: ninguna tabla es para esto. `file_picker:23` alcanza para subir una foto de la galería; sacarla en la app necesita `image_picker`/`camera`, que no están. **`libro_entradas.adjuntos` NO es el lugar** — ver §5 del doc nuevo |
 | **Audios** | Decidido el formato (audio + una línea de texto) pero **sin dependencia de grabación** en `pubspec.yaml` y sin bucket |
-| **Documentación administrativa tipada** (remitos, facturas de terceros) | Pieza 4 de la visión del libro, sin diseño de datos. No confundir con el importador de Excel/PDF |
+| **Archivo de documentación** (remitos, facturas de corralón, presupuestos de subcontratos) | Alcance documentado el 2026-09-13 (`docs/documentacion_obra_tres_circuitos.md` §3) y **sin diseño de datos**. Ojo con dos confusiones ya anotadas ahí: no es el importador de Excel/PDF (ese lee, esto guarda) y no son los `*_adjuntos` de `certificados`, que son links pegados a mano, no archivos |
 | **Gantt / curva de inversión** | Una línea en `docs/especificacion_funcional_completa.md:101` ("Calendario/Gantt de avance físico y financiero") y nada más en todo el repo |
 | **Lluvia / fuerza mayor / partes diarios de obra** | 0 resultados en código y en migraciones |
 
@@ -236,9 +236,15 @@ del punto 6* (el libro es donde cuelgan). Gantt y curva de inversión dependen d
 calendario de obra, que no existe ni como idea — es la única pieza de toda la lista que necesita
 diseño de negocio desde cero.
 
-**Sin ubicar, a propósito: "certificado externo"** (§4). No entra en ninguna posición hasta que se
-defina qué es; si termina siendo certificar a un subcontratista, se resuelve dentro del punto 8 y
-desaparece como pieza.
+**10 · Certificado externo** (§4). Ya no está sin ubicar: quedó definido el 2026-09-13
+(`docs/documentacion_obra_tres_circuitos.md` §4) y **no es** ni la firma física ni los subcontratos.
+*Depende del punto 7* — un certificado que viene de afuera trae un monto y probablemente no traiga el
+desglose por partida, que es la misma forma de problema que el avance global; conviene resolver los dos
+con el mismo criterio en vez de inventar dos caminos.
+
+**Los tres circuitos de documentación de la obra** (libros, avance fotográfico, archivo) están
+documentados sin diseño de datos en `docs/documentacion_obra_tres_circuitos.md`. En esta lista, los
+libros son el punto 6 y los otros dos el punto 9.
 
 ---
 

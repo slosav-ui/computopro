@@ -227,7 +227,7 @@ De `docs/relevamiento_sincronizacion_config_precios.md`. Todos del mismo patrón
 
 **Bloqueantes o casi:** selector de zona UOCRA; conectar el costo laboral a la vista consolidada con el tercer origen "calculado"; selector de hormigón elaborado o in situ; actualización de cotización BNA.
 
-**Segunda ola:** dos modelos de certificación, A por avance medido y B por hitos; modo certificado externo; registro de subcontratos; papelera y archivado; edición de metadata de obra.
+**Segunda ola:** dos modelos de certificación, A por avance medido y B por hitos; modo certificado externo (**definido el 2026-09-13**: registrar un certificado emitido y firmado por fuera — `docs/documentacion_obra_tres_circuitos.md` §4); registro de subcontratos; papelera y archivado; edición de metadata de obra.
 
 **Y el motor de precio de referencia por m² y zona**, que no es solo una función: es el insumo del Índice de Costos Patagonia, el principal canal de adquisición de la etapa 1. Vale más de lo que su posición sugiere.
 
