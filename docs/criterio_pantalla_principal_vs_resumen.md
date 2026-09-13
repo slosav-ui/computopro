@@ -109,15 +109,31 @@ en `docs/diagnostico_general_producto.md`, con la referencia a que **Sismat prec
 vuelve."** Es decir: prioridad por encima del trabajo estético de la portada, no un detalle de
 onboarding para el final.
 
-### 5.2 Que se note cómo va cada obra
+### 5.2 Que se note cómo va cada obra — **HECHO el 2026-09-13**
 
-Hoy la tarjeta muestra montos pero no dice si la obra está avanzada o parada. **Una barra de avance
-lo resolvería de un vistazo** — encaja exactamente en el "cómo van" del criterio de arriba, que es
-la única de las tres preguntas de la portada que hoy no está contestada (las otras dos, "qué obras
-tenés" y "qué te espera", sí).
+Estaba anotado así: *"hoy la tarjeta muestra montos pero no dice si la obra está avanzada o parada;
+una barra de avance lo resolvería de un vistazo"*. Construido, y con una vuelta más de la que decía
+esta nota: **no es una barra por card, es una barra por monto cerrado** — el pactado con el avance del
+contrato y cada adicional aprobado con el suyo, porque una obra con adicionales en ejecución no se
+resume en el avance del contrato.
 
-Cuando se haga: es un dato de avance, no un desglose — una barra y nada más, con el detalle por
-rubro en Resumen.
+Se cumplió el criterio de la portada tal cual: **una barra y el porcentaje, sin desglose**. El detalle
+por rubro vive en Gestión de Obra (`PanelAvanceObra`) y el de cada adicional en Resumen. Y el rótulo
+dice **"Avance certificado"**, no "avance de obra": el número suma solo certificados que dejaron de
+ser borrador.
+
+Con esto **las tres preguntas de la portada están contestadas**: qué obras tenés, cómo van, qué te
+espera.
+
+### 5.3 Los m² como dato de identificación (2026-09-13)
+
+Los m² estaban como chip grande abajo, entre los montos. Seba los movió al renglón de identificación,
+junto al propietario y la ubicación: **"es un dato de identificación, como el nombre, no un número más
+entre los montos"**. Pierden la presencia de los 15px que tenían como chip — se quedan un peso arriba
+del resto del renglón, no dos.
+
+Criterio que deja para la próxima vez: **el bloque de montos es solo para plata.** Lo que identifica a
+la obra va arriba; lo que es condición del contrato (el chip de CAC) puede quedar con los montos.
 
 ---
 

@@ -26,7 +26,13 @@ import '../../services/obra_members_repository.dart';
 /// (la conversión vive en un solo lugar, `_conMontosCalculados`, igual que el resto de los montos
 /// de esta pantalla). Un renglón de la card por cada uno de estos -- ver §10.2 de
 /// docs/adicionales_quitas_demasias_diagnostico.md.
-typedef _AdicionalAprobadoCard = ({String id, String descripcion, double montoArs, double montoUsd});
+typedef _AdicionalAprobadoCard = ({
+  String id,
+  String descripcion,
+  double montoArs,
+  double montoUsd,
+  double avancePct,
+});
 
 class ObrasListScreen extends StatefulWidget {
   const ObrasListScreen({super.key});
@@ -361,7 +367,7 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
     }
   }
 
-  Future<Map<String, List<({String id, String descripcion, double montoArs, double? cotizacionAlAprobar})>>>
+  Future<Map<String, List<({String id, String descripcion, double montoArs, double? cotizacionAlAprobar, double avancePct})>>>
       _adicionalesAprobadosSeguro(
     List<String> obraIds,
   ) async {
@@ -488,7 +494,7 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
     double montoVivoArs,
     double? montoPactadoArs,
     double? montoHoyConfigCongeladaArs, [
-    List<({String id, String descripcion, double montoArs, double? cotizacionAlAprobar})>? adicionalesAprobados,
+    List<({String id, String descripcion, double montoArs, double? cotizacionAlAprobar, double avancePct})>? adicionalesAprobados,
     double? avancePct,
   ]) {
     // 0122: la cotización del día en que se congeló el presupuesto. El pactado se convierte con
@@ -518,6 +524,7 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
             descripcion: a.descripcion,
             montoArs: a.montoArs,
             montoUsd: _convertirMonto(a.montoArs, 'ARS', 'USD', cotizacion: a.cotizacionAlAprobar),
+            avancePct: a.avancePct,
           ),
       ],
     };
@@ -532,45 +539,76 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
     return moneda == 'USD' ? 'USD $formateado' : '\$ $formateado';
   }
 
-  /// La barra de avance de la card: rótulo + porcentaje en una línea y la barra abajo. Deliberadamente
-  /// chica y sin detalle -- el desglose por rubro vive en Gestión de Obra (`PanelAvanceObra`), por el
-  /// criterio de la portada: acá va el dato, no el análisis.
+  /// Un dato de identificación de la card: ícono + texto, en el renglón de arriba. `destacado` es
+  /// para los m², que son identidad pero también la referencia con la que se comparan obras entre sí
+  /// -- un peso más que el resto, sin volver a ser el chip que eran.
   ///
-  /// `LinearProgressIndicator` con `value` explícito (nunca indeterminado) y alto fijo: el mismo
-  /// aspecto en las dos pantallas sin que el tema del Material lo cambie.
-  Widget _buildBarraAvance(double pct) {
-    final fraccion = (pct / 100).clamp(0.0, 1.0);
-    final entero = pct == pct.roundToDouble();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+  /// Sin `Expanded` ni `Flexible` acá: cada dato pide su ancho natural y el `Wrap` que los contiene
+  /// baja de línea cuando no entran. Eso es lo que hace que no desborde nunca, y por qué el texto no
+  /// necesita `ellipsis`: si es largo, ocupa su renglón completo.
+  Widget _buildDatoIdentidad(IconData icono, String texto, {bool destacado = false}) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Row(
-          children: [
-            const Expanded(
-              child: Text(
-                'Avance certificado',
-                style: TextStyle(fontSize: 9, color: Colors.black45, fontWeight: FontWeight.bold),
-              ),
-            ),
-            Text(
-              '${entero ? pct.toStringAsFixed(0) : pct.toStringAsFixed(1)}%',
-              style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFF1B365D)),
-            ),
-          ],
-        ),
-        const SizedBox(height: 3),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(6),
-          child: LinearProgressIndicator(
-            value: fraccion,
-            minHeight: 6,
-            backgroundColor: Colors.black12,
-            valueColor: AlwaysStoppedAnimation<Color>(
-              fraccion >= 1 ? Colors.green.shade600 : const Color(0xFF1B365D),
-            ),
+        Icon(icono, size: 13, color: Colors.black45),
+        const SizedBox(width: 4),
+        Text(
+          texto,
+          style: TextStyle(
+            fontSize: destacado ? 12 : 11,
+            fontWeight: destacado ? FontWeight.bold : FontWeight.normal,
+            color: destacado ? Colors.black87 : Colors.black54,
           ),
         ),
       ],
+    );
+  }
+
+  /// La barra de avance de un monto de la card: va **pegada abajo del renglón del monto al que
+  /// pertenece** -- el pactado tiene la del contrato y cada adicional aprobado la suya (pedido de
+  /// Seba, 2026-09-13: *"hoy ve cómo va el contrato pero no la obra completa"*). Un profesional
+  /// tiene que ver de un vistazo cómo corren todas sus obras, y una obra con adicionales en
+  /// ejecución no se resume en el avance del contrato.
+  ///
+  /// Deliberadamente chica y sin detalle: el porcentaje a la derecha, alineado con la cifra de
+  /// arriba, y nada más. El desglose por rubro vive en Gestión de Obra (`PanelAvanceObra`) y el del
+  /// adicional en Resumen, por el criterio de la portada -- acá va el dato, no el análisis.
+  ///
+  /// `LinearProgressIndicator` con `value` explícito (nunca indeterminado) y alto fijo: el mismo
+  /// aspecto en las dos pantallas sin que el tema del Material lo cambie. El clamp es defensivo: el
+  /// acumulado no debería pasar de 100 (lo impide el candado de excesos de la 0054, y el de
+  /// `certificar_avance_adicional` para los adicionales), pero una barra pintada fuera de su caja
+  /// sería un bug visual por un dato de más.
+  ///
+  /// `sangria`: el hueco del candado, para que la barra arranque alineada con el rótulo del monto y
+  /// no con el borde de la card.
+  Widget _buildBarraAvance(double pct, {double sangria = 13}) {
+    final fraccion = (pct / 100).clamp(0.0, 1.0);
+    final entero = pct == pct.roundToDouble();
+    return Padding(
+      padding: EdgeInsets.only(left: sangria, top: 3),
+      child: Row(
+        children: [
+          Expanded(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: LinearProgressIndicator(
+                value: fraccion,
+                minHeight: 5,
+                backgroundColor: Colors.black12,
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  fraccion >= 1 ? Colors.green.shade600 : const Color(0xFF1B365D),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            '${entero ? pct.toStringAsFixed(0) : pct.toStringAsFixed(1)}%',
+            style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.black54),
+          ),
+        ],
+      ),
     );
   }
 
@@ -2492,31 +2530,29 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                                 ),
                                 const SizedBox(height: 6),
 
-                                // Propietario / Ubicación
-                                Row(
+                                // Identificación de la obra: propietario, ubicación y **m²**.
+                                //
+                                // Los m² entraron acá el 2026-09-13 (pedido de Seba): antes eran un
+                                // chip grande abajo, entre los montos, y son un dato de identidad
+                                // como el nombre -- "no un número más entre los montos". Pierden la
+                                // presencia de los 15px que tenían como chip, a cambio de leerse
+                                // junto con lo que identifica la obra.
+                                //
+                                // `Wrap` y no `Row`: con tres datos de ancho variable, un `Row` no
+                                // baja de línea y desborda con fuente grande o pantalla angosta --
+                                // la misma lección que ya dejó la barra de acciones de Gestión de
+                                // Obra y el chip de m² cuando compartía renglón con el de CAC.
+                                Wrap(
+                                  spacing: 10,
+                                  runSpacing: 2,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
                                   children: [
-                                    const Icon(Icons.person_outline, size: 13, color: Colors.black45),
-                                    const SizedBox(width: 4),
-                                    // Flexible (no Expanded): si el nombre entra entero, lo
-                                    // muestra completo; si no hay lugar, cede en vez de
-                                    // reclamar su ancho natural sin límite (eso era lo que
-                                    // dejaba a ubicación sin espacio en pantallas angostas).
-                                    Flexible(
-                                      child: Text(
-                                        obra['propietario'],
-                                        style: const TextStyle(fontSize: 11, color: Colors.black54),
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 10),
-                                    const Icon(Icons.location_on_outlined, size: 13, color: Colors.black45),
-                                    const SizedBox(width: 4),
-                                    Expanded(
-                                      child: Text(
-                                        obra['ubicacion'],
-                                        style: const TextStyle(fontSize: 11, color: Colors.black54),
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
+                                    _buildDatoIdentidad(Icons.person_outline, obra['propietario']),
+                                    _buildDatoIdentidad(Icons.location_on_outlined, obra['ubicacion']),
+                                    _buildDatoIdentidad(
+                                      Icons.square_foot_outlined,
+                                      '${obra['superficieM2']} m²',
+                                      destacado: true,
                                     ),
                                   ],
                                 ),
@@ -2546,12 +2582,23 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                                     // resumen.md).
                                     if (mostrarPactado && adicionales.isNotEmpty) ...[
                                       _buildMontoCerrado('Presupuesto Pactado', monto, obra['moneda']),
+                                      // Cada monto con su propio avance debajo: el del contrato acá, y
+                                      // el de cada adicional pegado al suyo. Así la card muestra cómo
+                                      // corre la obra completa, no solo el contrato.
+                                      if (obra['avancePct'] != null)
+                                        _buildBarraAvance(obra['avancePct'] as double),
                                       for (final a in adicionalesVisibles) ...[
                                         const SizedBox(height: 4),
                                         _buildMontoCerrado(_rotuloAdicional(a), montoAdicional(a), obra['moneda']),
+                                        // Seguimiento propio del adicional (0120). Siempre, incluso en
+                                        // 0: un aprobado sin certificar es información, no un hueco.
+                                        _buildBarraAvance(a.avancePct),
                                       ],
                                       // El resto, en un solo renglón: la portada no crece sin límite,
                                       // pero el total sigue cerrando exacto y nada queda sin sumar.
+                                      // El renglón agrupado NO lleva barra: son varios adicionales con
+                                      // avances distintos y una barra promedio sería un número que no
+                                      // le corresponde a ninguno. El detalle de esos está en Resumen.
                                       if (adicionalesAgrupados.isNotEmpty) ...[
                                         const SizedBox(height: 4),
                                         _buildMontoCerrado(
@@ -2598,12 +2645,17 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                                         _formatearMonto(monto, obra['moneda']),
                                         style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Color(0xFF1B365D)),
                                       ),
+                                      // Sin candado en este renglón, así que la barra tampoco lleva
+                                      // sangría: arranca alineada con el número.
+                                      if (obra['avancePct'] != null)
+                                        _buildBarraAvance(obra['avancePct'] as double, sangria: 0),
                                       // Obra sin congelar: los adicionales aprobados se listan igual,
                                       // uno por uno y con su candado (están firmados), pero SIN total
                                       // -- no se suman a un estimado que todavía se mueve.
                                       for (final a in adicionalesVisibles) ...[
                                         const SizedBox(height: 4),
                                         _buildMontoCerrado(_rotuloAdicional(a), montoAdicional(a), obra['moneda']),
+                                        _buildBarraAvance(a.avancePct),
                                       ],
                                       if (adicionalesAgrupados.isNotEmpty) ...[
                                         const SizedBox(height: 4),
@@ -2630,49 +2682,26 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                                         obra['moneda'],
                                       ),
                                     ],
-                                    // "Cómo va" la obra, la única de las tres preguntas de la portada
-                                    // que no estaba contestada (docs/criterio_pantalla_principal_vs_
-                                    // resumen.md §5.2). Es el avance CERTIFICADO, no el real: no
-                                    // incluye el borrador en curso, así que el rótulo lo dice.
-                                    // Solo en obras congeladas -- ver _avanceSeguro.
-                                    if (obra['avancePct'] != null) ...[
-                                      const SizedBox(height: 10),
-                                      _buildBarraAvance(obra['avancePct'] as double),
-                                    ],
-                                    const SizedBox(height: 8),
-                                    Row(
-                                      children: [
-                                        Container(
-                                          // Dato de referencia para comparar obras entre sí —
-                                          // más presencia que antes (11px), sin competir con el
-                                          // monto (17px).
-                                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                    // Los m² se fueron al renglón de identificación de arriba; acá
+                                    // queda solo el CAC, que no es identidad de la obra sino una
+                                    // condición del contrato, y por eso vive con los montos.
+                                    if (tieneCac) ...[
+                                      const SizedBox(height: 8),
+                                      Align(
+                                        alignment: Alignment.centerLeft,
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                                           decoration: BoxDecoration(
-                                            color: Colors.grey[100],
+                                            color: const Color(0xFF1B365D),
                                             borderRadius: BorderRadius.circular(6),
-                                            border: Border.all(color: Colors.black12),
                                           ),
-                                          child: Text(
-                                            '${obra['superficieM2']} m²',
-                                            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.black87),
+                                          child: const Text(
+                                            'CAC',
+                                            style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white),
                                           ),
                                         ),
-                                        if (tieneCac) ...[
-                                          const SizedBox(width: 6),
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                                            decoration: BoxDecoration(
-                                              color: const Color(0xFF1B365D),
-                                              borderRadius: BorderRadius.circular(6),
-                                            ),
-                                            child: const Text(
-                                              'CAC',
-                                              style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white),
-                                            ),
-                                          ),
-                                        ],
-                                      ],
-                                    ),
+                                      ),
+                                    ],
                                   ],
                                 ),
 

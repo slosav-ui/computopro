@@ -58,6 +58,12 @@ la maqueta de la demo, con 85.000.000 hardcodeado: `presupuestos_screen.dart:_bu
   congeladas**: en una obra en Cotización el avance es siempre 0 y una barra vacía en cada tarjeta es
   ruido. Contesta el "cómo van" de `docs/criterio_pantalla_principal_vs_resumen.md` §5.2, que era la
   única de las tres preguntas de la portada sin respuesta.
+- **Una barra por monto, no una por card** (corrección de Seba el mismo día): el pactado lleva la del
+  contrato y **cada adicional aprobado la suya**, pegada abajo de su renglón, porque una obra con
+  adicionales en ejecución no se resume en el avance del contrato — *"hoy ve cómo va el contrato pero
+  no la obra completa"*. El dato sale de `modificaciones_obra.porcentaje_avance` (`0120`), que ya
+  existía y tampoco se mostraba en ningún lado. El renglón agrupado ("Otros N adicionales aprobados")
+  **no** lleva barra: son varios avances distintos y un promedio no le corresponde a ninguno.
 - **Se llama "Avance certificado", no "avance de obra"**, en las dos pantallas: el número suma solo
   certificados que dejaron de ser borrador, así que decir "de obra" afirmaría algo que el número no
   sabe (criterio de Seba). El panel aclara además que no incluye el borrador en curso.

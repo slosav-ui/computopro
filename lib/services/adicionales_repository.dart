@@ -141,21 +141,25 @@ class AdicionalesRepository {
   ///
   /// `cotizacionAlAprobar` (0122): el dólar del día en que se aprobó, para mostrar el monto en
   /// dólares fijo y no a la cotización de hoy. `null` para los aprobados antes de esa migración.
-  Future<Map<String, List<({String id, String descripcion, double montoArs, double? cotizacionAlAprobar})>>>
+  ///
+  /// `avancePct` (0120): cuánto de ese adicional se certificó, para la barra de la card. Un adicional
+  /// aprobado sin avance cargado viene en 0 -- la columna es `not null default 0`, así que acá no hay
+  /// "sin dato": 0 significa aprobado y sin ejecutar.
+  Future<Map<String, List<({String id, String descripcion, double montoArs, double? cotizacionAlAprobar, double avancePct})>>>
       getAprobadosPorObra(
     List<String> obraIds,
   ) async {
     if (obraIds.isEmpty) return {};
     final rows = await _client
         .from('modificaciones_obra')
-        .select('id, obra_id, descripcion, monto_total, cotizacion_dolar_al_aprobar')
+        .select('id, obra_id, descripcion, monto_total, cotizacion_dolar_al_aprobar, porcentaje_avance')
         .eq('tipo', 'adicional')
         .eq('estado', 'aprobado')
         .inFilter('obra_id', obraIds)
         .order('fecha_resolucion', ascending: true, nullsFirst: false)
         .order('fecha_solicitud', ascending: true);
     final porObra =
-        <String, List<({String id, String descripcion, double montoArs, double? cotizacionAlAprobar})>>{};
+        <String, List<({String id, String descripcion, double montoArs, double? cotizacionAlAprobar, double avancePct})>>{};
     for (final row in rows as List) {
       final obraId = row['obra_id'].toString();
       porObra.putIfAbsent(obraId, () => []).add((
@@ -163,6 +167,7 @@ class AdicionalesRepository {
         descripcion: (row['descripcion'] ?? '').toString().trim(),
         montoArs: _aDouble(row['monto_total']),
         cotizacionAlAprobar: (row['cotizacion_dolar_al_aprobar'] as num?)?.toDouble(),
+        avancePct: _aDouble(row['porcentaje_avance']),
       ));
     }
     return porObra;
