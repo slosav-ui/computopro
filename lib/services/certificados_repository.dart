@@ -266,6 +266,29 @@ class CertificadosRepository {
     return data?.toString();
   }
 
+  // ===========================================================================
+  // Red de seguridad del reemplazo (0126)
+  // ===========================================================================
+
+  /// ¿Este certificado está anulado y quedó sin reemplazo? La regla ("es la versión más alta de su
+  /// número") vive en `falta_reemplazo_certificado`, que es la misma que valida la creación.
+  Future<bool> faltaReemplazo(String certificadoId) async {
+    final data = await _client
+        .rpc('falta_reemplazo_certificado', params: {'p_certificado_id': certificadoId});
+    return data == true;
+  }
+
+  /// Recrea el borrador de reemplazo de un certificado anulado que quedó sin él, con las mismas
+  /// partidas copiadas que hace el camino automático. Devuelve el id del borrador nuevo.
+  ///
+  /// Falla con el mensaje de la base si ya hay un borrador en curso en la obra (no se puede tener
+  /// dos), o si ese certificado no estaba anulado o ya tenía reemplazo.
+  Future<String> crearReemplazo(String certificadoId) async {
+    final data = await _client
+        .rpc('crear_reemplazo_certificado_anulado', params: {'p_certificado_id': certificadoId});
+    return data.toString();
+  }
+
   Certificado _fromRow(Map<String, dynamic> row) {
     return Certificado(
       id: row['id'].toString(),

@@ -1005,6 +1005,17 @@ class _GestionObraTabState extends State<GestionObraTab> {
     );
   }
 
+  /// ¿Este anulado quedó sin reemplazo? Misma regla que `falta_reemplazo_certificado` (0126) -- "es
+  /// la versión más alta de su número" -- pero calculada sobre la lista que esta pantalla ya tiene
+  /// en memoria, para no disparar una consulta por cada anulado.
+  ///
+  /// Es SOLO para pintar la marca: la autoridad sigue siendo la función de la base, que revalida al
+  /// crear el reemplazo. Si alguna vez cambia la regla, cambiarla ahí y espejarla acá.
+  bool _sinReemplazo(Certificado cert) {
+    if (cert.estado != EstadoCertificado.anulado) return false;
+    return !_certificados.any((r) => r.numero == cert.numero && r.version > cert.version);
+  }
+
   Widget _buildFilaAnulado(Certificado cert) {
     return InkWell(
       onTap: () => _abrirDetalle(cert),
@@ -1041,6 +1052,21 @@ class _GestionObraTabState extends State<GestionObraTab> {
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  // 0126: un anulado sin su reemplazo es una obra con un hueco. Se marca acá para
+                  // que se vea al abrir la sección; la acción está en el detalle, que es adonde
+                  // lleva esta misma fila.
+                  if (_sinReemplazo(cert))
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text(
+                        'Sin reemplazo — tocá para recrearlo',
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          color: Colors.orange.shade900,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                 ],

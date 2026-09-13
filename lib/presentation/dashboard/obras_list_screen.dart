@@ -414,6 +414,9 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
         case TipoPendiente.certificadoPagado:
         case TipoPendiente.anulacion:
         case TipoPendiente.firmaFisica:
+        // El anulado sin reemplazo abre su propio detalle: es donde se ve qué certificado es, por
+        // qué se anuló, y dónde está el botón para recrear el reemplazo (0126).
+        case TipoPendiente.certificadoSinReemplazo:
           // Estos tipos siempre traen el certificado en entidad_id (0117) -- el único que puede
           // venir sin entidad es certificacionPeriodo, que sale por la rama de abajo.
           final certificado = await _certificadosRepository.getPorId(p.entidadId!);

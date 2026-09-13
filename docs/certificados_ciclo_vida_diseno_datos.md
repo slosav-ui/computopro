@@ -638,3 +638,51 @@ entera — tappable al mismo detalle de siempre.
 
 Pendiente: Seba vuelve a probar el circuito completo (los dos usuarios) para verificar las dos
 cosas juntas antes de commitear.
+
+
+---
+
+## §13 — Red de seguridad: un anulado que quedó sin reemplazo (2026-09-13, `0126`)
+
+**De dónde salió**: Seba encontró en una obra real un certificado anulado sin su `bis`. El
+diagnóstico cerró en que **no había bug** — el reemplazo se había creado bien y se borró después a
+mano, limpiando borradores para probar otra cosa. Lo que sí quedó a la vista es un agujero de
+producto: **si un reemplazo se pierde, la app no tiene forma de recrearlo.** El único camino que
+genera un `bis` es `resolver_anulacion_certificado`, y esa anulación ya está resuelta.
+
+**Por qué no puede pasar solo, y por qué igual va la red.** Bajo uso normal de la app la condición
+no se produce: la creación del reemplazo es atómica (el `raise` dentro del bloque `exception`
+propaga y revierte el `update` que anuló), `certificados` no tiene policy de DELETE, y un borrador no
+se puede anular. Es una **red de reparación**, no el parche de un bug vivo. De ahí sale la decisión
+de que **el aviso no sea descartable**: si aparece, algo falta de verdad, y poder taparlo sin
+resolverlo sería peor que no avisar.
+
+**La detección** (`falta_reemplazo_certificado`): anulado **y** sin ninguna versión mayor de su mismo
+número. "La versión más alta de su número" y no "no existe la `version + 1`", a propósito: en una
+cadena `1 v1 anulado → 1 v2 anulado → 1 v3`, el hueco siempre está arriba; con la otra formulación el
+`1 v1` daría falso positivo para siempre.
+
+**Quién puede recrearlo**: los tres roles técnicos (admin_maestro / profesional / constructor), que
+es lo que ya exige `certificados_insert` para crear un borrador. Decisión de Seba: **recrear el
+reemplazo es crear un borrador, no un acto formal** — no emite, no compromete plata, no cambia ningún
+monto. Los actos formales siguen pidiendo lo suyo después (la conformidad de §2.1 del diagnóstico del
+acuerdo, y la autoridad de emisión de §11 de `etapa3_roles_permisos_diseno_datos.md`). Tampoco se
+trae la regla de "nunca la misma persona en los dos lados": esa protege la *decisión* de anular, que
+ya fue tomada — acá no se decide nada nuevo, se restituye una fila que debería existir.
+
+**El helper compartido**: las ~15 líneas que crean el borrador y copian las partidas (con el filtro
+de la 0111) salieron de adentro de `resolver_anulacion_certificado` a `crear_borrador_reemplazo`, que
+usan los dos caminos. Motivo textual de Seba: *"si se duplican las quince líneas, el día que cambie
+una, la otra queda vieja. Ya nos pasó varias veces"*. Ese helper **no** tiene `execute` para
+`authenticated`: se llega por las dos funciones que chequean autoridad.
+
+**Dónde se ve**: en `mis_pendientes()` (rama `certificado_sin_reemplazo`) **y** en la fila del anulado
+en Gestión de Obra. Las dos, porque los anulados viven en una sección colapsada por defecto: ahí solo
+lo encuentra el que va a buscarlo, y una red de seguridad que hay que ir a buscar no sirve de nada.
+El aviso aparece **aunque haya un borrador en curso** (que impediría crear el reemplazo ahora): el
+hueco existe igual, y el mensaje explica que primero hay que emitir o resolver ese borrador.
+
+**Una duplicación deliberada, anotada**: la marca "Sin reemplazo" de la fila en `GestionObraTab` se
+calcula en Dart sobre la lista que la pantalla ya tiene en memoria, en vez de llamar a la función por
+cada anulado. Es **solo para pintar la marca** — la autoridad sigue siendo la función de la base, que
+revalida al crear. Si la regla cambia, cambiarla en el SQL y espejarla ahí.

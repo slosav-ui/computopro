@@ -43,6 +43,11 @@ class _DetalleCertificadoScreenState extends State<DetalleCertificadoScreen> {
 
   late Certificado _cert;
   bool _actualizando = false;
+
+  /// Solo tiene sentido en un certificado anulado: ¿quedó sin reemplazo? (0126). Sale de
+  /// `falta_reemplazo_certificado`, la misma función que valida la creación, así que el botón no
+  /// puede ofrecer algo que la base después rechace.
+  bool _faltaReemplazo = false;
   String _moneda = 'ARS';
   double _cotizacionHoy = 0;
 
@@ -96,11 +101,45 @@ class _DetalleCertificadoScreenState extends State<DetalleCertificadoScreen> {
     final estadoAnterior = _cert.estado;
     try {
       final fresco = await _certificadosRepository.getPorId(_cert.id);
+      final falta = fresco.estado == EstadoCertificado.anulado &&
+          await _certificadosRepository.faltaReemplazo(fresco.id);
       if (!mounted) return false;
-      setState(() => _cert = fresco);
+      setState(() {
+        _cert = fresco;
+        _faltaReemplazo = falta;
+      });
       return fresco.estado != estadoAnterior;
     } catch (_) {
       return false;
+    }
+  }
+
+  /// Recrea el reemplazo que falta. Al volver, la pantalla se cierra devolviendo `true`: el
+  /// historial recarga y el borrador nuevo aparece ahí, que es donde se sigue trabajando.
+  Future<void> _crearReemplazo() async {
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _actualizando = true);
+    try {
+      await _certificadosRepository.crearReemplazo(_cert.id);
+      if (!mounted) return;
+      Navigator.pop(context, true);
+      messenger.showSnackBar(SnackBar(
+        content: Text('Se creó el reemplazo del certificado N° ${_cert.numeroFormateado}, '
+            'en borrador, con las partidas del anulado.'),
+      ));
+    } on PostgrestException catch (e) {
+      if (!mounted) return;
+      setState(() => _actualizando = false);
+      // El mensaje de la base ya explica el caso frecuente: "ya hay un borrador en curso...".
+      await _recargar();
+      if (!mounted) return;
+      messenger.showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _actualizando = false);
+      messenger.showSnackBar(
+        const SnackBar(content: Text('No se pudo crear el reemplazo del certificado.')),
+      );
     }
   }
 
@@ -391,6 +430,7 @@ class _DetalleCertificadoScreenState extends State<DetalleCertificadoScreen> {
           if (_cert.estado == EstadoCertificado.pagado || _cert.estado == EstadoCertificado.impactadoCerrado)
             _buildDatoPago(),
           if (_cert.estado == EstadoCertificado.impactadoCerrado) _buildDatoImpacto(),
+          if (_faltaReemplazo) _buildAvisoSinReemplazo(),
           const SizedBox(height: 24),
           _buildAcciones(),
         ],
@@ -482,6 +522,27 @@ class _DetalleCertificadoScreenState extends State<DetalleCertificadoScreen> {
     );
   }
 
+  /// Un anulado siempre debería tener su reemplazo: nace solo al aprobarse la anulación. Si no está,
+  /// lo que este certificado media quedó sin certificar por ningún documento vigente, y eso hay que
+  /// decirlo -- sin el cartel, el botón de abajo no se entiende.
+  Widget _buildAvisoSinReemplazo() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF4E5),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: Colors.orange.shade200),
+      ),
+      child: Text(
+        'Este certificado no tiene reemplazo. Lo que medía no está certificado por ningún '
+        'certificado vigente. Al recrearlo nace un borrador con las partidas de este, para '
+        'corregirlo y volver a emitir.',
+        style: TextStyle(fontSize: 12, color: Colors.orange.shade900),
+      ),
+    );
+  }
+
   Widget _buildDatoImpacto() {
     if (_cert.facturaFinalAdjuntos.isEmpty) return const SizedBox.shrink();
     return Padding(
@@ -499,6 +560,17 @@ class _DetalleCertificadoScreenState extends State<DetalleCertificadoScreen> {
         onPressed: _actualizando ? null : _marcarPagado,
         style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1B365D), foregroundColor: Colors.white),
         child: const Text('Marcar como pagado'),
+      ));
+    }
+
+    // Red de seguridad (0126): un anulado sin reemplazo. Los tres roles técnicos, que es la misma
+    // autoridad que ya crea un borrador -- recrear el reemplazo es crear un borrador, no un acto
+    // formal: no emite, no compromete plata. Los actos formales siguen pidiendo lo suyo después.
+    if (_faltaReemplazo && widget.userContext?.puedeCargarAvance == true) {
+      botones.add(ElevatedButton(
+        onPressed: _actualizando ? null : _crearReemplazo,
+        style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1B365D), foregroundColor: Colors.white),
+        child: const Text('Crear el reemplazo'),
       ));
     }
 

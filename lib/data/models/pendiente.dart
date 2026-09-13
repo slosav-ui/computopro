@@ -32,6 +32,11 @@ enum TipoPendiente {
   /// de la contraparte (`0124`). Va solo a quien puede conformarla, nunca a quien propuso -- lo
   /// decide `puede_dar_conformidad_certificado`, la misma función que ejecuta la acción.
   certificadoPropuesto,
+
+  /// Un certificado anulado que quedó **sin reemplazo** (`0126`). Red de reparación: bajo uso normal
+  /// de la app no se puede producir, así que si aparece, falta algo de verdad -- por eso no se
+  /// descarta, se resuelve creando el reemplazo.
+  certificadoSinReemplazo,
 }
 
 class Pendiente {
@@ -91,6 +96,8 @@ class Pendiente {
         return 'Ya se puede certificar';
       case TipoPendiente.certificadoPropuesto:
         return 'Certificado N° $_numero para revisar y conformar';
+      case TipoPendiente.certificadoSinReemplazo:
+        return 'Certificado N° $_numero para recrear su reemplazo';
     }
   }
 
@@ -123,6 +130,8 @@ class Pendiente {
         return _conFecha('Período $descripcion', 'propuesta el', cuando);
       case TipoPendiente.certificadoPropuesto:
         return _conFecha('Período $descripcion', 'propuesto el', cuando);
+      case TipoPendiente.certificadoSinReemplazo:
+        return _conFecha('Período $descripcion', 'anulado el', cuando);
     }
   }
 
@@ -176,6 +185,8 @@ class Pendiente {
         return TipoPendiente.certificacionPeriodo;
       case 'certificado_propuesto':
         return TipoPendiente.certificadoPropuesto;
+      case 'certificado_sin_reemplazo':
+        return TipoPendiente.certificadoSinReemplazo;
       default:
         return null;
     }
