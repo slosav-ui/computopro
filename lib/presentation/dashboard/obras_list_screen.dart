@@ -2506,10 +2506,27 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                           borderRadius: BorderRadius.circular(16),
                           border: Border.all(color: Colors.black12),
                           boxShadow: const [
+                            // La difusa: despega la tarjeta del fondo.
                             BoxShadow(
                               color: Color(0x1A1B365D),
                               offset: Offset(2, 3),
                               blurRadius: 6,
+                            ),
+                            // La línea nítida (Seba, 2026-09-13): con `blurRadius: 0` no se lee como
+                            // sombra sino como una línea sólida, y al estar desplazada en X e Y solo
+                            // asoma por el canto derecho e inferior -- el efecto de dos caras que un
+                            // `Border` no puede dar, porque Flutter no admite bordes asimétricos junto
+                            // con `borderRadius` (tira excepción). De paso, al salir de la sombra la
+                            // línea sigue la curva de las esquinas sin cortarse.
+                            //
+                            // VA SEGUNDA a propósito: se dibuja encima de la difusa y no queda lavada.
+                            // Mismo navy que la difusa, al 40% en vez del 10%. El grosor lo da el
+                            // offset: con (2,2) son 2px; si queda finita, subir a Offset(3, 3) -- no
+                            // la opacidad.
+                            BoxShadow(
+                              color: Color(0x401B365D),
+                              offset: Offset(2, 2),
+                              blurRadius: 0,
                             ),
                           ],
                         ),
