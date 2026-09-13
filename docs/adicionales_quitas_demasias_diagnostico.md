@@ -1003,6 +1003,14 @@ certificados, por eso lo marco en vez de hacerlo de pasada.
 no heredarlo, `puedeAprobarAdicional` replica la regla de la base (sin fechas = permanente) en
 su propio chequeo, sin pasar por `_delegacionVigente`; cuando se alinee el helper, se unifican.
 
+**CERRADA (2026-09-13).** Se unificó: quedó **un solo** `_delegacionVigente` en `UserContext`, el
+que ya usaban los adicionales (sin fechas = permanente y vigente), y se borró el otro para que
+nadie lo reuse por error. Los getters de certificados (`puedeAprobarCertificados`,
+`puedeVerMontosGestionObra`, `puedeMarcarCertificadoLeido`, `puedeMarcarCertificadoPagado`) pasan
+por él sin cambiar su texto: un apoderado con delegación permanente ahora ve en la app las mismas
+acciones que el servidor ya le autorizaba. Solo Dart — ninguna migración, la base siempre estuvo
+bien.
+
 ### 13.5 Regresión de seguridad en la 0110, ajena a adicionales
 
 La 0110 hizo `drop` + `create` de `calcular_factor_k_subitem` para sumarle `p_config_congelada`, y
@@ -1064,7 +1072,7 @@ toques. `crearAdicional` ya inserta en `pendiente`, no cambia nada para la app.
 - `AdicionalesRepository`: `enviarAAprobacion`, `aprobarAdicional(montoVisto: montoTotal crudo)`,
   `rechazarAdicional` (con `_conLog`), `getAdicionalDeObraHija` (para el aviso de la hija).
 - `UserContext`: `puedeRechazarAdicional`, `puedeAprobarAdicional(monto)` (reglas 16, mirror de la
-  0116 con la delegación según la base, sin `_delegacionVigente` — §13.4) y
+  0116 con la delegación según la base — el helper que desde 2026-09-13 es el único, §13.4) y
   `puedeEnviarAdicional(solicitadoPor)` (regla 17: admin_maestro/profesional de la madre, o quien
   creó el adicional — admin de la hija por bootstrap).
 - `AdicionalesScreen`: por tile, Enviar para aprobación / Reenviar (quien cotiza), Aprobar /
@@ -1194,9 +1202,10 @@ revoke de anon, como el resto.
   contra la función (no reusar `puedeEmitirCertificado` aunque hoy coincida: otro circuito).
 - `lib/presentation/obra_detalle/screens/adicionales_screen.dart` — barra + certificado/saldo en la
   tarjeta del aprobado, diálogo de carga, y el gate de montos del hallazgo: se muestran pesos si
-  `puedeVerMontosGestionObra` **o** quien puede aprobar/rechazar adicionales (el apoderado con
-  delegación permanente hoy no pasa `puedeVerMontosGestionObra` por la divergencia de §13.4, y no
-  puede aprobar un monto que no ve).
+  `puedeVerMontosGestionObra` **o** quien puede aprobar/rechazar adicionales (cuando se escribió,
+  el apoderado con delegación permanente no pasaba `puedeVerMontosGestionObra` por la divergencia
+  de §13.4 — cerrada el 2026-09-13 — y no puede aprobar un monto que no ve; el **o** se deja igual:
+  la condición sigue siendo correcta y cubre al apoderado con tope).
 
 **No se toca**: certificados de la obra, `calcular_avance_ponderado_obra` (el % de avance de la obra
 sigue sin enterarse de los adicionales, decisión de §4), `mis_pendientes()`, dashboard.

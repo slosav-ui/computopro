@@ -74,16 +74,21 @@ la maqueta de la demo, con 85.000.000 hardcodeado: `presupuestos_screen.dart:_bu
   cual) y el acumulado por rubro dentro de `CargaAvanceRubrosScreen`, que es otra pantalla y otro
   objetivo.
 
-### 2.2 · Un apoderado con delegación permanente no puede marcar leído ni pagado
+### 2.2 · Un apoderado con delegación permanente no puede marcar leído ni pagado — RESUELTO 2026-09-13
 
-Divergencia real y todavía abierta entre la base y la app: para la base, delegación **sin fechas =
-permanente y vigente** (`0004`/`0011`/`0116`); en Dart hay **dos helpers** —
-`_delegacionVigenteSegunBase` (correcto, `user_context.dart:281`) que usan los getters de
-adicionales, y `_delegacionVigente` (`user_context.dart:290`) que trata "sin fechas" como **no
-vigente** y es el que usan `puedeMarcarCertificadoLeido` (`:203`) y
-`puedeMarcarCertificadoPagado` (`:211`). Efecto concreto: un apoderado con delegación permanente ve
-la pantalla sin los botones, aunque el servidor lo autorizaría. El propio código lo tiene anotado
-como pendiente. **Fix mecánico**: unificar en el helper correcto y borrar el otro.
+Divergencia real entre la base y la app: para la base, delegación **sin fechas = permanente y
+vigente** (`0004`/`0011`/`0116`); en Dart había **dos helpers** — `_delegacionVigenteSegunBase`
+(correcto) que usaban los getters de adicionales, y `_delegacionVigente` que trataba "sin fechas"
+como **no vigente** y era el que usaban `puedeMarcarCertificadoLeido` y
+`puedeMarcarCertificadoPagado`. Efecto concreto: un apoderado con delegación permanente veía la
+pantalla sin los botones, aunque el servidor lo autorizaría.
+
+**Hecho**: quedó un solo `_delegacionVigente` en `user_context.dart` —el que ya usaban los
+adicionales, con el nombre corto— y se borró el otro, así no puede volver a aparecer la
+divergencia. Los cuatro getters que lo usaban (`puedeAprobarCertificados`,
+`puedeVerMontosGestionObra`, `puedeMarcarCertificadoLeido`, `puedeMarcarCertificadoPagado`) no
+cambiaron de texto: cambió solo la regla que consultan. Sin migración: la base siempre estuvo
+bien.
 
 ### 2.3 · La tercera vía de carga de un adicional es un cartel de "próximamente"
 

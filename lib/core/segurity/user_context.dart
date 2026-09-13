@@ -255,7 +255,7 @@ class UserContext {
   bool _esApoderadoDeAdicionales(ObraMember m) =>
       m.rol == RolProyecto.invitadoApoderado &&
       m.permisosEspeciales.puedeAprobarAdicionales &&
-      _delegacionVigenteSegunBase(m);
+      _delegacionVigente(m);
 
   // Regla de visibilidad 17: ¿puede enviar (o reenviar) para aprobación un adicional presupuestado
   // con la app? En la base (`enviar_adicional_a_aprobacion`, 0121) es el permiso de editar el
@@ -273,23 +273,20 @@ class UserContext {
   bool get puedeCertificarAvanceAdicional =>
       _tieneAlgunRol([RolProyecto.adminMaestro, RolProyecto.profesional, RolProyecto.constructor]);
 
-  // La regla de la BASE para la delegación (0004/0011/0116): sin fechas = permanente, vigente; con
-  // las dos fechas, dentro del rango; con una sola, no. Distinta de `_delegacionVigente` a propósito:
-  // ese helper trata "sin fechas" como NO vigente -- divergencia anotada como pendiente aparte
-  // (§13.4, afecta a certificados), así que los getters de adicionales no lo reusan. Cuando se
-  // alinee el helper, se unifican.
-  bool _delegacionVigenteSegunBase(ObraMember m) {
-    final inicio = m.permisosEspeciales.delegacionTemporalInicio;
-    final fin = m.permisosEspeciales.delegacionTemporalFin;
-    if (inicio == null && fin == null) return true;
-    if (inicio == null || fin == null) return false;
-    final ahora = DateTime.now();
-    return !ahora.isBefore(inicio) && !ahora.isAfter(fin);
-  }
-
+  // ÚNICO helper de delegación de la app, espejo EXACTO de la regla de la BASE (0004/0011/0116):
+  // sin ninguna de las dos fechas = delegación permanente, vigente; con las dos, tiene que caer
+  // dentro del rango; con una sola cargada, no vigente (en SQL `now() between inicio and fin` da
+  // NULL, o sea falso, si falta una punta).
+  //
+  // Hasta 2026-09-13 convivían dos helpers: este (que ya usaban los adicionales) y uno viejo que
+  // trataba "sin fechas" como NO vigente, que usaban los getters de certificados. Con el viejo, un
+  // apoderado con delegación permanente no podía marcar Leído ni Pagado en la app aunque el
+  // servidor sí lo autorizaba: la UI le escondía acciones que tenía. Se borró el viejo y quedó uno
+  // solo para que la divergencia no pueda volver a aparecer.
   bool _delegacionVigente(ObraMember m) {
     final inicio = m.permisosEspeciales.delegacionTemporalInicio;
     final fin = m.permisosEspeciales.delegacionTemporalFin;
+    if (inicio == null && fin == null) return true;
     if (inicio == null || fin == null) return false;
     final ahora = DateTime.now();
     return !ahora.isBefore(inicio) && !ahora.isAfter(fin);
