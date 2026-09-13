@@ -77,14 +77,30 @@ resolver después: renderizar video en el teléfono es una pieza enorme y el val
 secuencia completa y ordenada, que es justamente lo que hoy se pierde entre WhatsApp y la galería del
 celular.
 
-**Lo que hay que definir cuando se construya** (anotado, no resuelto):
+### CERRADO por Seba (2026-09-13): cuelgan de la obra, ordenadas por fecha
 
-- ¿Las fotos se asocian a una **partida** del cómputo, o son de la **obra en general**?
-- ¿Se pueden **agrupar por etapa**? (Y si sí: ¿la etapa es un rubro, un hito, o una etiqueta libre?)
+**Las fotos del avance fotográfico cuelgan de la obra, no de una partida** — *"no las compliquemos
+asociándolas a partidas"*. Ordenadas por fecha, y nada más. La consecuencia es la que estaba
+anticipada: el avance fotográfico es **memoria del proceso**, no evidencia de lo certificado. Si algún
+día hace falta evidencia por partida, es otra pieza y otra decisión; no se deja el campo "por si
+acaso".
 
-Las dos preguntas tienen la misma consecuencia práctica: si la foto cuelga de una partida, el avance
-fotográfico se vuelve evidencia de lo certificado; si cuelga de la obra, es memoria del proceso. Puede
-ser las dos cosas, pero conviene decidirlo antes de la tabla, no después.
+Agrupar por etapa queda **afuera de la primera versión** por el mismo criterio: la fecha ya ordena la
+secuencia, que es todo lo que hace falta para bajarla y armar el video.
+
+### Dos usos distintos, que no se mezclan
+
+Seba marcó una distinción que evita el error más fácil de esta pieza:
+
+| | **Avance fotográfico** (galería) | **Fotos y documentos de una entrada del libro** |
+| --- | --- | --- |
+| Qué es | Memoria del proceso de la obra | **Parte de un mensaje**: explicar algo, mostrar un detalle constructivo, ilustrar una orden |
+| De qué cuelga | De la **obra**, por fecha | De **esa entrada** del libro (`libro_entradas.adjuntos`) |
+| Dónde se ve | En su propio lugar, como secuencia | Dentro del hilo, junto al texto que acompaña |
+| Si se borrara el contexto | No tiene contexto: la fecha es el contexto | Pierde el sentido: la foto era el argumento del mensaje |
+
+Una foto que ilustra una Orden de Servicio **no va a la galería de avance**, y una foto de avance
+semanal **no es una entrada del libro**. Son dos circuitos y dos lugares, a propósito.
 
 ---
 
@@ -176,8 +192,11 @@ Esto es lo que pidió Seba explícitamente, y el resultado es más mezclado de l
 - **`libro_entradas.adjuntos` NO sirve para los otros dos circuitos.** Es tentador reusarla y sería un
   error: una foto de avance no es una entrada de un libro (no tiene autor que dialogue, ni hilo, ni
   acuse), y un remito tampoco. Colgar los tres circuitos de la misma tabla obligaría a que todo tenga
-  `contenido not null` y `autor_rol`, y a filtrar por tipo en cada consulta. Compartirían, eso sí, el
-  **bucket** y el patrón de subida.
+  `contenido not null` y `autor_rol`, y a filtrar por tipo en cada consulta.
+
+  **Confirmado por Seba (2026-09-13): comparten el bucket y el patrón de subida, no la tabla.** Lo que
+  sí va en `libro_entradas.adjuntos` son las fotos y documentos que son **parte de un mensaje** del
+  libro (ver el cuadro de §2) — eso no es reuso forzado, es su función.
 
 ### Resumen de lo que faltaría, sin diseñarlo
 
