@@ -152,6 +152,20 @@ pesada, y el contraste hay que buscarlo en el **canto** de la tarjeta (borde má
 redondeada, sombra con desplazamiento) y no en el fondo. Si alguna vez hace falta más separación, ese
 es el orden en que conviene probarlo.
 
+**La causa real, encontrada en la tercera vuelta (2026-09-13): en Material 3 un `Card` no es blanco.**
+Su color por defecto es `colorScheme.surfaceContainerLow`, derivado del `seedColor` azul del theme
+(`lib/config/app_theme.dart`): un lavanda muy claro casi del mismo tono que el fondo del listado. Toda
+la sensación de "bloque continuo" venía de ahí, más que de la sombra. La tarjeta de la portada pasó a
+ser un `Container` con `BoxDecoration` — blanco declarado, radio 16, borde `black12` y **sombra navy al
+10% con desplazamiento `(2, 3)`**, que `elevation` no puede dar porque reparte la sombra parejo
+alrededor. Negro puro en esa sombra se lee como suciedad sobre el gris del fondo; agrandarla separa,
+oscurecerla ensucia.
+
+**Ojo, esto no es solo de la portada**: el mismo lavanda afecta a **todos los `Card` de la app** (unos
+30, en una docena de pantallas). Se arregla en una línea del theme (`cardTheme.color: Colors.white` +
+`surfaceTintColor: Colors.transparent`), y quedó como decisión aparte para no arrastrar un cambio
+visual a pantallas que nadie miró todavía.
+
 **Criterio que queda**: cuando una tarjeta de la portada gane contenido, revisar la **separación**
 antes de revisar el contenido. El aire es lo que agrupa — una tarjeta alta con poco espacio alrededor
 se pega a la de al lado por más borde que tenga. Y todo lo que se sume tiene que caber sin necesitar un

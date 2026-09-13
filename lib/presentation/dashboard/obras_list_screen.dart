@@ -719,10 +719,15 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
     final bool avisoDescartado = _avisoDesfasajeDescartadoObras.contains(obraId);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      // Gris muy tenue, no otro tono medio (Seba, 2026-09-13): este recuadro era `indigo.shade50`
+      // con borde `indigo.shade100` y, apilado sobre una tarjeta que tampoco era blanca, quedaba un
+      // tercer gris lavanda casi idéntico a los otros dos. Con la tarjeta en blanco puro alcanza un
+      // gris apenas insinuado para que se lea como un sub-bloque de referencia. Los únicos colores
+      // que quedan acá son los semánticos: el rojo/verde del desfasaje.
       decoration: BoxDecoration(
-        color: Colors.indigo.shade50,
+        color: const Color(0xFFF7F8FA),
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: Colors.indigo.shade100),
+        border: Border.all(color: Colors.black12),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -737,7 +742,7 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                   children: [
                     Text(
                       'Hoy ${_formatearMonto(montoHoyMostrar, moneda)}',
-                      style: TextStyle(fontSize: 10.5, color: Colors.indigo.shade900),
+                      style: const TextStyle(fontSize: 10.5, color: Colors.black87),
                     ),
                     if (desfasajePct != null)
                       Text(
@@ -753,7 +758,7 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
               ),
               if (avisoDescartado)
                 IconButton(
-                  icon: Icon(Icons.info_outline, size: 13, color: Colors.indigo.shade300),
+                  icon: const Icon(Icons.info_outline, size: 13, color: Colors.black38),
                   tooltip: 'Qué significa el desfasaje',
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
@@ -776,7 +781,9 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
   Widget _buildAvisoDesfasaje(String obraId) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-      decoration: BoxDecoration(color: Colors.indigo.shade100.withValues(alpha: 0.5), borderRadius: BorderRadius.circular(4)),
+      // Un paso más oscuro que el recuadro que lo contiene, para que se lea como aviso sin volver a
+      // meter un color -- ver el comentario de `_buildComparacionCongelada`.
+      decoration: BoxDecoration(color: const Color(0xFFEDEFF3), borderRadius: BorderRadius.circular(4)),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -788,7 +795,7 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
             ),
           ),
           IconButton(
-            icon: Icon(Icons.close, size: 13, color: Colors.indigo.shade700),
+            icon: const Icon(Icons.close, size: 13, color: Colors.black54),
             tooltip: 'Cerrar aviso',
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(),
@@ -2465,398 +2472,434 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                       //      gris del fondo -- justo al revés de lo que hace falta acá.
                       //
                       // El fondo de la pantalla también se oscureció un punto (ver el `Scaffold`).
-                      return Card(
+                      // Tercera vuelta de la separación entre tarjetas (Seba, 2026-09-13, mirando el
+                      // emulador). El fondo de la pantalla ya no se toca más: el contraste sale de la
+                      // tarjeta misma.
+                      //
+                      // Por qué dejó de ser un `Card`: en Material 3 el color por defecto de `Card` no
+                      // es blanco, es `colorScheme.surfaceContainerLow`, que sale del `seedColor` azul
+                      // del theme -- un lavanda muy claro casi del mismo tono que el fondo. Eso era la
+                      // causa real de que la tarjeta no se despegara, más que la sombra. Se podía
+                      // arreglar con `color: Colors.white` + `surfaceTintColor: Colors.transparent`,
+                      // pero ya hacía falta además una sombra con desplazamiento, que `elevation` no
+                      // permite (reparte parejo alrededor). Con `Container` las tres cosas quedan
+                      // declaradas y a la vista, sin depender de los defaults del theme.
+                      //
+                      // La sombra es **navy al 10%**, no negra: negro puro sobre este gris se lee como
+                      // suciedad. Y tiene más Y que X (`2, 3`), que es como cae una sombra real con la
+                      // luz desde arriba a la izquierda -- el canto derecho e inferior marcan el
+                      // límite, el izquierdo y el superior quedan limpios.
+                      //
+                      // Si en el uso real quedara sutil: agrandar la sombra (`Offset(3, 4)`,
+                      // `blurRadius: 8`), nunca subirle la opacidad. Agrandar separa; oscurecer ensucia.
+                      //
+                      // El borde se queda en `black12` a propósito: subirlo a `black26` sobre fondo
+                      // claro se lee como wireframe (criterio de Seba).
+                      //
+                      // `Material` + `InkWell` adentro del `Container`: sin el `Material` el ripple del
+                      // toque no se dibuja, y sin el `borderRadius` en los dos se escapa de las
+                      // esquinas redondeadas.
+                      return Container(
                         margin: const EdgeInsets.only(bottom: 18),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          side: const BorderSide(color: Colors.black12),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: Colors.black12),
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Color(0x1A1B365D),
+                              offset: Offset(2, 3),
+                              blurRadius: 6,
+                            ),
+                          ],
                         ),
-                        elevation: 3,
-                        shadowColor: Colors.black.withValues(alpha: 0.28),
-                        surfaceTintColor: Colors.transparent,
-                        child: InkWell(
-                          onTap: () => _abrirPresupuesto(obra),
-                          borderRadius: BorderRadius.circular(12),
-                          child: Padding(
-                            padding: const EdgeInsets.all(14),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                // Cabecera: Nombre + Editar + Estado
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        obra['nombre'],
-                                        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1B365D)),
-                                        overflow: TextOverflow.ellipsis,
+                        child: Material(
+                          color: Colors.transparent,
+                          borderRadius: BorderRadius.circular(16),
+                          child: InkWell(
+                            onTap: () => _abrirPresupuesto(obra),
+                            borderRadius: BorderRadius.circular(16),
+                            child: Padding(
+                              padding: const EdgeInsets.all(14),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  // Cabecera: Nombre + Editar + Estado
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          obra['nombre'],
+                                          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1B365D)),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
                                       ),
-                                    ),
-                                    // Lápiz acá, no un cuarto ícono en el pie
-                                    // de la tarjeta (ya tiene 3, apretados
-                                    // contra "Última Modif" — ver memoria de
-                                    // overflow en pantalla angosta). Editar
-                                    // el nombre es lo que el usuario está
-                                    // mirando cuando lo quiere corregir.
-                                    //
-                                    // Gateado por dueño, mismo criterio que "Ajuste Económico" y
-                                    // "Eliminar" (2026-09-11): la RLS de UPDATE sobre `obras` es
-                                    // la misma para los 3 -- si no puede, que no aparezca.
-                                    if (_esAdminDeObra(obra))
-                                      IconButton(
-                                        icon: const Icon(Icons.edit_outlined, size: 16, color: Colors.black45),
-                                        tooltip: 'Editar Obra',
-                                        constraints: const BoxConstraints(),
-                                        padding: const EdgeInsets.symmetric(horizontal: 6),
-                                        onPressed: () => _mostrarModalEditarObra(obra),
-                                      ),
-                                    // Cuántas cosas de esta obra esperan al usuario (0117) -- para
-                                    // ubicar dónde está lo que anuncia el cartel de arriba. El nombre
-                                    // es el que cede ancho (Expanded + ellipsis), esto es chico y fijo.
-                                    if (pendientesDeObra > 0) ...[
-                                      Tooltip(
-                                        // Mismo criterio de tono que el cartel (ver `Pendiente`).
-                                        message: pendientesDeObra == 1
-                                            ? '1 acción requerida'
-                                            : '$pendientesDeObra acciones requeridas',
-                                        child: Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                                          decoration: BoxDecoration(
-                                            color: Colors.amber.shade100,
-                                            borderRadius: BorderRadius.circular(10),
+                                      // Lápiz acá, no un cuarto ícono en el pie
+                                      // de la tarjeta (ya tiene 3, apretados
+                                      // contra "Última Modif" — ver memoria de
+                                      // overflow en pantalla angosta). Editar
+                                      // el nombre es lo que el usuario está
+                                      // mirando cuando lo quiere corregir.
+                                      //
+                                      // Gateado por dueño, mismo criterio que "Ajuste Económico" y
+                                      // "Eliminar" (2026-09-11): la RLS de UPDATE sobre `obras` es
+                                      // la misma para los 3 -- si no puede, que no aparezca.
+                                      if (_esAdminDeObra(obra))
+                                        IconButton(
+                                          icon: const Icon(Icons.edit_outlined, size: 16, color: Colors.black45),
+                                          tooltip: 'Editar Obra',
+                                          constraints: const BoxConstraints(),
+                                          padding: const EdgeInsets.symmetric(horizontal: 6),
+                                          onPressed: () => _mostrarModalEditarObra(obra),
+                                        ),
+                                      // Cuántas cosas de esta obra esperan al usuario (0117) -- para
+                                      // ubicar dónde está lo que anuncia el cartel de arriba. El nombre
+                                      // es el que cede ancho (Expanded + ellipsis), esto es chico y fijo.
+                                      if (pendientesDeObra > 0) ...[
+                                        Tooltip(
+                                          // Mismo criterio de tono que el cartel (ver `Pendiente`).
+                                          message: pendientesDeObra == 1
+                                              ? '1 acción requerida'
+                                              : '$pendientesDeObra acciones requeridas',
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                                            decoration: BoxDecoration(
+                                              color: Colors.amber.shade100,
+                                              borderRadius: BorderRadius.circular(10),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(Icons.notifications_active_outlined, size: 12, color: Colors.amber.shade900),
+                                                const SizedBox(width: 2),
+                                                Text(
+                                                  '$pendientesDeObra',
+                                                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.amber.shade900),
+                                                ),
+                                              ],
+                                            ),
                                           ),
+                                        ),
+                                        const SizedBox(width: 6),
+                                      ],
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: esCotizacion ? Colors.blue[50] : Colors.green[50],
+                                          borderRadius: BorderRadius.circular(6),
+                                        ),
+                                        child: Text(
+                                          obra['estado'],
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.bold,
+                                            color: esCotizacion ? Colors.blue[800] : Colors.green[800],
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 6),
+
+                                  // Identificación de la obra: propietario, ubicación y **m²**.
+                                  //
+                                  // Los m² entraron acá el 2026-09-13 (pedido de Seba): antes eran un
+                                  // chip grande abajo, entre los montos, y son un dato de identidad
+                                  // como el nombre -- "no un número más entre los montos". Pierden la
+                                  // presencia de los 15px que tenían como chip, a cambio de leerse
+                                  // junto con lo que identifica la obra.
+                                  //
+                                  // `Wrap` y no `Row`: con tres datos de ancho variable, un `Row` no
+                                  // baja de línea y desborda con fuente grande o pantalla angosta --
+                                  // la misma lección que ya dejó la barra de acciones de Gestión de
+                                  // Obra y el chip de m² cuando compartía renglón con el de CAC.
+                                  Wrap(
+                                    spacing: 10,
+                                    runSpacing: 2,
+                                    crossAxisAlignment: WrapCrossAlignment.center,
+                                    children: [
+                                      _buildDatoIdentidad(Icons.person_outline, obra['propietario']),
+                                      _buildDatoIdentidad(Icons.location_on_outlined, obra['ubicacion']),
+                                      _buildDatoIdentidad(
+                                        Icons.square_foot_outlined,
+                                        '${obra['superficieM2']} m²',
+                                        destacado: true,
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 12),
+
+                                  // Monto Base, y debajo (línea propia, no
+                                  // compartiendo renglón) los chips m² / CAC.
+                                  // Antes competían por ancho en el mismo Row
+                                  // sin que ninguno pudiera ceder — al agrandar
+                                  // el chip de m² (pedido de otra sesión) dejó
+                                  // de entrar en pantallas angostas y el chip
+                                  // CAC se pintaba fuera del borde visible.
+                                  // Separarlos en líneas evita la competencia
+                                  // de raíz, sin achicar el chip.
+                                  Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      // Los montos cerrados de una obra firmada -- el pactado y CADA
+                                      // adicional aprobado -- van con el MISMO tratamiento visual
+                                      // (criterio de Seba, 2026-09-13): todos están congelados y
+                                      // firmados, ninguno es una estimación, así que ninguno puede
+                                      // aparecer agrupado ni escondido dentro de una suma. Debajo, el
+                                      // total, y un vínculo a Resumen para el detalle.
+                                      //
+                                      // Nada de certificados ni avance acá: la portada es panorámica,
+                                      // el análisis es de Resumen (docs/criterio_pantalla_principal_vs_
+                                      // resumen.md).
+                                      if (mostrarPactado && adicionales.isNotEmpty) ...[
+                                        _buildMontoCerrado('Presupuesto Pactado', monto, obra['moneda']),
+                                        // Cada monto con su propio avance debajo: el del contrato acá, y
+                                        // el de cada adicional pegado al suyo. Así la card muestra cómo
+                                        // corre la obra completa, no solo el contrato.
+                                        if (obra['avancePct'] != null)
+                                          _buildBarraAvance(obra['avancePct'] as double),
+                                        for (final a in adicionalesVisibles) ...[
+                                          const SizedBox(height: 4),
+                                          _buildMontoCerrado(_rotuloAdicional(a), montoAdicional(a), obra['moneda']),
+                                          // Seguimiento propio del adicional (0120). Siempre, incluso en
+                                          // 0: un aprobado sin certificar es información, no un hueco.
+                                          _buildBarraAvance(a.avancePct),
+                                        ],
+                                        // El resto, en un solo renglón: la portada no crece sin límite,
+                                        // pero el total sigue cerrando exacto y nada queda sin sumar.
+                                        // El renglón agrupado NO lleva barra: son varios adicionales con
+                                        // avances distintos y una barra promedio sería un número que no
+                                        // le corresponde a ninguno. El detalle de esos está en Resumen.
+                                        if (adicionalesAgrupados.isNotEmpty) ...[
+                                          const SizedBox(height: 4),
+                                          _buildMontoCerrado(
+                                            'Otros ${adicionalesAgrupados.length} adicionales aprobados',
+                                            montoAgrupados,
+                                            obra['moneda'],
+                                          ),
+                                        ],
+                                        const Padding(
+                                          padding: EdgeInsets.symmetric(vertical: 4),
+                                          child: Divider(height: 1, thickness: 1, color: Colors.black12),
+                                        ),
+                                        _buildMontoCerrado(
+                                          'Total',
+                                          monto + montoAdicionales,
+                                          obra['moneda'],
+                                          conCandado: false,
+                                        ),
+                                      ] else ...[
+                                        // Un solo número grande (sin adicionales aprobados, u obra sin
+                                        // congelar): el de siempre, con el rótulo arriba. El pactado se
+                                        // muestra SIN aclaración que lo relativice -- una vez firmado,
+                                        // ese es el precio de la obra, no una estimación (criterio de
+                                        // Seba, 2026-09-12). Solo si el pactado no pudo cargarse
+                                        // (fallback) se avisa que lo que se ve es el vivo, no el firmado.
+                                        Row(
+                                          children: [
+                                            if (mostrarPactado) ...[
+                                              const Icon(Icons.lock_outline, size: 10, color: Colors.black45),
+                                              const SizedBox(width: 3),
+                                            ],
+                                            Text(
+                                              mostrarPactado
+                                                  ? 'Presupuesto Pactado'
+                                                  : (esCongelada
+                                                      ? 'Valor de HOY (pactado no disponible)'
+                                                      : 'Monto Estimado Base'),
+                                              style: const TextStyle(fontSize: 9, color: Colors.black45, fontWeight: FontWeight.bold),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          _formatearMonto(monto, obra['moneda']),
+                                          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Color(0xFF1B365D)),
+                                        ),
+                                        // Sin candado en este renglón, así que la barra tampoco lleva
+                                        // sangría: arranca alineada con el número.
+                                        if (obra['avancePct'] != null)
+                                          _buildBarraAvance(obra['avancePct'] as double, sangria: 0),
+                                        // Obra sin congelar: los adicionales aprobados se listan igual,
+                                        // uno por uno y con su candado (están firmados), pero SIN total
+                                        // -- no se suman a un estimado que todavía se mueve.
+                                        for (final a in adicionalesVisibles) ...[
+                                          const SizedBox(height: 4),
+                                          _buildMontoCerrado(_rotuloAdicional(a), montoAdicional(a), obra['moneda']),
+                                          _buildBarraAvance(a.avancePct),
+                                        ],
+                                        if (adicionalesAgrupados.isNotEmpty) ...[
+                                          const SizedBox(height: 4),
+                                          _buildMontoCerrado(
+                                            'Otros ${adicionalesAgrupados.length} adicionales aprobados',
+                                            montoAgrupados,
+                                            obra['moneda'],
+                                          ),
+                                        ],
+                                      ],
+                                      // "Ver más" de esta pieza: el detalle de cada adicional (qué
+                                      // incluye, certificado, saldo) vive en Resumen, no en la portada.
+                                      if (adicionales.isNotEmpty) ...[
+                                        const SizedBox(height: 4),
+                                        _buildVinculoResumen(obra),
+                                      ],
+                                      if (mostrarPactado && montoHoyConfigCongelada != null) ...[
+                                        const SizedBox(height: 6),
+                                        _buildComparacionCongelada(
+                                          obra['id'] as String,
+                                          montoHoyConfigCongelada,
+                                          obra['montoHoyConfigCongeladaArs'] as double,
+                                          obra['montoPactadoArs'] as double,
+                                          obra['moneda'],
+                                        ),
+                                      ],
+                                      // Los m² se fueron al renglón de identificación de arriba; acá
+                                      // queda solo el CAC, que no es identidad de la obra sino una
+                                      // condición del contrato, y por eso vive con los montos.
+                                      if (tieneCac) ...[
+                                        const SizedBox(height: 8),
+                                        Align(
+                                          alignment: Alignment.centerLeft,
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFF1B365D),
+                                              borderRadius: BorderRadius.circular(6),
+                                            ),
+                                            child: const Text(
+                                              'CAC',
+                                              style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+
+                                  const SizedBox(height: 12),
+                                  const Divider(height: 1),
+                                  const SizedBox(height: 8),
+
+                                  // Pie de Tarjeta: Info de Modificación + Botones de Acción
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          'Última Modif: ${obra['ultimaModif']} • ${obra['revision']}',
+                                          style: const TextStyle(fontSize: 10, color: Colors.black38),
+                                          overflow: TextOverflow.ellipsis,
+                                          maxLines: 1,
+                                        ),
+                                      ),
+                                      Row(
+                                        children: [
+                                          // Gateado por dueño -- confirmado por Seba (2026-09-11):
+                                          // un invitado profesional (no admin_maestro, no el
+                                          // creador) que intenta esto choca con la RLS de `obras`
+                                          // (`0051`) y es correcto que choque. Antes se mostraba
+                                          // igual y fallaba al guardar -- "mejor que no aparezca a
+                                          // que aparezca y falle". `idAdminCreador == auth.uid()` es
+                                          // una aproximación, no la regla exacta de la RLS (que
+                                          // también deja pasar a un `admin_maestro` que no sea el
+                                          // creador original) -- mismo criterio ya aceptado en
+                                          // otras partes del proyecto (obra_config_certificacion_repository.dart):
+                                          // subestimar quién puede editar es un fallo seguro, nunca
+                                          // al revés.
+                                          if (_esAdminDeObra(obra))
+                                            IconButton(
+                                              constraints: const BoxConstraints(),
+                                              padding: const EdgeInsets.symmetric(horizontal: 6),
+                                              icon: const Icon(Icons.tune, size: 18, color: Color(0xFF1B365D)),
+                                              tooltip: 'Ajuste Económico / Moneda',
+                                              onPressed: () => _configurarAjusteEconomico(obra),
+                                            ),
+                                          IconButton(
+                                            constraints: const BoxConstraints(),
+                                            padding: const EdgeInsets.symmetric(horizontal: 6),
+                                            icon: const Icon(Icons.ios_share, size: 18, color: Color(0xFF1B365D)),
+                                            tooltip: 'Imprimir / Exportar',
+                                            onPressed: () => _abrirMenuExportar(obra),
+                                          ),
+                                          // Gateado por dueño (2026-09-11) -- el más importante de
+                                          // los 3: sin esto, alguien sin permiso podía confirmar el
+                                          // borrado y ver "Obra eliminada del registro" (éxito
+                                          // falso, ObrasRepository.eliminarObra no detectaba el
+                                          // rechazo de RLS) sin saber si de verdad se borró o no.
+                                          if (_esAdminDeObra(obra))
+                                            IconButton(
+                                              constraints: const BoxConstraints(),
+                                              padding: const EdgeInsets.symmetric(horizontal: 6),
+                                              icon: const Icon(Icons.delete_outline, size: 18, color: Colors.redAccent),
+                                              tooltip: 'Eliminar Obra',
+                                              onPressed: () => _confirmarEliminar(obra),
+                                            ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+
+                                  const SizedBox(height: 8),
+
+                                  // Banner Inferior Integrado: Solicitud de Cómputo / Legajo
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                    decoration: BoxDecoration(
+                                      color: estadoServicio == 'En Revision' ? Colors.amber[50] : const Color(0xFFEFF3F8),
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: estadoServicio == 'En Revision' ? Border.all(color: Colors.amber[300]!) : null,
+                                    ),
+                                    child: Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        // Expanded: mismo criterio que el banner superior y la
+                                        // fila propietario/ubicación — el label es el texto largo
+                                        // y variable, "Solicitar"/"Ver Solicitud" es corto y fijo,
+                                        // así que es el label el que tiene que ceder.
+                                        Expanded(
                                           child: Row(
-                                            mainAxisSize: MainAxisSize.min,
                                             children: [
-                                              Icon(Icons.notifications_active_outlined, size: 12, color: Colors.amber.shade900),
-                                              const SizedBox(width: 2),
-                                              Text(
-                                                '$pendientesDeObra',
-                                                style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.amber.shade900),
+                                              Icon(
+                                                estadoServicio == 'En Revision' ? Icons.hourglass_top : Icons.engineering_outlined,
+                                                size: 14,
+                                                color: estadoServicio == 'En Revision' ? Colors.amber[900] : const Color(0xFF1B365D),
+                                              ),
+                                              const SizedBox(width: 6),
+                                              Expanded(
+                                                child: Text(
+                                                  estadoServicio == 'En Revision'
+                                                      ? 'Estudio Técnico en Revisión'
+                                                      : '¿Necesitás Cómputo / IRAM / Legajo?',
+                                                  style: TextStyle(
+                                                    fontSize: 10,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: estadoServicio == 'En Revision' ? Colors.amber[900] : const Color(0xFF1B365D),
+                                                  ),
+                                                  overflow: TextOverflow.ellipsis,
+                                                  maxLines: 1,
+                                                ),
                                               ),
                                             ],
                                           ),
                                         ),
-                                      ),
-                                      const SizedBox(width: 6),
-                                    ],
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                      decoration: BoxDecoration(
-                                        color: esCotizacion ? Colors.blue[50] : Colors.green[50],
-                                        borderRadius: BorderRadius.circular(6),
-                                      ),
-                                      child: Text(
-                                        obra['estado'],
-                                        style: TextStyle(
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.bold,
-                                          color: esCotizacion ? Colors.blue[800] : Colors.green[800],
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 6),
-
-                                // Identificación de la obra: propietario, ubicación y **m²**.
-                                //
-                                // Los m² entraron acá el 2026-09-13 (pedido de Seba): antes eran un
-                                // chip grande abajo, entre los montos, y son un dato de identidad
-                                // como el nombre -- "no un número más entre los montos". Pierden la
-                                // presencia de los 15px que tenían como chip, a cambio de leerse
-                                // junto con lo que identifica la obra.
-                                //
-                                // `Wrap` y no `Row`: con tres datos de ancho variable, un `Row` no
-                                // baja de línea y desborda con fuente grande o pantalla angosta --
-                                // la misma lección que ya dejó la barra de acciones de Gestión de
-                                // Obra y el chip de m² cuando compartía renglón con el de CAC.
-                                Wrap(
-                                  spacing: 10,
-                                  runSpacing: 2,
-                                  crossAxisAlignment: WrapCrossAlignment.center,
-                                  children: [
-                                    _buildDatoIdentidad(Icons.person_outline, obra['propietario']),
-                                    _buildDatoIdentidad(Icons.location_on_outlined, obra['ubicacion']),
-                                    _buildDatoIdentidad(
-                                      Icons.square_foot_outlined,
-                                      '${obra['superficieM2']} m²',
-                                      destacado: true,
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 12),
-
-                                // Monto Base, y debajo (línea propia, no
-                                // compartiendo renglón) los chips m² / CAC.
-                                // Antes competían por ancho en el mismo Row
-                                // sin que ninguno pudiera ceder — al agrandar
-                                // el chip de m² (pedido de otra sesión) dejó
-                                // de entrar en pantallas angostas y el chip
-                                // CAC se pintaba fuera del borde visible.
-                                // Separarlos en líneas evita la competencia
-                                // de raíz, sin achicar el chip.
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    // Los montos cerrados de una obra firmada -- el pactado y CADA
-                                    // adicional aprobado -- van con el MISMO tratamiento visual
-                                    // (criterio de Seba, 2026-09-13): todos están congelados y
-                                    // firmados, ninguno es una estimación, así que ninguno puede
-                                    // aparecer agrupado ni escondido dentro de una suma. Debajo, el
-                                    // total, y un vínculo a Resumen para el detalle.
-                                    //
-                                    // Nada de certificados ni avance acá: la portada es panorámica,
-                                    // el análisis es de Resumen (docs/criterio_pantalla_principal_vs_
-                                    // resumen.md).
-                                    if (mostrarPactado && adicionales.isNotEmpty) ...[
-                                      _buildMontoCerrado('Presupuesto Pactado', monto, obra['moneda']),
-                                      // Cada monto con su propio avance debajo: el del contrato acá, y
-                                      // el de cada adicional pegado al suyo. Así la card muestra cómo
-                                      // corre la obra completa, no solo el contrato.
-                                      if (obra['avancePct'] != null)
-                                        _buildBarraAvance(obra['avancePct'] as double),
-                                      for (final a in adicionalesVisibles) ...[
-                                        const SizedBox(height: 4),
-                                        _buildMontoCerrado(_rotuloAdicional(a), montoAdicional(a), obra['moneda']),
-                                        // Seguimiento propio del adicional (0120). Siempre, incluso en
-                                        // 0: un aprobado sin certificar es información, no un hueco.
-                                        _buildBarraAvance(a.avancePct),
-                                      ],
-                                      // El resto, en un solo renglón: la portada no crece sin límite,
-                                      // pero el total sigue cerrando exacto y nada queda sin sumar.
-                                      // El renglón agrupado NO lleva barra: son varios adicionales con
-                                      // avances distintos y una barra promedio sería un número que no
-                                      // le corresponde a ninguno. El detalle de esos está en Resumen.
-                                      if (adicionalesAgrupados.isNotEmpty) ...[
-                                        const SizedBox(height: 4),
-                                        _buildMontoCerrado(
-                                          'Otros ${adicionalesAgrupados.length} adicionales aprobados',
-                                          montoAgrupados,
-                                          obra['moneda'],
-                                        ),
-                                      ],
-                                      const Padding(
-                                        padding: EdgeInsets.symmetric(vertical: 4),
-                                        child: Divider(height: 1, thickness: 1, color: Colors.black12),
-                                      ),
-                                      _buildMontoCerrado(
-                                        'Total',
-                                        monto + montoAdicionales,
-                                        obra['moneda'],
-                                        conCandado: false,
-                                      ),
-                                    ] else ...[
-                                      // Un solo número grande (sin adicionales aprobados, u obra sin
-                                      // congelar): el de siempre, con el rótulo arriba. El pactado se
-                                      // muestra SIN aclaración que lo relativice -- una vez firmado,
-                                      // ese es el precio de la obra, no una estimación (criterio de
-                                      // Seba, 2026-09-12). Solo si el pactado no pudo cargarse
-                                      // (fallback) se avisa que lo que se ve es el vivo, no el firmado.
-                                      Row(
-                                        children: [
-                                          if (mostrarPactado) ...[
-                                            const Icon(Icons.lock_outline, size: 10, color: Colors.black45),
-                                            const SizedBox(width: 3),
-                                          ],
-                                          Text(
-                                            mostrarPactado
-                                                ? 'Presupuesto Pactado'
-                                                : (esCongelada
-                                                    ? 'Valor de HOY (pactado no disponible)'
-                                                    : 'Monto Estimado Base'),
-                                            style: const TextStyle(fontSize: 9, color: Colors.black45, fontWeight: FontWeight.bold),
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        _formatearMonto(monto, obra['moneda']),
-                                        style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Color(0xFF1B365D)),
-                                      ),
-                                      // Sin candado en este renglón, así que la barra tampoco lleva
-                                      // sangría: arranca alineada con el número.
-                                      if (obra['avancePct'] != null)
-                                        _buildBarraAvance(obra['avancePct'] as double, sangria: 0),
-                                      // Obra sin congelar: los adicionales aprobados se listan igual,
-                                      // uno por uno y con su candado (están firmados), pero SIN total
-                                      // -- no se suman a un estimado que todavía se mueve.
-                                      for (final a in adicionalesVisibles) ...[
-                                        const SizedBox(height: 4),
-                                        _buildMontoCerrado(_rotuloAdicional(a), montoAdicional(a), obra['moneda']),
-                                        _buildBarraAvance(a.avancePct),
-                                      ],
-                                      if (adicionalesAgrupados.isNotEmpty) ...[
-                                        const SizedBox(height: 4),
-                                        _buildMontoCerrado(
-                                          'Otros ${adicionalesAgrupados.length} adicionales aprobados',
-                                          montoAgrupados,
-                                          obra['moneda'],
-                                        ),
-                                      ],
-                                    ],
-                                    // "Ver más" de esta pieza: el detalle de cada adicional (qué
-                                    // incluye, certificado, saldo) vive en Resumen, no en la portada.
-                                    if (adicionales.isNotEmpty) ...[
-                                      const SizedBox(height: 4),
-                                      _buildVinculoResumen(obra),
-                                    ],
-                                    if (mostrarPactado && montoHoyConfigCongelada != null) ...[
-                                      const SizedBox(height: 6),
-                                      _buildComparacionCongelada(
-                                        obra['id'] as String,
-                                        montoHoyConfigCongelada,
-                                        obra['montoHoyConfigCongeladaArs'] as double,
-                                        obra['montoPactadoArs'] as double,
-                                        obra['moneda'],
-                                      ),
-                                    ],
-                                    // Los m² se fueron al renglón de identificación de arriba; acá
-                                    // queda solo el CAC, que no es identidad de la obra sino una
-                                    // condición del contrato, y por eso vive con los montos.
-                                    if (tieneCac) ...[
-                                      const SizedBox(height: 8),
-                                      Align(
-                                        alignment: Alignment.centerLeft,
-                                        child: Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                                          decoration: BoxDecoration(
-                                            color: const Color(0xFF1B365D),
-                                            borderRadius: BorderRadius.circular(6),
-                                          ),
-                                          child: const Text(
-                                            'CAC',
-                                            style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white),
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ],
-                                ),
-
-                                const SizedBox(height: 12),
-                                const Divider(height: 1),
-                                const SizedBox(height: 8),
-
-                                // Pie de Tarjeta: Info de Modificación + Botones de Acción
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        'Última Modif: ${obra['ultimaModif']} • ${obra['revision']}',
-                                        style: const TextStyle(fontSize: 10, color: Colors.black38),
-                                        overflow: TextOverflow.ellipsis,
-                                        maxLines: 1,
-                                      ),
-                                    ),
-                                    Row(
-                                      children: [
-                                        // Gateado por dueño -- confirmado por Seba (2026-09-11):
-                                        // un invitado profesional (no admin_maestro, no el
-                                        // creador) que intenta esto choca con la RLS de `obras`
-                                        // (`0051`) y es correcto que choque. Antes se mostraba
-                                        // igual y fallaba al guardar -- "mejor que no aparezca a
-                                        // que aparezca y falle". `idAdminCreador == auth.uid()` es
-                                        // una aproximación, no la regla exacta de la RLS (que
-                                        // también deja pasar a un `admin_maestro` que no sea el
-                                        // creador original) -- mismo criterio ya aceptado en
-                                        // otras partes del proyecto (obra_config_certificacion_repository.dart):
-                                        // subestimar quién puede editar es un fallo seguro, nunca
-                                        // al revés.
-                                        if (_esAdminDeObra(obra))
-                                          IconButton(
-                                            constraints: const BoxConstraints(),
-                                            padding: const EdgeInsets.symmetric(horizontal: 6),
-                                            icon: const Icon(Icons.tune, size: 18, color: Color(0xFF1B365D)),
-                                            tooltip: 'Ajuste Económico / Moneda',
-                                            onPressed: () => _configurarAjusteEconomico(obra),
-                                          ),
-                                        IconButton(
-                                          constraints: const BoxConstraints(),
-                                          padding: const EdgeInsets.symmetric(horizontal: 6),
-                                          icon: const Icon(Icons.ios_share, size: 18, color: Color(0xFF1B365D)),
-                                          tooltip: 'Imprimir / Exportar',
-                                          onPressed: () => _abrirMenuExportar(obra),
-                                        ),
-                                        // Gateado por dueño (2026-09-11) -- el más importante de
-                                        // los 3: sin esto, alguien sin permiso podía confirmar el
-                                        // borrado y ver "Obra eliminada del registro" (éxito
-                                        // falso, ObrasRepository.eliminarObra no detectaba el
-                                        // rechazo de RLS) sin saber si de verdad se borró o no.
-                                        if (_esAdminDeObra(obra))
-                                          IconButton(
-                                            constraints: const BoxConstraints(),
-                                            padding: const EdgeInsets.symmetric(horizontal: 6),
-                                            icon: const Icon(Icons.delete_outline, size: 18, color: Colors.redAccent),
-                                            tooltip: 'Eliminar Obra',
-                                            onPressed: () => _confirmarEliminar(obra),
-                                          ),
-                                      ],
-                                    ),
-                                  ],
-                                ),
-
-                                const SizedBox(height: 8),
-
-                                // Banner Inferior Integrado: Solicitud de Cómputo / Legajo
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                  decoration: BoxDecoration(
-                                    color: estadoServicio == 'En Revision' ? Colors.amber[50] : const Color(0xFFEFF3F8),
-                                    borderRadius: BorderRadius.circular(6),
-                                    border: estadoServicio == 'En Revision' ? Border.all(color: Colors.amber[300]!) : null,
-                                  ),
-                                  child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      // Expanded: mismo criterio que el banner superior y la
-                                      // fila propietario/ubicación — el label es el texto largo
-                                      // y variable, "Solicitar"/"Ver Solicitud" es corto y fijo,
-                                      // así que es el label el que tiene que ceder.
-                                      Expanded(
-                                        child: Row(
-                                          children: [
-                                            Icon(
-                                              estadoServicio == 'En Revision' ? Icons.hourglass_top : Icons.engineering_outlined,
-                                              size: 14,
-                                              color: estadoServicio == 'En Revision' ? Colors.amber[900] : const Color(0xFF1B365D),
+                                        const SizedBox(width: 8),
+                                        InkWell(
+                                          onTap: () => _abrirModalServiciosEspeciales(obra),
+                                          child: Text(
+                                            estadoServicio == 'En Revision' ? 'Ver Solicitud' : 'Solicitar',
+                                            style: const TextStyle(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.bold,
+                                              color: Color(0xFF1B365D),
+                                              decoration: TextDecoration.underline,
                                             ),
-                                            const SizedBox(width: 6),
-                                            Expanded(
-                                              child: Text(
-                                                estadoServicio == 'En Revision'
-                                                    ? 'Estudio Técnico en Revisión'
-                                                    : '¿Necesitás Cómputo / IRAM / Legajo?',
-                                                style: TextStyle(
-                                                  fontSize: 10,
-                                                  fontWeight: FontWeight.w600,
-                                                  color: estadoServicio == 'En Revision' ? Colors.amber[900] : const Color(0xFF1B365D),
-                                                ),
-                                                overflow: TextOverflow.ellipsis,
-                                                maxLines: 1,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      InkWell(
-                                        onTap: () => _abrirModalServiciosEspeciales(obra),
-                                        child: Text(
-                                          estadoServicio == 'En Revision' ? 'Ver Solicitud' : 'Solicitar',
-                                          style: const TextStyle(
-                                            fontSize: 10,
-                                            fontWeight: FontWeight.bold,
-                                            color: Color(0xFF1B365D),
-                                            decoration: TextDecoration.underline,
                                           ),
                                         ),
-                                      ),
-                                    ],
+                                      ],
+                                    ),
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
                           ),
                         ),
