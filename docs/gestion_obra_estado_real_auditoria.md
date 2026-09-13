@@ -38,7 +38,7 @@ estar". Si un ítem dice "0 resultados", el grep está escrito para que se pueda
 
 Esto es lo que ningún documento iba a decir, y es el valor de auditar contra el código.
 
-### 2.1 · El avance físico de la obra se calcula y **no se muestra en ninguna pantalla**
+### 2.1 · El avance de la obra se calculaba y no se mostraba — **CONSTRUIDO 2026-09-13, sin verificar en emulador**
 
 `calcular_avance_ponderado_rubros` y `calcular_avance_ponderado_obra` existen (`0052:249/272`),
 **están envueltas en Dart** (`certificado_subitems_avance_repository.dart:117` y `:130`) y
@@ -46,7 +46,27 @@ Esto es lo que ningún documento iba a decir, y es el valor de auditar contra el
 La app sabe calcular "esta obra va al 42%" y no lo dice en ningún lado — ni en Gestión de Obra, ni
 en la card del dashboard (donde Seba ya pidió una barra de avance), ni en Resumen (que sigue siendo
 la maqueta de la demo, con 85.000.000 hardcodeado: `presupuestos_screen.dart:_buildTabResumenFinal`).
-**Es la brecha más barata de cerrar de toda la solapa**: los datos y el acceso ya están.
+**Era la brecha más barata de cerrar de toda la solapa**: los datos y el acceso ya estaban.
+
+**Construido el 2026-09-13** (punto 1 del orden de §5), sin una línea de SQL ni de repositorio nuevo:
+
+- `panel_avance_obra.dart` (nuevo): el porcentaje con barra y el desglose por rubro colapsable, en
+  Gestión de Obra arriba del historial. El porcentaje lo ve cualquiera (es avance físico, lo único que
+  la matriz le da al veedor desde la spec); el peso en pesos de cada rubro, solo
+  `puedeVerMontosGestionObra`.
+- La barra en la card del dashboard (`obras_list_screen.dart`, `_buildBarraAvance`), **solo en obras
+  congeladas**: en una obra en Cotización el avance es siempre 0 y una barra vacía en cada tarjeta es
+  ruido. Contesta el "cómo van" de `docs/criterio_pantalla_principal_vs_resumen.md` §5.2, que era la
+  única de las tres preguntas de la portada sin respuesta.
+- **Se llama "Avance certificado", no "avance de obra"**, en las dos pantallas: el número suma solo
+  certificados que dejaron de ser borrador, así que decir "de obra" afirmaría algo que el número no
+  sabe (criterio de Seba). El panel aclara además que no incluye el borrador en curso.
+- El desglose va **en el orden de los rubros**, no rankeado por porcentaje: es el mismo orden que
+  Cómputo y la carga de avance, y que la lista cambie de orden entre pantallas es peor que cualquier
+  ranking.
+- Pendiente a propósito: **Resumen** (sigue siendo la maqueta; cuando se rehaga, reusa este panel tal
+  cual) y el acumulado por rubro dentro de `CargaAvanceRubrosScreen`, que es otra pantalla y otro
+  objetivo.
 
 ### 2.2 · Un apoderado con delegación permanente no puede marcar leído ni pagado
 
@@ -191,8 +211,8 @@ Ordenado por dos criterios: **lo que desbloquea el uso real primero**, y **lo ba
 caro cuando el valor es parecido**. Las dependencias están dichas explícitamente; lo que no aparece
 como dependencia no la tiene.
 
-**1 · Mostrar el avance de la obra** (§2.1). *No depende de nada — los datos, las funciones y el
-repositorio ya existen.* Es la única pieza de esta lista que ya está construida por debajo y solo le
+**1 · Mostrar el avance de la obra** (§2.1). **HECHO el 2026-09-13, falta verificarlo en el
+emulador.** *No dependía de nada — los datos, las funciones y el repositorio ya existían.* Es la única pieza de esta lista que ya está construida por debajo y solo le
 falta pantalla: el % ponderado por rubro y el total de la obra. Alimenta de una vez tres cosas
 pedidas: la barra de avance de la card del dashboard, el "cómo van" de la portada, y el primer
 contenido real de la solapa Resumen (hoy maqueta). **Lo pongo primero porque es horas de trabajo con

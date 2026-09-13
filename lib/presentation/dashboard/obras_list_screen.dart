@@ -17,6 +17,7 @@ import '../../services/adicionales_repository.dart';
 import '../../services/certificados_repository.dart';
 import '../../services/pendientes_repository.dart';
 import '../../services/auth_service.dart';
+import '../../services/certificado_subitems_avance_repository.dart';
 import '../../services/indices_economicos_repository.dart';
 import '../../services/invitaciones_repository.dart';
 import '../../services/obra_members_repository.dart';
@@ -69,6 +70,8 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
   final IndicesEconomicosRepository _indicesEconomicosRepository = IndicesEconomicosRepository();
   final ObraMembersRepository _obraMembersRepository = ObraMembersRepository();
   final AdicionalesRepository _adicionalesRepository = AdicionalesRepository();
+  final CertificadoSubitemsAvanceRepository _avanceRepository =
+      CertificadoSubitemsAvanceRepository();
   final PendientesRepository _pendientesRepository = PendientesRepository();
   final CertificadosRepository _certificadosRepository = CertificadosRepository();
 
@@ -282,6 +285,13 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
         for (final o in obras)
           _hoyConfigCongeladaSeguro(o['id'] as String, o['presupuestoCongeladoEn'] as DateTime?),
       ]);
+      // Avance certificado por obra (0052, auditoría §2.1: se calculaba y no se mostraba en ningún
+      // lado). Una RPC por obra, igual que el presupuesto vivo y el pactado -- 2 a 10 obras es el uso
+      // real del proyecto (CLAUDE.md), no hace falta una función batch todavía. Fail-safe a null por
+      // obra: sin avance, esa card simplemente no muestra la barra.
+      final avances = await Future.wait([
+        for (final o in obras) _avanceSeguro(o['id'] as String, o['presupuestoCongeladoEn'] as DateTime?),
+      ]);
       // Adicionales aprobados (0116), una sola consulta para toda la lista. Fail-safe a vacío: si
       // falla, ninguna card muestra sus renglones de adicionales -- el resto de la card no depende de esto.
       final adicionalesAprobados = await _adicionalesAprobadosSeguro([for (final o in obras) o['id'] as String]);
@@ -305,6 +315,7 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
               pactados[i],
               hoyConfigCongelada[i],
               adicionalesAprobados[obras[i]['id']],
+              avances[i],
             ),
         ];
         _obraIdsAdmin = obraIdsAdmin;
@@ -332,6 +343,19 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
     if (congeladoEn == null) return null;
     try {
       return await _obrasRepository.getMontoPactadoCongelado(obraId);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Avance certificado de una obra. **Solo para obras congeladas**: en una obra en Cotización el
+  /// avance es siempre 0 (no hay certificados), y una barra vacía en cada card sería ruido que no
+  /// informa nada -- criterio del plan de esta pieza, confirmado por Seba. Fail-safe a null, mismo
+  /// criterio que el resto: si falla, esa card no muestra la barra y nada más.
+  Future<double?> _avanceSeguro(String obraId, DateTime? congeladoEn) async {
+    if (congeladoEn == null) return null;
+    try {
+      return await _avanceRepository.getAvancePonderadoObra(obraId);
     } catch (_) {
       return null;
     }
@@ -465,6 +489,7 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
     double? montoPactadoArs,
     double? montoHoyConfigCongeladaArs, [
     List<({String id, String descripcion, double montoArs, double? cotizacionAlAprobar})>? adicionalesAprobados,
+    double? avancePct,
   ]) {
     // 0122: la cotización del día en que se congeló el presupuesto. El pactado se convierte con
     // ESTA; el estimado vivo y el "Hoy" del chip, con la efectiva de hoy (son números vivos).
@@ -481,6 +506,8 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
       'montoHoyConfigCongeladaUsd': montoHoyConfigCongeladaArs == null
           ? null
           : _convertirMonto(montoHoyConfigCongeladaArs, 'ARS', 'USD'),
+      // Avance certificado (0052). null = obra sin congelar, o falló la consulta -> sin barra.
+      'avancePct': avancePct,
       // Uno por adicional, no un total -- la card pinta un renglón por cada uno. La conversión a
       // USD se hace acá, de una vez, para que la card no tenga que saber nada de cotizaciones: cada
       // adicional aprobado con la cotización de SU aprobación (0122), no con la de hoy.
@@ -503,6 +530,48 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
     final reg = RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))');
     final formateado = str.replaceAllMapped(reg, (Match m) => '${m[1]}.');
     return moneda == 'USD' ? 'USD $formateado' : '\$ $formateado';
+  }
+
+  /// La barra de avance de la card: rótulo + porcentaje en una línea y la barra abajo. Deliberadamente
+  /// chica y sin detalle -- el desglose por rubro vive en Gestión de Obra (`PanelAvanceObra`), por el
+  /// criterio de la portada: acá va el dato, no el análisis.
+  ///
+  /// `LinearProgressIndicator` con `value` explícito (nunca indeterminado) y alto fijo: el mismo
+  /// aspecto en las dos pantallas sin que el tema del Material lo cambie.
+  Widget _buildBarraAvance(double pct) {
+    final fraccion = (pct / 100).clamp(0.0, 1.0);
+    final entero = pct == pct.roundToDouble();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Expanded(
+              child: Text(
+                'Avance certificado',
+                style: TextStyle(fontSize: 9, color: Colors.black45, fontWeight: FontWeight.bold),
+              ),
+            ),
+            Text(
+              '${entero ? pct.toStringAsFixed(0) : pct.toStringAsFixed(1)}%',
+              style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFF1B365D)),
+            ),
+          ],
+        ),
+        const SizedBox(height: 3),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(6),
+          child: LinearProgressIndicator(
+            value: fraccion,
+            minHeight: 6,
+            backgroundColor: Colors.black12,
+            valueColor: AlwaysStoppedAnimation<Color>(
+              fraccion >= 1 ? Colors.green.shade600 : const Color(0xFF1B365D),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   /// Rótulo del renglón de un adicional aprobado: su descripción, que es lo que lo identifica para
@@ -2560,6 +2629,15 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                                         obra['montoPactadoArs'] as double,
                                         obra['moneda'],
                                       ),
+                                    ],
+                                    // "Cómo va" la obra, la única de las tres preguntas de la portada
+                                    // que no estaba contestada (docs/criterio_pantalla_principal_vs_
+                                    // resumen.md §5.2). Es el avance CERTIFICADO, no el real: no
+                                    // incluye el borrador en curso, así que el rótulo lo dice.
+                                    // Solo en obras congeladas -- ver _avanceSeguro.
+                                    if (obra['avancePct'] != null) ...[
+                                      const SizedBox(height: 10),
+                                      _buildBarraAvance(obra['avancePct'] as double),
                                     ],
                                     const SizedBox(height: 8),
                                     Row(

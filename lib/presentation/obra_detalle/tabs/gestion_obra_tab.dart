@@ -4,17 +4,22 @@ import '../../../core/segurity/user_context.dart';
 import '../../../core/utils/conversion_dolar.dart';
 import '../../../core/utils/periodo_certificacion.dart';
 import '../../../data/models/certificado.dart';
+import '../../../data/models/certificado_subitem_avance.dart';
 import '../../../data/models/obra_config_certificacion.dart';
+import '../../../data/models/rubro_catalogo.dart';
 import '../../../services/auth_service.dart';
 import '../../../services/certificados_repository.dart';
 import '../../../services/indices_economicos_repository.dart';
+import '../../../services/certificado_subitems_avance_repository.dart';
 import '../../../services/obra_config_certificacion_repository.dart';
+import '../../../services/rubros_repository.dart';
 import '../../../services/obras_repository.dart';
 import '../screens/adicionales_screen.dart';
 import '../screens/carga_avance_rubros_screen.dart';
 import '../screens/detalle_certificado_screen.dart';
 import '../screens/quitas_demasias_screen.dart';
 import 'barra_acciones_obra.dart';
+import 'panel_avance_obra.dart';
 import 'cartel_firma_pendiente.dart';
 import 'panel_config_certificacion.dart';
 import 'presupuesto_estado_panel.dart';
@@ -49,6 +54,9 @@ class _GestionObraTabState extends State<GestionObraTab> {
       ObraConfigCertificacionRepository();
   final IndicesEconomicosRepository _indicesRepository =
       IndicesEconomicosRepository();
+  final CertificadoSubitemsAvanceRepository _avanceRepository =
+      CertificadoSubitemsAvanceRepository();
+  final RubrosRepository _rubrosRepository = RubrosRepository();
 
   List<Certificado> _certificados = [];
   bool _cargando = true;
@@ -63,11 +71,19 @@ class _GestionObraTabState extends State<GestionObraTab> {
   // por espacio con lo que sí hay que mirar seguido.
   bool _anuladosExpandido = false;
 
+  // Avance certificado (auditoría §2.1: se calculaba desde la 0052 y no se mostraba en ninguna
+  // pantalla). null = todavía no cargó o falló -> el panel no se dibuja, no afirma un 0% que no
+  // sabe. El catálogo de rubros es solo para ponerle nombre a cada `rubro_id` que devuelve la RPC.
+  double? _avancePct;
+  List<AvancePonderadoRubro> _avancePorRubro = [];
+  List<RubroCatalogo> _catalogoRubros = [];
+
   @override
   void initState() {
     super.initState();
     _cargarCertificados();
     _cargarMoneda();
+    _cargarAvance();
   }
 
   /// Silencioso ante error, mismo criterio que el resto de los datos secundarios de esta solapa
@@ -83,6 +99,36 @@ class _GestionObraTabState extends State<GestionObraTab> {
       setState(() {
         _moneda = moneda;
         _cotizacionHoy = cotizacion?.promedio ?? 0;
+      });
+    } catch (_) {
+      // Silencioso -- ver comentario del método.
+    }
+  }
+
+  /// Avance certificado de la obra + el desglose por rubro + el catálogo para los nombres. Las tres
+  /// en paralelo: ninguna depende de la otra.
+  ///
+  /// Silencioso ante error y fail-safe a `null`, mismo criterio que `_cargarMoneda` y que el resto
+  /// de los datos secundarios de esta solapa: si falla, la solapa sigue mostrando los certificados
+  /// sin el panel de avance. Nunca al revés -- el historial es lo que la gente vino a ver.
+  Future<void> _cargarAvance() async {
+    try {
+      final usuarioId = _authService.usuarioActual?.id;
+      final avanceFuture = _avanceRepository.getAvancePonderadoObra(widget.obraId);
+      final rubrosFuture = _avanceRepository.getAvancePonderadoRubros(widget.obraId);
+      // Mismo par de llamadas que usa CargaAvanceRubrosScreen para los nombres: el catálogo completo
+      // si hay usuario (incluye sus rubros propios), el oficial si no.
+      final catalogoFuture = usuarioId == null
+          ? _rubrosRepository.getCatalogoOficial()
+          : _rubrosRepository.getCatalogoCompleto(usuarioId);
+      final avance = await avanceFuture;
+      final porRubro = await rubrosFuture;
+      final catalogo = await catalogoFuture;
+      if (!mounted) return;
+      setState(() {
+        _avancePct = avance;
+        _avancePorRubro = porRubro;
+        _catalogoRubros = catalogo;
       });
     } catch (_) {
       // Silencioso -- ver comentario del método.
@@ -276,6 +322,19 @@ class _GestionObraTabState extends State<GestionObraTab> {
         ? cert.cotizacionDolarPromedioAlEmitir!
         : _cotizacionHoy;
     final convertido = convertirArsAMoneda(montoArs, _moneda, cotizacion);
+    final valorInt = convertido.round();
+    final str = valorInt.toString();
+    final reg = RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))');
+    final formateado = str.replaceAllMapped(reg, (Match m) => '${m[1]}.');
+    return _moneda == 'USD' ? 'USD $formateado' : '\$ $formateado';
+  }
+
+  /// Como `_fmt` pero **sin certificado**: para montos que NO están congelados -- hoy, el peso de
+  /// cada rubro en el panel de avance, que sale del presupuesto vigente. Va con la cotización de hoy
+  /// a propósito: es un número vivo, y por la regla de la `0122` solo los montos firmados se
+  /// convierten con la cotización de su momento.
+  String _fmtVivo(double montoArs) {
+    final convertido = convertirArsAMoneda(montoArs, _moneda, _cotizacionHoy);
     final valorInt = convertido.round();
     final str = valorInt.toString();
     final reg = RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))');
@@ -531,7 +590,12 @@ class _GestionObraTabState extends State<GestionObraTab> {
   @override
   Widget build(BuildContext context) {
     return RefreshIndicator(
-      onRefresh: _cargarCertificados,
+      // Las dos: emitir un certificado cambia el avance, así que refrescar la lista sin refrescar el
+      // porcentaje dejaría el panel mintiendo hasta salir y volver a entrar a la solapa.
+      onRefresh: () async {
+        await _cargarCertificados();
+        await _cargarAvance();
+      },
       child: SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(16.0),
@@ -604,6 +668,16 @@ class _GestionObraTabState extends State<GestionObraTab> {
             // siempre, no una información útil para él.
             if (widget.userContext?.puedeEmitirCertificado == true)
               CartelFirmaPendiente(obraId: widget.obraId),
+            // Arriba del historial y debajo del estado del presupuesto: es el resumen de la obra, lo
+            // primero que alguien quiere saber al entrar ("¿cómo va?"), y el historial es el detalle
+            // que lo explica. Se dibuja solo si hay un porcentaje real que mostrar.
+            PanelAvanceObra(
+              avanceObraPct: _avancePct,
+              porRubro: _avancePorRubro,
+              catalogoRubros: _catalogoRubros,
+              mostrarMontos: widget.userContext?.puedeVerMontosGestionObra == true,
+              fmtMonto: _fmtVivo,
+            ),
             const Text(
               'Historial de Certificados',
               style: TextStyle(
