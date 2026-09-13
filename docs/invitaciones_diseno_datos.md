@@ -372,3 +372,58 @@ directo).
   mencionado en `CLAUDE.md`, deliberadamente no cubierto por `quitar_miembro_obra` (§10).
 - El deep link / Universal Links / App Links real — mejora pendiente en §5, condicionado a que la
   web esté publicada.
+- **Que el cliente pueda invitar, y la regla "nadie otorga más permisos de los que tiene"** — pieza
+  anotada el 2026-09-13 en §14, sin construir. Cierra de paso la escalada de §10.4 de
+  `etapa3_roles_permisos_diseno_datos.md`.
+
+---
+
+## §14 — "Nadie otorga más permisos de los que tiene" + el cliente invita (2026-09-13, anotado, SIN construir)
+
+Pedido de Seba: **el cliente tiene que poder invitar** — el caso concreto es su apoderado, para cuando
+viaja. Hoy invitar es de `admin_maestro` o de cualquiera con `puede_invitar_terceros`.
+
+Y con eso viene la **regla general que ordena todo el asunto**: *nadie puede otorgar más permisos de
+los que tiene*. El cliente invita con sus permisos o menos, el constructor con los suyos o menos, y
+así.
+
+### Por qué la regla es mejor que seguir parchando
+
+La escalada ya estaba anotada (`etapa3_roles_permisos_diseno_datos.md` §10.4): `invitaciones_insert`
+(0095) y `obra_members_insert` (0004) dejan que alguien con `puede_invitar_terceros` cree una
+invitación con **cualquier** permiso especial —`puede_aprobar_certificados`,
+`puede_aprobar_adicionales` + tope, `puede_ver_apu_ajena`—, tenga esos permisos o no. La `0121` cerró
+**solo** `puede_editar_presupuesto`, listando a mano quién puede otorgarlo (admin_maestro).
+
+La regla del subconjunto reemplaza esa lista por una comparación: en vez de mantener, permiso por
+permiso, quién puede darlo, se compara lo que se otorga contra lo que tiene el que invita. Cierra los
+que quedaron abiertos **y** los que se agreguen en el futuro, que es lo que una lista a mano nunca
+hace.
+
+### Lo que hay que definir antes de escribir SQL
+
+1. **¿El ROL también se subordina?** Los permisos son booleanos y se comparan solos; los roles no
+   están ordenados linealmente. ¿Un `cliente_principal` puede invitar a un `profesional`, que ve APU y
+   edita el presupuesto — cosas que el cliente no puede? Por el espíritu de la regla, no: invitar a
+   alguien con más poder que uno es otorgar más de lo que se tiene. Habría que definir qué rol puede
+   invitar a qué roles (probablemente: el cliente solo `invitado_apoderado` e `invitado_veedor`).
+2. **El tope de monto no es booleano.** Un apoderado con tope de $100.000 no debería poder invitar a
+   otro con tope mayor, ni sin tope. Es una comparación numérica con el `null` como "sin límite", o
+   sea el caso más permisivo — hay que escribirla con cuidado para que `null` no se cuele como
+   "menor".
+3. **¿`puede_invitar_terceros` se puede otorgar a sí mismo?** Por la regla, solo quien lo tenga puede
+   darlo, y eso habilita cadenas de invitaciones. Decidir si se quiere o si ese permiso queda
+   reservado a `admin_maestro`.
+4. **`admin_maestro` sigue arriba de todo** y no cambia.
+5. **La delegación del cliente a su apoderado NO es escalada y no se puede romper.** Hoy
+   `obra_members_update` deja que el `cliente_principal` toque las filas de su `invitado_apoderado`
+   para darle `puede_aprobar_*` — eso es el diseño (el cliente delega su propia facultad), y encaja
+   perfecto con la regla del subconjunto: le está dando algo que él tiene. Cuidado de no cerrarlo al
+   pasar.
+
+### Radio de impacto, medido a ojo (no verificado)
+
+Dos policies (`invitaciones_insert`, `obra_members_insert`), probablemente un helper SQL que compare
+"lo que otorga" contra "lo que tiene el que invita", y la pantalla de invitar, que hoy ofrece todos
+los permisos a cualquiera que pueda invitar y tendría que ofrecer solo los propios. Sin columnas
+nuevas.
