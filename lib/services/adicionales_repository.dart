@@ -126,27 +126,38 @@ class AdicionalesRepository {
     });
   }
 
-  /// Total (en pesos) y cantidad de adicionales APROBADOS por obra, para la línea "Total con
-  /// adicionales" del dashboard (docs/adicionales_quitas_demasias_diagnostico.md §10.2). Una sola
-  /// consulta para toda la lista, no una por obra. Suma en Dart de montos que la base ya fijó al
-  /// aprobar (0116) -- mismo criterio que `ObrasRepository.getMontoPactadoCongelado`: una suma
-  /// simple de números ya calculados, no lógica de negocio. Obras sin aprobados no aparecen.
-  Future<Map<String, ({double totalArs, int cantidad})>> getAprobadosPorObra(List<String> obraIds) async {
+  /// Adicionales APROBADOS de varias obras, **uno por fila** (no un total agrupado) -- la card del
+  /// dashboard muestra un renglón por adicional, con el mismo tratamiento visual que el pactado
+  /// (docs/adicionales_quitas_demasias_diagnostico.md §10.2, corrección de Seba del 2026-09-13:
+  /// cada adicional es un monto firmado por sí mismo, no un sumando anónimo). Devuelve el detalle
+  /// y no el total justamente para que sumar sea decisión de quien muestra, no del repositorio.
+  ///
+  /// Una sola consulta para toda la lista, no una por obra. `monto_total` es el monto que la base
+  /// fijó al aprobar (0116) y ya viene en pesos, como todo el sistema de precios -- mismo criterio
+  /// que `ObrasRepository.getMontoPactadoCongelado`. Obras sin aprobados no aparecen en el mapa.
+  ///
+  /// Orden: por fecha de resolución (el orden en que se fueron firmando, que es como se lee un
+  /// contrato con sus adicionales), con la fecha de solicitud como desempate.
+  Future<Map<String, List<({String id, String descripcion, double montoArs})>>> getAprobadosPorObra(
+    List<String> obraIds,
+  ) async {
     if (obraIds.isEmpty) return {};
     final rows = await _client
         .from('modificaciones_obra')
-        .select('obra_id, monto_total')
+        .select('id, obra_id, descripcion, monto_total')
         .eq('tipo', 'adicional')
         .eq('estado', 'aprobado')
-        .inFilter('obra_id', obraIds);
-    final porObra = <String, ({double totalArs, int cantidad})>{};
+        .inFilter('obra_id', obraIds)
+        .order('fecha_resolucion', ascending: true, nullsFirst: false)
+        .order('fecha_solicitud', ascending: true);
+    final porObra = <String, List<({String id, String descripcion, double montoArs})>>{};
     for (final row in rows as List) {
       final obraId = row['obra_id'].toString();
-      final previo = porObra[obraId] ?? (totalArs: 0.0, cantidad: 0);
-      porObra[obraId] = (
-        totalArs: previo.totalArs + _aDouble(row['monto_total']),
-        cantidad: previo.cantidad + 1,
-      );
+      porObra.putIfAbsent(obraId, () => []).add((
+        id: row['id'].toString(),
+        descripcion: (row['descripcion'] ?? '').toString().trim(),
+        montoArs: _aDouble(row['monto_total']),
+      ));
     }
     return porObra;
   }
@@ -191,6 +202,20 @@ class AdicionalesRepository {
         'p_comentario': comentario,
       });
       return _aDouble(monto);
+    });
+  }
+
+  /// Suma `porcentaje` (el avance DEL PERÍODO, no el acumulado) a un adicional aprobado (0120,
+  /// `certificar_avance_adicional`). Firme: no hay borrador ni anulación. La base rechaza si pasa del
+  /// 100% o si quien carga no es admin/profesional/constructor, y registra quién lo hizo en
+  /// audit_log. Devuelve el acumulado nuevo.
+  Future<double> certificarAvance({required String modificacionId, required double porcentaje}) {
+    return _conLog('certificarAvance', () async {
+      final acumulado = await _client.rpc('certificar_avance_adicional', params: {
+        'p_modificacion_id': modificacionId,
+        'p_porcentaje': porcentaje,
+      });
+      return _aDouble(acumulado);
     });
   }
 

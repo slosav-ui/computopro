@@ -18,7 +18,15 @@ import 'miembros_obra_screen.dart';
 class PresupuestosScreen extends StatefulWidget {
   final dynamic obra;
 
-  const PresupuestosScreen({Key? key, this.obra}) : super(key: key);
+  /// Abre la pantalla directamente en la solapa **Resumen** en vez de Cómputo. Lo usa el vínculo
+  /// "Ver el detalle en Resumen" de la card del dashboard: la portada muestra los montos cerrados y
+  /// el análisis vive en Resumen (docs/criterio_pantalla_principal_vs_resumen.md), así que el "ver
+  /// más" tiene que caer en la solapa correcta sin que el usuario la busque. Es un booleano y no un
+  /// índice a propósito: el índice de Resumen cambia según si es obra hija (ver `_indiceResumen`) y
+  /// quien llama no tiene por qué saberlo.
+  final bool abrirEnResumen;
+
+  const PresupuestosScreen({Key? key, this.obra, this.abrirEnResumen = false}) : super(key: key);
 
   @override
   _PresupuestosScreenState createState() => _PresupuestosScreenState();
@@ -26,6 +34,12 @@ class PresupuestosScreen extends StatefulWidget {
 
 class _PresupuestosScreenState extends State<PresupuestosScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
+
+  /// Índice de la solapa Resumen. Depende de si es obra hija: un adicional presupuestado con la app
+  /// no tiene la solapa Gestión de Obra (ver el `tabs:` del build), así que Resumen se corre un
+  /// lugar. Si alguna vez se reordenan las solapas, esto se actualiza junto con el `tabs:` y con el
+  /// `animateTo(1)` de `_abrirComposicionDesdeComputo`.
+  int get _indiceResumen => _esObraHija ? 3 : 4;
   late Map<String, dynamic> _obraDatos;
   String? _obraId;
   bool _esObraHija = false;
@@ -116,7 +130,11 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> with SingleTick
       'revision': 'Rev. 01',
     };
 
-    _tabController = TabController(length: _esObraHija ? 5 : 6, vsync: this);
+    _tabController = TabController(
+      length: _esObraHija ? 5 : 6,
+      initialIndex: widget.abrirEnResumen ? _indiceResumen : 0,
+      vsync: this,
+    );
     _cargarUserContext();
     if (_esObraHija && _obraId != null) _cargarAdicionalDeEstaObra();
   }
@@ -299,6 +317,7 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> with SingleTick
                     ? MatYMoTab(
                         obraId: _obraId!,
                         puedeVerMontosYAPU: _userContext?.puedeVerMontosYAPU == true,
+                        puedeEditarPrecios: _userContext?.puedeEditarPreciosObra == true,
                       )
                     : const Center(child: Text('No se pudo determinar la obra.')),
                 if (!_esObraHija)
@@ -341,8 +360,14 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> with SingleTick
             SelectorTipoPresupuesto(
               obraId: _obraId!,
               onCambio: () => setState(() => _preciosReloadTick++),
+              puedeEditar: _userContext?.puedeEditarPreciosObra == true,
             ),
-          if (_obraId != null) BloqueFactorK(key: ValueKey(_preciosReloadTick), obraId: _obraId!),
+          if (_obraId != null)
+            BloqueFactorK(
+              key: ValueKey(_preciosReloadTick),
+              obraId: _obraId!,
+              puedeEditar: _userContext?.puedeEditarPreciosObra == true,
+            ),
           // CORREGIDO 2026-09-07 (ver docs/factor_k_apu_decisiones.md) — el criterio anterior decía
           // acá "no se construye un listado de rubros propio para esta solapa (duplicaría
           // Rubros/Cómputo), se entra a la composición desde ahí". Eso dejaba la Solapa APU casi

@@ -301,7 +301,46 @@ chico a la izquierda + cifra 17px a la derecha, candado en los dos firmados):
   suman a un estimado que se sigue moviendo (el pactado todavía no existe). Se siguen mostrando
   solos, en la línea de referencia de siempre.
 - Implementado en `_buildMontoCerrado` (`lib/presentation/dashboard/obras_list_screen.dart`) — un
-  solo helper para los tres renglones, así el "mismo peso" no puede desincronizarse al editar uno.
+  solo helper para todos los renglones, así el "mismo peso" no puede desincronizarse al editar uno.
+
+**Segunda corrección, el mismo día: los adicionales NO van agrupados — un renglón por cada uno.**
+El paso anterior había dejado un solo renglón "Adicionales Aprobados (2)" con la suma. Mismo
+razonamiento llevado hasta el final: si cada adicional es un monto firmado por sí mismo, agrupar dos
+en un renglón es la misma falta que esconderlos en el total. La card queda:
+
+    🔒 Presupuesto Pactado                    $ 12.345.678
+    🔒 Adicional · Ampliación de cocina         $   890.000
+    🔒 Adicional · Cambio de membrana           $   344.567
+    ─────────────────────────────────────────────────────────
+       Total                                  $ 13.580.245
+       Ver el detalle en Resumen →
+
+- **Rótulo de cada renglón**: `Adicional · <descripción>`, la descripción con la que se cargó — es
+  lo que lo identifica para quien lo firmó. Con prefijo para que el renglón se lea solo, sin
+  depender de estar debajo del pactado. Ancho: el rótulo cede (ellipsis), la cifra no.
+- **Orden**: por fecha de resolución (el orden en que se fueron firmando), con fecha de solicitud
+  como desempate. Así se lee como un contrato con sus adicionales, 1, 2, 3.
+- **Tope: 3 renglones individuales** (`_maxAdicionalesEnCard`), y el resto se agrupa en uno solo,
+  *"Otros N adicionales aprobados"*, con su monto sumado. Decisión de tamaño, no de jerarquía: con
+  el pactado, el total y el vínculo, tres adicionales ya son 6 renglones de números en una tarjeta
+  de lista. Nada queda sin sumar — el total siempre cierra exacto — y el detalle está a un toque.
+  El tope es una constante: cambiarlo es una línea si en el uso real resulta mezquino o generoso.
+- **Vínculo "Ver el detalle en Resumen"** debajo, cuando hay al menos un adicional aprobado. Abre la
+  obra directamente en la solapa Resumen (`PresupuestosScreen.abrirEnResumen`), no en Cómputo: el
+  "ver más" tiene que caer donde está el detalle, no obligar a buscar la solapa. Tocar cualquier
+  otra parte de la card sigue abriendo Cómputo, como siempre.
+- **Sin certificados ni avance en la portada** (pedido explícito de Seba): lo que la 0120 agregó
+  ("Certificado $ X · Saldo $ Y", la barra de avance del adicional) vive en Adicionales y va a
+  Resumen, nunca en la card.
+- **Obra sin congelar con aprobados**: se listan igual, uno por uno y con candado, pero **sin
+  total** — no se suman a un estimado que todavía se mueve. Sin aprobados, la card no cambia en nada.
+- **Ojo, límite real de hoy**: la solapa Resumen sigue siendo la maqueta de la demo (85.000.000
+  hardcodeado + sliders), así que el vínculo apunta al lugar correcto pero todavía vacío de este
+  detalle. Ver `docs/criterio_pantalla_principal_vs_resumen.md` §3.
+
+**El criterio general de las dos pantallas quedó escrito aparte**, porque dejó de ser una decisión
+de esta pieza: `docs/criterio_pantalla_principal_vs_resumen.md` (portada panorámica y amable,
+Resumen técnica y profunda, más los dos pendientes de portada: el primer uso y la barra de avance).
 
 **Todo lo demás — cada adicional con su monto, su etiqueta de configuración (§10.1), la aclaración
 de condiciones mezcladas cuando corresponda, la entrada para ver/aprobar/observar uno — vive en la
@@ -1192,3 +1231,96 @@ diálogo de monto fijo (con la cascada de Factor K, al constructor le dejaba ded
 miembro — el pactado, el estimado y ahora el renglón de adicionales aprobados con su total. No es
 de adicionales: el
 dashboard no tiene un `UserContext` por obra y nunca filtró montos por rol. Pieza aparte si se decide.
+
+---
+
+## 15. Monedas distintas entre contrato y adicional — diagnóstico (2026-09-13, sin construir)
+
+Pregunta de Seba: *"el presupuesto pactado y un adicional pueden estar pactados en monedas
+distintas — el contrato en dólares y el adicional en pesos, o al revés"*, y la sospecha de que el
+total de la card esté sumando dos montos pactados en monedas y momentos distintos sin avisar.
+**Pidió tamaño antes de construir. Esto es el relevamiento, no un diseño cerrado.**
+
+### 15.1 Cómo está hoy — verificado contra el código
+
+1. **`modificaciones_obra` no tiene columna de moneda.** Ni el adicional, ni la quita, ni la
+   demasía. `monto_total` y `costo_costo_base` son `numeric` y están **en pesos**, como todo el
+   sistema de precios (mismo criterio que `certificados.monto`, `obras.monto_total`,
+   `obra_insumo_precios`). El modelo Dart (`ModificacionObra`) tampoco tiene moneda.
+2. **`obras.moneda` existe, pero es de visualización, no de pacto.** Todo se calcula y se guarda en
+   ARS y se convierte al mostrar, con la cotización **de hoy** (`convertirArsAMoneda`,
+   `ObrasListScreen._convertirMonto`, leyendo `cotizacion_dolar_bna` de la 0102).
+3. **Un adicional no puede hoy tener moneda propia ni por accidente.** La única "moneda" que llega a
+   tener es la de la obra hija de un adicional presupuestado con la app, y la 0114 la copia de la
+   madre (`v_madre.moneda`): forzada a coincidir. **Dos monedas distintas no se pueden ni expresar
+   en el schema actual.**
+4. **Entonces el total de la card no está sumando dos monedas** — está sumando dos números en pesos.
+   El problema real es otro, y es más grande: **en una obra en dólares, ningún monto "cerrado" está
+   cerrado en dólares.** El pactado y cada adicional aprobado son montos fijos en pesos que se
+   dividen por la cotización **del día en que se mira**: el número en USD que se le mostró al
+   cliente cambia solo, sin que nadie toque nada. Y en el dashboard el usuario PRO puede además
+   editar a mano la cotización proyectada, lo que mueve todos esos números "cerrados" a la vez.
+5. **El precedente ya existe y es la 0107.** Exactamente este problema se resolvió para los
+   certificados: `certificados.cotizacion_dolar_promedio_al_emitir`, snapshoteada en
+   `emitir_certificado`, con el razonamiento textual *"el número en dólares que se le mostró al
+   cliente en su momento tampoco puede moverse solo porque el dólar subió después"*. El
+   congelamiento del presupuesto (`congelar_presupuesto_obra`, 0104) y la aprobación del adicional
+   (`aprobar_adicional`, 0116) **no** tienen ese snapshot. Hay incluso un comentario en
+   `presupuesto_estado_panel.dart` que dice que ahí no hay nada que congelar porque "pactado/saldo
+   pendiente son una vista viva de un monto fijo en pesos" — cierto dentro del modelo actual, y es
+   justamente el modelo que esta pregunta pone en duda.
+6. **Hueco concreto de carga, chico y barato**: el campo "Costo (antes de Gastos Generales,
+   Beneficio, etc.)" del diálogo de monto fijo **no dice en qué moneda se escribe**. En una obra en
+   dólares el usuario tipea y el sistema lo interpreta en pesos, sin avisar; la previa "Precio
+   final" abajo ya aparece convertida a USD, lo que refuerza la confusión.
+
+### 15.2 Qué haría falta — tres niveles, de menor a mayor
+
+**Nivel 0 — decir la moneda en la carga.** Etiquetar el campo de costo con la moneda real (pesos) y
+aclarar en la previa que el precio final se muestra convertido a la cotización de hoy. Un archivo
+Dart, sin migración, sin decisiones de negocio. No resuelve pactar en otra moneda: **saca la
+ambigüedad de la carga**, que es lo que hoy puede hacer que alguien cargue un número equivocado.
+
+**Nivel 1 — congelar la cotización, como ya se hizo con los certificados.** Dos columnas nuevas:
+`obras.cotizacion_dolar_al_congelar` (llenada en `congelar_presupuesto_obra`) y
+`modificaciones_obra.cotizacion_dolar_al_aprobar` (llenada en `aprobar_adicional`). Cada monto
+cerrado se muestra en USD con **su** cotización, no con la de hoy; el total pasa a ser la suma de
+números que ya no se mueven. Filas viejas: `null` → cotización de hoy, marcado como aproximación,
+igual que hizo la 0107 con los certificados anteriores. **Tamaño: una migración chica + los lugares
+de Dart que hoy convierten con la cotización viva** (card del dashboard, `PresupuestoEstadoPanel`,
+`AdicionalesScreen`). Riesgo bajo: patrón ya probado. **Esto resuelve la mitad de la pregunta de
+Seba — el "momentos distintos" — y no toca nada del negocio.**
+
+**Nivel 2 — la moneda de pacto como dato (pactar de verdad en otra moneda).** Es una pieza propia,
+no una migración: `modificaciones_obra.moneda_pactada` + el monto en esa moneda (y lo equivalente
+para el contrato), y con eso hay que decidir qué pasa con todo lo que hoy asume pesos:
+
+- **El CAC** es un índice en pesos: no puede ajustar un adicional pactado en dólares. ¿Qué ajusta a
+  ese adicional, o no se ajusta?
+- **La cascada de Factor K** se calcula en pesos desde insumos (`calcular_precio_adicional`): si el
+  adicional se pacta en dólares, ¿se cotiza en pesos y se convierte al firmar, quedando fijo en
+  dólares?
+- **Certificación**: `certificar_avance_adicional` y `emitir_certificado` guardan pesos. ¿Se
+  certifica en la moneda del adicional? ¿La factura?
+- **El total de la portada** deja de poder ser un número único sin elegir una cotización.
+
+### 15.3 La pregunta concreta: ¿el total aclara que mezcla, o no se suma?
+
+- **Hoy (sin moneda de pacto): no hay mezcla que aclarar.** Poner un cartel de "ojo, se mezclan
+  monedas" sería avisar de algo que el schema no puede producir. Lo que falta no es un cartel, es el
+  snapshot del Nivel 1.
+- **Cuando exista la moneda de pacto: no sumar montos de monedas distintas en la portada.** Cada
+  renglón en su moneda de pacto y **dos totales, uno por moneda, sin conversión** — cero cotización
+  en la portada. Un total único "≈ convertido a la cotización de hoy" necesitaría una aclaración
+  para no engañar, y por el criterio de
+  `docs/criterio_pantalla_principal_vs_resumen.md` §2, un dato que necesita aclaración no es de
+  portada: la conversión y su cotización van en Resumen.
+
+### 15.4 Recomendación de orden
+
+Nivel 0 cuando se toque el diálogo de carga por cualquier otra razón (es de una línea). **Nivel 1
+como pieza propia y corta, antes que cualquier cosa de multi-moneda**: hace consistente lo que ya
+está construido y es la parte que hoy muestra números que se mueven solos. Nivel 2 **no** hasta que
+haya una obra real pactada en otra moneda que la del contrato — tiene ambigüedades de negocio
+(CAC, certificación, facturación) que no se pueden cerrar en abstracto, y sin un caso real se
+diseñaría a ciegas.

@@ -21,6 +21,12 @@ import '../../services/indices_economicos_repository.dart';
 import '../../services/invitaciones_repository.dart';
 import '../../services/obra_members_repository.dart';
 
+/// Un adicional aprobado, listo para pintar en la card: el monto ya convertido a las dos monedas
+/// (la conversión vive en un solo lugar, `_conMontosCalculados`, igual que el resto de los montos
+/// de esta pantalla). Un renglón de la card por cada uno de estos -- ver §10.2 de
+/// docs/adicionales_quitas_demasias_diagnostico.md.
+typedef _AdicionalAprobadoCard = ({String id, String descripcion, double montoArs, double montoUsd});
+
 class ObrasListScreen extends StatefulWidget {
   const ObrasListScreen({super.key});
 
@@ -29,6 +35,12 @@ class ObrasListScreen extends StatefulWidget {
 }
 
 class _ObrasListScreenState extends State<ObrasListScreen> {
+  /// Cuántos adicionales aprobados se listan uno por uno en la card antes de agrupar el resto en un
+  /// solo renglón. La portada es panorámica: con el pactado, el total y el vínculo a Resumen, tres
+  /// adicionales ya son 6 renglones de números en una tarjeta de lista. Lo que queda afuera no se
+  /// pierde -- se agrupa con su monto (el total siempre cierra exacto) y el detalle está en Resumen.
+  static const int _maxAdicionalesEnCard = 3;
+
   // --- Estado de Suscripción ---
   bool _esPlanPro = false;
 
@@ -271,7 +283,7 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
           _hoyConfigCongeladaSeguro(o['id'] as String, o['presupuestoCongeladoEn'] as DateTime?),
       ]);
       // Adicionales aprobados (0116), una sola consulta para toda la lista. Fail-safe a vacío: si
-      // falla, ninguna card muestra la línea de adicionales -- el resto de la card no depende de esto.
+      // falla, ninguna card muestra sus renglones de adicionales -- el resto de la card no depende de esto.
       final adicionalesAprobados = await _adicionalesAprobadosSeguro([for (final o in obras) o['id'] as String]);
       final pendientes = await _pendientesSeguro();
       // Una sola consulta para toda la lista, no una por obra -- ver _esAdminDeObra. Fail-safe a
@@ -325,7 +337,9 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
     }
   }
 
-  Future<Map<String, ({double totalArs, int cantidad})>> _adicionalesAprobadosSeguro(List<String> obraIds) async {
+  Future<Map<String, List<({String id, String descripcion, double montoArs})>>> _adicionalesAprobadosSeguro(
+    List<String> obraIds,
+  ) async {
     try {
       return await _adicionalesRepository.getAprobadosPorObra(obraIds);
     } catch (_) {
@@ -428,7 +442,7 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
     double montoVivoArs,
     double? montoPactadoArs,
     double? montoHoyConfigCongeladaArs, [
-    ({double totalArs, int cantidad})? adicionalesAprobados,
+    List<({String id, String descripcion, double montoArs})>? adicionalesAprobados,
   ]) {
     return {
       ...obra,
@@ -440,9 +454,17 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
       'montoHoyConfigCongeladaUsd': montoHoyConfigCongeladaArs == null
           ? null
           : _convertirMonto(montoHoyConfigCongeladaArs, 'ARS', 'USD'),
-      'adicionalesAprobadosCantidad': adicionalesAprobados?.cantidad ?? 0,
-      'adicionalesAprobadosArs': adicionalesAprobados?.totalArs ?? 0.0,
-      'adicionalesAprobadosUsd': _convertirMonto(adicionalesAprobados?.totalArs ?? 0.0, 'ARS', 'USD'),
+      // Uno por adicional, no un total -- la card pinta un renglón por cada uno. La conversión a
+      // USD se hace acá, de una vez, para que la card no tenga que saber nada de cotizaciones.
+      'adicionalesAprobados': <_AdicionalAprobadoCard>[
+        for (final a in adicionalesAprobados ?? const [])
+          (
+            id: a.id,
+            descripcion: a.descripcion,
+            montoArs: a.montoArs,
+            montoUsd: _convertirMonto(a.montoArs, 'ARS', 'USD'),
+          ),
+      ],
     };
   }
 
@@ -453,6 +475,39 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
     final reg = RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))');
     final formateado = str.replaceAllMapped(reg, (Match m) => '${m[1]}.');
     return moneda == 'USD' ? 'USD $formateado' : '\$ $formateado';
+  }
+
+  /// Rótulo del renglón de un adicional aprobado: su descripción, que es lo que lo identifica para
+  /// quien lo firmó, con el prefijo "Adicional" para que el renglón se lea solo y no dependa de
+  /// estar debajo del pactado. Descripción vacía (no debería pasar, es obligatoria al cargarlo):
+  /// queda solo el prefijo, nunca un renglón sin nombre.
+  String _rotuloAdicional(_AdicionalAprobadoCard a) =>
+      a.descripcion.isEmpty ? 'Adicional' : 'Adicional · ${a.descripcion}';
+
+  /// El "ver más" de los adicionales: lleva a la solapa Resumen de la obra, que es donde vive el
+  /// detalle técnico (qué incluye cada adicional, cuánto se certificó, qué saldo queda). La portada
+  /// se queda con los montos cerrados y nada más -- ver docs/criterio_pantalla_principal_vs_
+  /// resumen.md. Tocar cualquier otra parte de la card sigue abriendo la obra en Cómputo, como
+  /// siempre.
+  Widget _buildVinculoResumen(Map<String, dynamic> obra) {
+    return InkWell(
+      onTap: () => _abrirPresupuesto(obra, enResumen: true),
+      borderRadius: BorderRadius.circular(4),
+      child: const Padding(
+        padding: EdgeInsets.symmetric(vertical: 3),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Ver el detalle en Resumen',
+              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF1B365D)),
+            ),
+            SizedBox(width: 3),
+            Icon(Icons.arrow_forward, size: 12, color: Color(0xFF1B365D)),
+          ],
+        ),
+      ),
+    );
   }
 
   /// Un monto cerrado de la card de obra: rótulo a la izquierda, cifra a la derecha, mismo tamaño
@@ -642,11 +697,15 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
   // está encima, así que sin este await+recarga el presupuesto vivo de la card quedaba con el valor
   // de cuando se entró a la obra, sin importar cuánto cómputo se cargara adentro. No hay
   // RefreshIndicator en esta pantalla como alternativa manual -- hacía falta esto sí o sí.
-  Future<void> _abrirPresupuesto(Map<String, dynamic> obra) async {
+  /// `enResumen`: abre la obra directamente en la solapa Resumen, no en Cómputo. Lo usa el vínculo
+  /// de la card (ver `_buildVinculoResumen`) -- el criterio de las dos pantallas es que la portada
+  /// es panorámica y el análisis vive en Resumen, así que el "ver más" tiene que caer ahí y no
+  /// obligar a buscar la solapa a mano (docs/criterio_pantalla_principal_vs_resumen.md).
+  Future<void> _abrirPresupuesto(Map<String, dynamic> obra, {bool enResumen = false}) async {
     await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => PresupuestosScreen(obra: obra),
+        builder: (context) => PresupuestosScreen(obra: obra, abrirEnResumen: enResumen),
       ),
     );
     if (!mounted) return;
@@ -2212,12 +2271,22 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                       final bool mostrarPactado = esCongelada && montoPactado != null;
                       final double monto = (esCongelada && montoPactado != null) ? montoPactado : montoVivo;
                       final bool tieneCac = obra['aplicaCac'] ?? false;
-                      final int cantidadAdicionales = obra['adicionalesAprobadosCantidad'] as int? ?? 0;
+                      // Un renglón por adicional aprobado (§10.2): la card los lista, no los agrupa.
+                      final List<_AdicionalAprobadoCard> adicionales =
+                          (obra['adicionalesAprobados'] as List<_AdicionalAprobadoCard>?) ?? const [];
                       final int pendientesDeObra = _pendientes.where((p) => p.obraId == obra['id']).length;
-                      final double montoAdicionales = (esArs
-                              ? obra['adicionalesAprobadosArs']
-                              : obra['adicionalesAprobadosUsd']) as double? ??
-                          0.0;
+                      // Los montos ya vienen convertidos a las dos monedas (_conMontosCalculados);
+                      // acá solo se elige cuál mostrar, igual que con el pactado y el estimado.
+                      double montoAdicional(_AdicionalAprobadoCard a) => esArs ? a.montoArs : a.montoUsd;
+                      final double montoAdicionales = adicionales.fold(0.0, (t, a) => t + montoAdicional(a));
+                      // Si hay más de los que entran en una portada, los primeros van uno por uno y el
+                      // resto se agrupa en un solo renglón -- ver _maxAdicionalesEnCard.
+                      final List<_AdicionalAprobadoCard> adicionalesVisibles =
+                          adicionales.take(_maxAdicionalesEnCard).toList();
+                      final List<_AdicionalAprobadoCard> adicionalesAgrupados =
+                          adicionales.skip(_maxAdicionalesEnCard).toList();
+                      final double montoAgrupados =
+                          adicionalesAgrupados.fold(0.0, (t, a) => t + montoAdicional(a));
                       final String estadoServicio = obra['estadoServicioEspecial'] ?? 'Ninguno';
 
                       return Card(
@@ -2351,24 +2420,32 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                                 Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    // Los dos montos cerrados de una obra firmada -- el pactado y
-                                    // el adicional aprobado -- van con el MISMO tratamiento visual
-                                    // (criterio de Seba, 2026-09-13): los dos están congelados y
-                                    // firmados, ninguno es una estimación, así que el adicional no
-                                    // puede aparecer solo como parte de una suma. Debajo, el total.
-                                    // Nada más: el desglose de lo certificado y lo que falta vive
-                                    // dentro de la obra (docs/adicionales_quitas_demasias_
-                                    // diagnostico.md §10.2), y tocar la card ya lleva ahí.
-                                    if (mostrarPactado && cantidadAdicionales > 0) ...[
+                                    // Los montos cerrados de una obra firmada -- el pactado y CADA
+                                    // adicional aprobado -- van con el MISMO tratamiento visual
+                                    // (criterio de Seba, 2026-09-13): todos están congelados y
+                                    // firmados, ninguno es una estimación, así que ninguno puede
+                                    // aparecer agrupado ni escondido dentro de una suma. Debajo, el
+                                    // total, y un vínculo a Resumen para el detalle.
+                                    //
+                                    // Nada de certificados ni avance acá: la portada es panorámica,
+                                    // el análisis es de Resumen (docs/criterio_pantalla_principal_vs_
+                                    // resumen.md).
+                                    if (mostrarPactado && adicionales.isNotEmpty) ...[
                                       _buildMontoCerrado('Presupuesto Pactado', monto, obra['moneda']),
-                                      const SizedBox(height: 4),
-                                      _buildMontoCerrado(
-                                        cantidadAdicionales == 1
-                                            ? 'Adicional Aprobado'
-                                            : 'Adicionales Aprobados ($cantidadAdicionales)',
-                                        montoAdicionales,
-                                        obra['moneda'],
-                                      ),
+                                      for (final a in adicionalesVisibles) ...[
+                                        const SizedBox(height: 4),
+                                        _buildMontoCerrado(_rotuloAdicional(a), montoAdicional(a), obra['moneda']),
+                                      ],
+                                      // El resto, en un solo renglón: la portada no crece sin límite,
+                                      // pero el total sigue cerrando exacto y nada queda sin sumar.
+                                      if (adicionalesAgrupados.isNotEmpty) ...[
+                                        const SizedBox(height: 4),
+                                        _buildMontoCerrado(
+                                          'Otros ${adicionalesAgrupados.length} adicionales aprobados',
+                                          montoAgrupados,
+                                          obra['moneda'],
+                                        ),
+                                      ],
                                       const Padding(
                                         padding: EdgeInsets.symmetric(vertical: 4),
                                         child: Divider(height: 1, thickness: 1, color: Colors.black12),
@@ -2380,7 +2457,7 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                                         conCandado: false,
                                       ),
                                     ] else ...[
-                                      // Un solo número (sin adicionales aprobados, u obra sin
+                                      // Un solo número grande (sin adicionales aprobados, u obra sin
                                       // congelar): el de siempre, con el rótulo arriba. El pactado se
                                       // muestra SIN aclaración que lo relativice -- una vez firmado,
                                       // ese es el precio de la obra, no una estimación (criterio de
@@ -2407,16 +2484,27 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                                         _formatearMonto(monto, obra['moneda']),
                                         style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Color(0xFF1B365D)),
                                       ),
-                                      // Obra sin congelar: los aprobados no se suman a un estimado que
-                                      // se sigue moviendo -- se muestran solos.
-                                      if (cantidadAdicionales > 0) ...[
-                                        const SizedBox(height: 2),
-                                        Text(
-                                          'Adicionales aprobados: ${_formatearMonto(montoAdicionales, obra['moneda'])} '
-                                          '($cantidadAdicionales)',
-                                          style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF1B365D)),
+                                      // Obra sin congelar: los adicionales aprobados se listan igual,
+                                      // uno por uno y con su candado (están firmados), pero SIN total
+                                      // -- no se suman a un estimado que todavía se mueve.
+                                      for (final a in adicionalesVisibles) ...[
+                                        const SizedBox(height: 4),
+                                        _buildMontoCerrado(_rotuloAdicional(a), montoAdicional(a), obra['moneda']),
+                                      ],
+                                      if (adicionalesAgrupados.isNotEmpty) ...[
+                                        const SizedBox(height: 4),
+                                        _buildMontoCerrado(
+                                          'Otros ${adicionalesAgrupados.length} adicionales aprobados',
+                                          montoAgrupados,
+                                          obra['moneda'],
                                         ),
                                       ],
+                                    ],
+                                    // "Ver más" de esta pieza: el detalle de cada adicional (qué
+                                    // incluye, certificado, saldo) vive en Resumen, no en la portada.
+                                    if (adicionales.isNotEmpty) ...[
+                                      const SizedBox(height: 4),
+                                      _buildVinculoResumen(obra),
                                     ],
                                     if (mostrarPactado && montoHoyConfigCongelada != null) ...[
                                       const SizedBox(height: 6),
