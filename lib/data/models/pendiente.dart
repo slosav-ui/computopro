@@ -37,6 +37,14 @@ enum TipoPendiente {
   /// de la app no se puede producir, así que si aparece, falta algo de verdad -- por eso no se
   /// descarta, se resuelve creando el reemplazo.
   certificadoSinReemplazo,
+
+  /// "Te objetaron un certificado" (`0129`): el cliente planteó una duda y todavía nadie la
+  /// respondió. Va al lado técnico, que es el que sabe qué se midió.
+  certificadoObjetado,
+
+  /// La vuelta de lo anterior: al cliente le respondieron la objeción y sigue abierta. Le toca leer
+  /// la aclaración y levantarla, o dejarla planteada.
+  objecionRespondida,
 }
 
 class Pendiente {
@@ -98,6 +106,10 @@ class Pendiente {
         return 'Certificado N° $_numero para revisar y conformar';
       case TipoPendiente.certificadoSinReemplazo:
         return 'Certificado N° $_numero para recrear su reemplazo';
+      case TipoPendiente.certificadoObjetado:
+        return 'Certificado N° $_numero para responder una objeción';
+      case TipoPendiente.objecionRespondida:
+        return 'Certificado N° $_numero para revisar la respuesta a tu objeción';
     }
   }
 
@@ -132,6 +144,10 @@ class Pendiente {
         return _conFecha('Período $descripcion', 'propuesto el', cuando);
       case TipoPendiente.certificadoSinReemplazo:
         return _conFecha('Período $descripcion', 'anulado el', cuando);
+      case TipoPendiente.certificadoObjetado:
+        return _conFecha('Período $descripcion', 'objetado el', cuando);
+      case TipoPendiente.objecionRespondida:
+        return _conFecha('Período $descripcion', 'respondida el', cuando);
     }
   }
 
@@ -187,6 +203,10 @@ class Pendiente {
         return TipoPendiente.certificadoPropuesto;
       case 'certificado_sin_reemplazo':
         return TipoPendiente.certificadoSinReemplazo;
+      case 'certificado_objetado':
+        return TipoPendiente.certificadoObjetado;
+      case 'objecion_respondida':
+        return TipoPendiente.objecionRespondida;
       default:
         return null;
     }

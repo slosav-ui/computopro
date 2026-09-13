@@ -37,6 +37,10 @@ class CartelPendientes extends StatelessWidget {
         return Icons.fact_check_outlined;
       case TipoPendiente.certificadoSinReemplazo:
         return Icons.report_problem_outlined;
+      case TipoPendiente.certificadoObjetado:
+        return Icons.pan_tool_outlined;
+      case TipoPendiente.objecionRespondida:
+        return Icons.question_answer_outlined;
     }
   }
 

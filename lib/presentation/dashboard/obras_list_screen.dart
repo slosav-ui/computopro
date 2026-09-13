@@ -414,6 +414,10 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
         case TipoPendiente.certificadoPagado:
         case TipoPendiente.anulacion:
         case TipoPendiente.firmaFisica:
+        // Las dos mitades de la objeción (0129) abren el detalle: ahí está el fundamento, la
+        // respuesta si ya la hay, y la acción que corresponda según quién mira.
+        case TipoPendiente.certificadoObjetado:
+        case TipoPendiente.objecionRespondida:
         // El anulado sin reemplazo abre su propio detalle: es donde se ve qué certificado es, por
         // qué se anuló, y dónde está el botón para recrear el reemplazo (0126).
         case TipoPendiente.certificadoSinReemplazo:

@@ -44,6 +44,26 @@ extension AcuerdoCertificadoLabel on AcuerdoCertificado {
   }
 }
 
+/// La objeción del cliente (0129, Tanda 3 de docs/certificacion_acuerdo_partes_diagnostico.md §5).
+/// Otro eje aparte, como el acuerdo y como la anulación: el certificado sigue `emitido`/`leido`
+/// mientras se discute. `null` = nunca fue objetado, que es el caso de casi todos.
+///
+/// `abierta` **frena el pago**; leer sigue permitido (leer no es pagar).
+enum ObjecionCertificado { abierta, aclarada, aceptada }
+
+extension ObjecionCertificadoLabel on ObjecionCertificado {
+  String get label {
+    switch (this) {
+      case ObjecionCertificado.abierta:
+        return 'Objeción abierta';
+      case ObjecionCertificado.aclarada:
+        return 'Objeción aclarada';
+      case ObjecionCertificado.aceptada:
+        return 'Objeción aceptada';
+    }
+  }
+}
+
 class Certificado {
   final String id;
   final String obraId;
@@ -130,6 +150,19 @@ class Certificado {
   final DateTime? reemplazoNoRequeridoFecha;
   final String? reemplazoNoRequeridoMotivo;
 
+  // Objeción del cliente (0129), en tres tramos: el planteo, la respuesta del lado técnico y el
+  // cierre. Sin el tramo del medio, una objeción resuelta no dice qué se contestó, que es justo lo
+  // que hay que poder releer después.
+  final ObjecionCertificado? objecionEstado;
+  final String? objecionFundamento;
+  final String? objecionPor;
+  final DateTime? objecionFecha;
+  final String? objecionRespuesta;
+  final String? objecionRespondidaPor;
+  final DateTime? objecionRespondidaFecha;
+  final String? objecionResueltaPor;
+  final DateTime? objecionResueltaFecha;
+
   /// Por qué la contraparte devolvió la última propuesta. Presente solo si hubo una devolución --
   /// es lo que distingue un borrador "devuelto para corregir" de uno recién creado.
   final String? comentarioDevolucion;
@@ -183,6 +216,15 @@ class Certificado {
     this.reemplazoNoRequeridoPor,
     this.reemplazoNoRequeridoFecha,
     this.reemplazoNoRequeridoMotivo,
+    this.objecionEstado,
+    this.objecionFundamento,
+    this.objecionPor,
+    this.objecionFecha,
+    this.objecionRespuesta,
+    this.objecionRespondidaPor,
+    this.objecionRespondidaFecha,
+    this.objecionResueltaPor,
+    this.objecionResueltaFecha,
   });
 
   /// "1", "1 bis", "1 ter" -- el número que ve el usuario, en TODAS las pantallas que lo muestran
@@ -215,6 +257,13 @@ class Certificado {
   /// Hubo una devolución con comentario y todavía no se volvió a proponer. No alcanza con mirar
   /// `comentarioDevolucion`: al volver a proponer, la función lo limpia, pero mientras el acuerdo
   /// esté `propuesto` el comentario viejo no es lo que hay que mostrar.
+  /// Hay una objeción sin resolver: el pago está frenado (0129).
+  bool get tieneObjecionAbierta => objecionEstado == ObjecionCertificado.abierta;
+
+  /// El lado técnico ya contestó la objeción abierta y la pelota está del lado del cliente.
+  bool get objecionEsperaAlCliente =>
+      tieneObjecionAbierta && (objecionRespuesta?.isNotEmpty ?? false);
+
   /// Se decidió que este anulado no necesita reemplazo (0128). Distinto de "no tiene reemplazo":
   /// acá alguien lo dijo, con motivo y fecha.
   bool get reemplazoNoRequerido => reemplazoNoRequeridoFecha != null;

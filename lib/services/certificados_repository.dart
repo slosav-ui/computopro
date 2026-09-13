@@ -289,6 +289,41 @@ class CertificadosRepository {
     return data.toString();
   }
 
+  // ===========================================================================
+  // Objeción del cliente (0129)
+  // ===========================================================================
+
+  /// El cliente (o su apoderado) plantea la duda. Frena el pago hasta que se levante o se corrija el
+  /// certificado. El fundamento es obligatorio del lado del servidor.
+  Future<void> objetar({
+    required String certificadoId,
+    required String fundamento,
+  }) async {
+    await _client.rpc('objetar_certificado', params: {
+      'p_certificado_id': certificadoId,
+      'p_fundamento': fundamento,
+    });
+  }
+
+  /// El lado técnico aclara. **No cierra la objeción ni destraba el pago**: eso lo hace quien la
+  /// planteó. Se puede responder varias veces; la última pisa a la anterior y todas quedan en el
+  /// audit_log.
+  Future<void> responderObjecion({
+    required String certificadoId,
+    required String respuesta,
+  }) async {
+    await _client.rpc('responder_objecion_certificado', params: {
+      'p_certificado_id': certificadoId,
+      'p_respuesta': respuesta,
+    });
+  }
+
+  /// La levanta el mismo lado que la planteó, y nadie más. Ahí el pago se destraba.
+  Future<void> levantarObjecion(String certificadoId) async {
+    await _client
+        .rpc('levantar_objecion_certificado', params: {'p_certificado_id': certificadoId});
+  }
+
   /// Cuántos certificados vigentes se emitieron DESPUÉS de este (0127). Si es > 0, el reemplazo de
   /// un anulado nace vacío: no se puede saber si esos certificados ya recertificaron lo que medía el
   /// anulado, y copiarlo lo contaría dos veces.
@@ -371,7 +406,33 @@ class CertificadosRepository {
       reemplazoNoRequeridoPor: row['reemplazo_no_requerido_por']?.toString(),
       reemplazoNoRequeridoFecha: _fecha(row['reemplazo_no_requerido_fecha']),
       reemplazoNoRequeridoMotivo: row['reemplazo_no_requerido_motivo']?.toString(),
+      objecionEstado: _objecionDesdeColumna(row['objecion_estado']?.toString()),
+      objecionFundamento: row['objecion_fundamento']?.toString(),
+      objecionPor: row['objecion_por']?.toString(),
+      objecionFecha: _fecha(row['objecion_fecha']),
+      objecionRespuesta: row['objecion_respuesta']?.toString(),
+      objecionRespondidaPor: row['objecion_respondida_por']?.toString(),
+      objecionRespondidaFecha: _fecha(row['objecion_respondida_fecha']),
+      objecionResueltaPor: row['objecion_resuelta_por']?.toString(),
+      objecionResueltaFecha: _fecha(row['objecion_resuelta_fecha']),
     );
+  }
+
+  /// `null` (nunca objetado) se distingue de un valor desconocido: ante algo que esta versión de la
+  /// app no conoce se asume `abierta`, o sea el caso que FRENA el pago. Es el fallback conservador
+  /// cuando hay plata de por medio -- mejor mostrar un freno de más que ofrecer un pago que la base
+  /// va a rechazar.
+  ObjecionCertificado? _objecionDesdeColumna(String? valor) {
+    switch (valor) {
+      case null:
+        return null;
+      case 'aclarada':
+        return ObjecionCertificado.aclarada;
+      case 'aceptada':
+        return ObjecionCertificado.aceptada;
+      default:
+        return ObjecionCertificado.abierta;
+    }
   }
 
   DateTime? _fecha(dynamic valor) =>

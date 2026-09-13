@@ -121,6 +121,131 @@ class _DetalleCertificadoScreenState extends State<DetalleCertificadoScreen> {
     }
   }
 
+  // ===========================================================================
+  // Objeción del cliente (0129)
+  // ===========================================================================
+  //
+  // Quién ve qué botón sale de dos getters que ya existían y coinciden EXACTO con la autoridad de
+  // las funciones nuevas: `puedeMarcarCertificadoLeido` es cliente o apoderado con delegación (los
+  // que objetan y levantan) y `puedeCargarAvance` es admin/profesional/constructor (los que
+  // responden). No hace falta un RPC acá: las dos se calculan solo con los roles del que mira.
+
+  Future<void> _objetar() async {
+    final fundamento = await _pedirTexto(
+      titulo: 'Objetar el certificado',
+      explicacion: 'Mientras la objeción esté abierta, este certificado no se puede pagar. Lo van a '
+          'ver quienes lo emitieron, para responderte.',
+      etiqueta: 'Fundamento',
+      boton: 'Objetar',
+    );
+    if (fundamento == null) return;
+    await _accionDeObjecion(
+      () => _certificadosRepository.objetar(certificadoId: _cert.id, fundamento: fundamento),
+      'No se pudo registrar la objeción.',
+    );
+  }
+
+  Future<void> _responderObjecion() async {
+    final respuesta = await _pedirTexto(
+      titulo: 'Responder la objeción',
+      explicacion: 'Responder no destraba el pago: la objeción la levanta quien la planteó. Si la '
+          'objeción tiene razón, el camino es anular el certificado y emitir uno corregido.',
+      etiqueta: 'Respuesta',
+      boton: 'Responder',
+    );
+    if (respuesta == null) return;
+    await _accionDeObjecion(
+      () => _certificadosRepository.responderObjecion(
+          certificadoId: _cert.id, respuesta: respuesta),
+      'No se pudo registrar la respuesta.',
+    );
+  }
+
+  Future<void> _levantarObjecion() async {
+    final confirmado = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Levantar la objeción',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+        content: const Text(
+          'Queda registrado que la objeción se aclaró, y el certificado vuelve a poder pagarse.',
+          style: TextStyle(fontSize: 12.5),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Levantar')),
+        ],
+      ),
+    );
+    if (confirmado != true) return;
+    await _accionDeObjecion(
+      () => _certificadosRepository.levantarObjecion(_cert.id),
+      'No se pudo levantar la objeción.',
+    );
+  }
+
+  /// Las tres acciones de la objeción se quedan en la pantalla y recargan, en vez de cerrarla: el
+  /// que objeta o responde quiere ver cómo quedó la conversación, no volver al historial.
+  Future<void> _accionDeObjecion(Future<void> Function() accion, String fallback) async {
+    setState(() => _actualizando = true);
+    try {
+      await accion();
+      if (!mounted) return;
+      setState(() => _actualizando = false);
+      await _recargar();
+    } on PostgrestException catch (_) {
+      if (!mounted) return;
+      setState(() => _actualizando = false);
+      await _avisarDeAccionFallida(fallback);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _actualizando = false);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(fallback)));
+    }
+  }
+
+  /// Diálogo de texto largo obligatorio, con una explicación arriba. Los tres diálogos de la
+  /// objeción tienen la misma forma y solo cambian las palabras.
+  Future<String?> _pedirTexto({
+    required String titulo,
+    required String explicacion,
+    required String etiqueta,
+    required String boton,
+  }) {
+    final controller = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(titulo, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(explicacion, style: const TextStyle(fontSize: 12.5)),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              maxLines: 3,
+              decoration: InputDecoration(labelText: etiqueta, isDense: true),
+              style: const TextStyle(fontSize: 13),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+          TextButton(
+            onPressed: () {
+              final texto = controller.text.trim();
+              Navigator.pop(ctx, texto.isEmpty ? null : texto);
+            },
+            child: Text(boton),
+          ),
+        ],
+      ),
+    );
+  }
+
   /// Deja dicho que este anulado no necesita reemplazo, con el motivo (0128). Es la otra salida
   /// cuando el hueco no se puede tapar con un certificado: si los posteriores ya cubrieron lo que
   /// medía, el reemplazo nacería vacío y no se podría emitir, y la numeración quedaría trabada.
@@ -334,6 +459,15 @@ class _DetalleCertificadoScreenState extends State<DetalleCertificadoScreen> {
       reemplazoNoRequeridoPor: c.reemplazoNoRequeridoPor,
       reemplazoNoRequeridoFecha: c.reemplazoNoRequeridoFecha,
       reemplazoNoRequeridoMotivo: c.reemplazoNoRequeridoMotivo,
+      objecionEstado: c.objecionEstado,
+      objecionFundamento: c.objecionFundamento,
+      objecionPor: c.objecionPor,
+      objecionFecha: c.objecionFecha,
+      objecionRespuesta: c.objecionRespuesta,
+      objecionRespondidaPor: c.objecionRespondidaPor,
+      objecionRespondidaFecha: c.objecionRespondidaFecha,
+      objecionResueltaPor: c.objecionResueltaPor,
+      objecionResueltaFecha: c.objecionResueltaFecha,
     );
   }
 
@@ -515,6 +649,7 @@ class _DetalleCertificadoScreenState extends State<DetalleCertificadoScreen> {
           if (_cert.estado == EstadoCertificado.pagado || _cert.estado == EstadoCertificado.impactadoCerrado)
             _buildDatoPago(),
           if (_cert.estado == EstadoCertificado.impactadoCerrado) _buildDatoImpacto(),
+          if (_cert.objecionEstado != null) _buildBloqueObjecion(),
           if (_faltaReemplazo) _buildAvisoSinReemplazo(),
           if (_cert.reemplazoNoRequerido) _buildDatoReemplazoNoRequerido(),
           const SizedBox(height: 24),
@@ -634,6 +769,87 @@ class _DetalleCertificadoScreenState extends State<DetalleCertificadoScreen> {
     );
   }
 
+  /// Toda la conversación de la objeción en un solo bloque: el fundamento, la respuesta si ya la
+  /// hay, y la acción que le toca al que mira. Se muestra también cuando ya está resuelta -- una
+  /// objeción aclarada es parte de la historia del certificado, igual que el motivo de una
+  /// anulación, y es lo que explica por qué el pago estuvo frenado.
+  Widget _buildBloqueObjecion() {
+    final abierta = _cert.tieneObjecionAbierta;
+    final esCliente = widget.userContext?.puedeMarcarCertificadoLeido == true;
+    final esTecnico = widget.userContext?.puedeCargarAvance == true;
+
+    final botones = <Widget>[
+      if (abierta && esTecnico)
+        TextButton(
+          onPressed: _actualizando ? null : _responderObjecion,
+          child: Text(_cert.objecionRespuesta == null ? 'Responder' : 'Responder de nuevo',
+              style: const TextStyle(fontSize: 12)),
+        ),
+      if (abierta && esCliente)
+        ElevatedButton(
+          onPressed: _actualizando ? null : _levantarObjecion,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF1B365D),
+            foregroundColor: Colors.white,
+            visualDensity: VisualDensity.compact,
+          ),
+          child: const Text('Levantar la objeción', style: TextStyle(fontSize: 12)),
+        ),
+    ];
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: abierta ? const Color(0xFFFFF4E5) : Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: abierta ? Colors.orange.shade200 : Colors.grey.shade300),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '${_cert.objecionEstado!.label}${_fmtFechaCorta(_cert.objecionFecha)}',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              color: abierta ? Colors.orange.shade900 : Colors.black54,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(_cert.objecionFundamento ?? '',
+              style: const TextStyle(fontSize: 12.5, color: Colors.black87)),
+          if (_cert.objecionRespuesta != null) ...[
+            const SizedBox(height: 8),
+            Text('Respuesta${_fmtFechaCorta(_cert.objecionRespondidaFecha)}:',
+                style: const TextStyle(
+                    fontSize: 11, fontWeight: FontWeight.bold, color: Colors.black54)),
+            Text(_cert.objecionRespuesta!,
+                style: const TextStyle(fontSize: 12.5, color: Colors.black87)),
+          ],
+          // Por qué no aparece el botón de pagar. Sin esta línea, el que vino a pagar no encuentra
+          // el botón y no sabe si es un permiso, un error o la objeción.
+          if (abierta) ...[
+            const SizedBox(height: 8),
+            Text(
+              esCliente
+                  ? 'Mientras la objeción esté abierta, este certificado no se puede pagar. La '
+                      'levantás vos, que fue quien la planteó.'
+                  : 'Mientras la objeción esté abierta, este certificado no se puede pagar. La '
+                      'levanta quien la planteó; si tiene razón, el camino es anular y emitir uno '
+                      'corregido.',
+              style: TextStyle(fontSize: 11.5, color: Colors.orange.shade900),
+            ),
+          ],
+          if (botones.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Wrap(spacing: 8, runSpacing: 4, children: botones),
+          ],
+        ],
+      ),
+    );
+  }
+
   /// Lo que quedó dicho cuando se decidió que este anulado no necesita reemplazo (0128). Se muestra
   /// siempre, no solo al que puede actuar: es parte de la historia del certificado, igual que el
   /// motivo de la anulación.
@@ -671,12 +887,29 @@ class _DetalleCertificadoScreenState extends State<DetalleCertificadoScreen> {
   Widget _buildAcciones() {
     final botones = <Widget>[];
 
+    // Con una objeción abierta el pago está frenado en la base (0129), así que el botón no se
+    // ofrece. El porqué lo explica el bloque de la objeción, arriba -- un botón que falla siempre
+    // no es información útil.
     if ((_cert.estado == EstadoCertificado.emitido || _cert.estado == EstadoCertificado.leido) &&
+        !_cert.tieneObjecionAbierta &&
         widget.userContext?.puedeMarcarCertificadoPagado(_cert.monto) == true) {
       botones.add(ElevatedButton(
         onPressed: _actualizando ? null : _marcarPagado,
         style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1B365D), foregroundColor: Colors.white),
         child: const Text('Marcar como pagado'),
+      ));
+    }
+
+    // Objetar (0129): quien recibe el certificado, mientras esté emitido o leído y no haya ya una
+    // objeción abierta. Misma autoridad que marcar Leído -- objetar no es un acto económico, no
+    // pide tope ni permiso de aprobación: es plantear una duda.
+    if ((_cert.estado == EstadoCertificado.emitido || _cert.estado == EstadoCertificado.leido) &&
+        !_cert.tieneObjecionAbierta &&
+        widget.userContext?.puedeMarcarCertificadoLeido == true) {
+      botones.add(TextButton(
+        onPressed: _actualizando ? null : _objetar,
+        child: Text('Objetar el certificado',
+            style: TextStyle(color: Colors.orange.shade900)),
       ));
     }
 

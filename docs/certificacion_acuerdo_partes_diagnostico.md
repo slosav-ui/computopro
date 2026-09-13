@@ -301,6 +301,45 @@ tocan las 4 check constraints de fechas, ni `calcular_avance_acumulado_subitem` 
 
 ---
 
+### 5.1 Tanda 3, como quedó escrita — migración `0129`
+
+**`0129` aplicada y verificada por Seba (2026-09-13); los 7 archivos de Dart commiteados el mismo
+día.** Confirmado lo que anticipaba §5: **no hizo falta ningún estado nuevo**. El certificado sigue
+`emitido`/`leido` mientras se discute, y no se tocó ninguna check constraint de fechas, ni el candado
+del 100%, ni la numeración.
+
+**Las dos preguntas que Seba pidió resolver antes de escribir:**
+
+**¿Quién resuelve la objeción?** El lado técnico *responde*, pero **la objeción solo la levanta quien
+la puso**. Si el objetado pudiera cerrarla solo, alcanzaría con escribir cualquier cosa en la
+respuesta para destrabar el cobro y el freno sería decorativo. Es el mismo principio que ya rige el
+resto de la pieza: quien propone no da la conformidad, quien propone la anulación no la aprueba. "El
+mismo **lado**", no la misma persona: el apoderado existe para actuar por el cliente.
+
+**¿Cómo se cierra si el cliente se equivocó?** El técnico responde con la aclaración, el cliente la
+lee y levanta la objeción, y el pago se destraba. Queda escrito el fundamento, la respuesta, quién
+levantó y cuándo. El cliente también puede levantarla sin esperar respuesta, si se dio cuenta solo.
+
+**¿Y si no la levanta nunca?** No hay bloqueo permanente, y esto es lo que hace viable la pieza: el
+lado técnico siempre puede **anular y emitir corregido** sin pedirle permiso al cliente (un objetado
+sigue `emitido`/`leido`, así que el circuito de anulación está disponible). Al aprobarse esa
+anulación, la objeción queda `aceptada` **automáticamente** — pedir un paso aparte solo garantizaría
+objeciones "abiertas" sobre certificados que ya no existen. El cliente puede frenar el pago de *ese*
+documento; no puede frenar la obra.
+
+**Tres decisiones más, con su porqué:**
+
+- **Objetar no pide tope ni `puede_aprobar_certificados`**: mismo conjunto que marca Leído (cliente o
+  apoderado con delegación vigente). Objetar no compromete ni libera plata — pedirle un tope de
+  aprobación a alguien para que pueda decir "esto no está bien" sería al revés.
+- **Se tocó una rama que ya funcionaba**: el pendiente `certificado_leido` (el pedido de registrar el
+  pago) deja de aparecer con una objeción abierta. Con el freno puesto, ese aviso ofrecería algo que
+  la base rechaza.
+- **Los avisos son dos, no uno**: una objeción es una conversación, y si el aviso solo va de ida, el
+  que responde nunca se entera de que le contestaron. Mismo criterio que el acuerdo de la 0124.
+
+---
+
 ## 6. El avance global — no es el Modelo B
 
 **Modelo B es etapas con monto cerrado.** `hitos_certificacion.monto` es un importe fijo por hito, el

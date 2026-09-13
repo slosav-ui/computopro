@@ -1061,6 +1061,34 @@ class _GestionObraTabState extends State<GestionObraTab> {
                     ),
                   ),
                 ),
+              // La objeción abierta se marca en la lista (0129): es lo que explica por qué ese
+              // certificado no avanza al pago. El detalle y las acciones viven en la pantalla del
+              // certificado, que es adonde lleva la tarjeta.
+              if (cert.tieneObjecionAbierta)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.pan_tool_outlined, size: 13, color: Colors.orange.shade800),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          cert.objecionEsperaAlCliente
+                              ? 'Objetado — respondido, esperando al cliente'
+                              : 'Objetado — ${cert.objecionFundamento}',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.orange.shade900,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               if (cert.anulacionEstado == 'propuesta')
                 _buildBloqueAnulacionPendiente(cert),
               // Descartar un borrador: los tres roles técnicos, los mismos que lo crean y lo
