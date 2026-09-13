@@ -455,6 +455,47 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
     return moneda == 'USD' ? 'USD $formateado' : '\$ $formateado';
   }
 
+  /// Un monto cerrado de la card de obra: rótulo a la izquierda, cifra a la derecha, mismo tamaño
+  /// y mismo peso para todos los que la usan (pactado, adicional aprobado, total). Los dos
+  /// primeros están firmados y congelados, así que van iguales -- darle al adicional un
+  /// tratamiento menor lo hacía leer como un detalle de la suma del pactado, no como un monto
+  /// aprobado por sí mismo (pedido de Seba, 2026-09-13).
+  ///
+  /// El rótulo es el que cede ancho (Expanded + ellipsis): en una card angosta lo que no puede
+  /// recortarse es la cifra (memoria de overflow en pantalla angosta).
+  Widget _buildMontoCerrado(String rotulo, double monto, String moneda, {bool conCandado = true}) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        // Candado en los montos firmados; el total es derivado, no se firma aparte -- pero deja el
+        // mismo hueco para que los tres rótulos arranquen alineados.
+        if (conCandado)
+          const Padding(
+            padding: EdgeInsets.only(bottom: 3),
+            child: Icon(Icons.lock_outline, size: 10, color: Colors.black45),
+          )
+        else
+          const SizedBox(width: 10),
+        const SizedBox(width: 3),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: 3),
+            child: Text(
+              rotulo,
+              style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Colors.black54),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          _formatearMonto(monto, moneda),
+          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Color(0xFF1B365D)),
+        ),
+      ],
+    );
+  }
+
   /// Referencia "Hoy · Desfasaje" para obra congelada -- el pactado ya es el número grande de la
   /// card (criterio de Seba, 2026-09-12: "el precio de la obra debe ser en grande el que se
   /// pactó"), así que acá no se repite, solo el dato de comparación.
@@ -2310,47 +2351,72 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                                 Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    // Rótulo: el pactado se muestra SIN aclaración que lo
-                                    // relativice -- una vez firmado, ese es el precio de la obra,
-                                    // no una estimación (criterio de Seba, 2026-09-12). Solo si el
-                                    // pactado no pudo cargarse (fallback) se avisa que lo que se ve
-                                    // es el vivo, no el firmado.
-                                    Row(
-                                      children: [
-                                        if (mostrarPactado) ...[
-                                          Icon(Icons.lock_outline, size: 10, color: Colors.black45),
-                                          const SizedBox(width: 3),
+                                    // Los dos montos cerrados de una obra firmada -- el pactado y
+                                    // el adicional aprobado -- van con el MISMO tratamiento visual
+                                    // (criterio de Seba, 2026-09-13): los dos están congelados y
+                                    // firmados, ninguno es una estimación, así que el adicional no
+                                    // puede aparecer solo como parte de una suma. Debajo, el total.
+                                    // Nada más: el desglose de lo certificado y lo que falta vive
+                                    // dentro de la obra (docs/adicionales_quitas_demasias_
+                                    // diagnostico.md §10.2), y tocar la card ya lleva ahí.
+                                    if (mostrarPactado && cantidadAdicionales > 0) ...[
+                                      _buildMontoCerrado('Presupuesto Pactado', monto, obra['moneda']),
+                                      const SizedBox(height: 4),
+                                      _buildMontoCerrado(
+                                        cantidadAdicionales == 1
+                                            ? 'Adicional Aprobado'
+                                            : 'Adicionales Aprobados ($cantidadAdicionales)',
+                                        montoAdicionales,
+                                        obra['moneda'],
+                                      ),
+                                      const Padding(
+                                        padding: EdgeInsets.symmetric(vertical: 4),
+                                        child: Divider(height: 1, thickness: 1, color: Colors.black12),
+                                      ),
+                                      _buildMontoCerrado(
+                                        'Total',
+                                        monto + montoAdicionales,
+                                        obra['moneda'],
+                                        conCandado: false,
+                                      ),
+                                    ] else ...[
+                                      // Un solo número (sin adicionales aprobados, u obra sin
+                                      // congelar): el de siempre, con el rótulo arriba. El pactado se
+                                      // muestra SIN aclaración que lo relativice -- una vez firmado,
+                                      // ese es el precio de la obra, no una estimación (criterio de
+                                      // Seba, 2026-09-12). Solo si el pactado no pudo cargarse
+                                      // (fallback) se avisa que lo que se ve es el vivo, no el firmado.
+                                      Row(
+                                        children: [
+                                          if (mostrarPactado) ...[
+                                            const Icon(Icons.lock_outline, size: 10, color: Colors.black45),
+                                            const SizedBox(width: 3),
+                                          ],
+                                          Text(
+                                            mostrarPactado
+                                                ? 'Presupuesto Pactado'
+                                                : (esCongelada
+                                                    ? 'Valor de HOY (pactado no disponible)'
+                                                    : 'Monto Estimado Base'),
+                                            style: const TextStyle(fontSize: 9, color: Colors.black45, fontWeight: FontWeight.bold),
+                                          ),
                                         ],
-                                        Text(
-                                          mostrarPactado
-                                              ? 'Presupuesto Pactado'
-                                              : (esCongelada
-                                                  ? 'Valor de HOY (pactado no disponible)'
-                                                  : 'Monto Estimado Base'),
-                                          style: const TextStyle(fontSize: 9, color: Colors.black45, fontWeight: FontWeight.bold),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      _formatearMonto(monto, obra['moneda']),
-                                      style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Color(0xFF1B365D)),
-                                    ),
-                                    // Una sola línea, sin desglose (docs/adicionales_quitas_demasias_
-                                    // diagnostico.md §10.2): el detalle de cada adicional vive dentro
-                                    // de la obra, y tocar la card ya lleva ahí. Sin aprobados, la card
-                                    // no cambia. Obra sin congelar: no se suma a un estimado que se
-                                    // sigue moviendo -- se muestran los aprobados solos.
-                                    if (cantidadAdicionales > 0) ...[
+                                      ),
                                       const SizedBox(height: 2),
                                       Text(
-                                        mostrarPactado
-                                            ? 'Total con adicionales: ${_formatearMonto(monto + montoAdicionales, obra['moneda'])} '
-                                                '($cantidadAdicionales ${cantidadAdicionales == 1 ? "aprobado" : "aprobados"})'
-                                            : 'Adicionales aprobados: ${_formatearMonto(montoAdicionales, obra['moneda'])} '
-                                                '($cantidadAdicionales)',
-                                        style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF1B365D)),
+                                        _formatearMonto(monto, obra['moneda']),
+                                        style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Color(0xFF1B365D)),
                                       ),
+                                      // Obra sin congelar: los aprobados no se suman a un estimado que
+                                      // se sigue moviendo -- se muestran solos.
+                                      if (cantidadAdicionales > 0) ...[
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          'Adicionales aprobados: ${_formatearMonto(montoAdicionales, obra['moneda'])} '
+                                          '($cantidadAdicionales)',
+                                          style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF1B365D)),
+                                        ),
+                                      ],
                                     ],
                                     if (mostrarPactado && montoHoyConfigCongelada != null) ...[
                                       const SizedBox(height: 6),
