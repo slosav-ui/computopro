@@ -121,6 +121,78 @@ class _DetalleCertificadoScreenState extends State<DetalleCertificadoScreen> {
     }
   }
 
+  /// Deja dicho que este anulado no necesita reemplazo, con el motivo (0128). Es la otra salida
+  /// cuando el hueco no se puede tapar con un certificado: si los posteriores ya cubrieron lo que
+  /// medía, el reemplazo nacería vacío y no se podría emitir, y la numeración quedaría trabada.
+  ///
+  /// El motivo es obligatorio del lado del servidor; acá solo se evita el viaje si viene vacío.
+  Future<void> _marcarReemplazoNoRequerido() async {
+    final controller = TextEditingController();
+    final motivo = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('No hace falta reemplazo',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              _posteriores == 0
+                  ? 'Queda registrado en el certificado, con tu nombre y la fecha. Después de esto, '
+                      'este certificado anulado no se puede reemplazar.'
+                  : 'Si lo que medía este certificado ya quedó certificado en los '
+                      '${_posteriores == 1 ? "posteriores" : "$_posteriores certificados posteriores"}, '
+                      'dejalo dicho acá. Queda registrado con tu nombre y la fecha, y destraba la '
+                      'numeración de la obra.',
+              style: const TextStyle(fontSize: 12.5),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              maxLines: 3,
+              decoration: const InputDecoration(labelText: 'Motivo', isDense: true),
+              style: const TextStyle(fontSize: 13),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+          TextButton(
+            onPressed: () {
+              final texto = controller.text.trim();
+              Navigator.pop(ctx, texto.isEmpty ? null : texto);
+            },
+            child: const Text('Confirmar'),
+          ),
+        ],
+      ),
+    );
+    if (motivo == null) return;
+
+    setState(() => _actualizando = true);
+    try {
+      await _certificadosRepository.marcarReemplazoNoRequerido(
+        certificadoId: _cert.id,
+        motivo: motivo,
+      );
+      if (!mounted) return;
+      setState(() => _actualizando = false);
+      await _recargar();
+    } on PostgrestException catch (_) {
+      if (!mounted) return;
+      setState(() => _actualizando = false);
+      await _avisarDeAccionFallida('No se pudo registrar que este certificado no necesita reemplazo.');
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _actualizando = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No se pudo registrar que este certificado no necesita reemplazo.')),
+      );
+    }
+  }
+
   /// Recrea el reemplazo que falta. Al volver, la pantalla se cierra devolviendo `true`: el
   /// historial recarga y el borrador nuevo aparece ahí, que es donde se sigue trabajando.
   Future<void> _crearReemplazo() async {
@@ -259,6 +331,9 @@ class _DetalleCertificadoScreenState extends State<DetalleCertificadoScreen> {
       conformePor: c.conformePor,
       conformeFecha: c.conformeFecha,
       comentarioDevolucion: c.comentarioDevolucion,
+      reemplazoNoRequeridoPor: c.reemplazoNoRequeridoPor,
+      reemplazoNoRequeridoFecha: c.reemplazoNoRequeridoFecha,
+      reemplazoNoRequeridoMotivo: c.reemplazoNoRequeridoMotivo,
     );
   }
 
@@ -441,6 +516,7 @@ class _DetalleCertificadoScreenState extends State<DetalleCertificadoScreen> {
             _buildDatoPago(),
           if (_cert.estado == EstadoCertificado.impactadoCerrado) _buildDatoImpacto(),
           if (_faltaReemplazo) _buildAvisoSinReemplazo(),
+          if (_cert.reemplazoNoRequerido) _buildDatoReemplazoNoRequerido(),
           const SizedBox(height: 24),
           _buildAcciones(),
         ],
@@ -558,6 +634,32 @@ class _DetalleCertificadoScreenState extends State<DetalleCertificadoScreen> {
     );
   }
 
+  /// Lo que quedó dicho cuando se decidió que este anulado no necesita reemplazo (0128). Se muestra
+  /// siempre, no solo al que puede actuar: es parte de la historia del certificado, igual que el
+  /// motivo de la anulación.
+  Widget _buildDatoReemplazoNoRequerido() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Text(
+        'No necesita reemplazo${_fmtFechaCorta(_cert.reemplazoNoRequeridoFecha)}: '
+        '${_cert.reemplazoNoRequeridoMotivo}',
+        style: const TextStyle(fontSize: 12, color: Colors.black54),
+      ),
+    );
+  }
+
+  String _fmtFechaCorta(DateTime? f) {
+    if (f == null) return '';
+    final l = f.toLocal();
+    return ' (${l.day.toString().padLeft(2, '0')}/${l.month.toString().padLeft(2, '0')})';
+  }
+
   Widget _buildDatoImpacto() {
     if (_cert.facturaFinalAdjuntos.isEmpty) return const SizedBox.shrink();
     return Padding(
@@ -586,6 +688,15 @@ class _DetalleCertificadoScreenState extends State<DetalleCertificadoScreen> {
         onPressed: _actualizando ? null : _crearReemplazo,
         style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1B365D), foregroundColor: Colors.white),
         child: const Text('Crear el reemplazo'),
+      ));
+    }
+
+    // La otra salida (0128), más estricta a propósito: crear el reemplazo es reversible (se
+    // descarta), declarar que no hace falta cierra el hueco del libro para siempre.
+    if (_faltaReemplazo && widget.userContext?.puedeEditarPresupuesto == true) {
+      botones.add(TextButton(
+        onPressed: _actualizando ? null : _marcarReemplazoNoRequerido,
+        child: const Text('No hace falta reemplazo'),
       ));
     }
 

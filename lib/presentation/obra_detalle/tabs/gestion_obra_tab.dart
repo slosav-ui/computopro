@@ -229,6 +229,12 @@ class _GestionObraTabState extends State<GestionObraTab> {
       );
       if (!mounted) return;
       await _abrirCargaAvance(nuevo);
+    } on PostgrestException catch (e) {
+      if (!mounted) return;
+      // El mensaje de la base es el que explica qué hacer -- desde la 0128, el caso más probable
+      // acá es "el certificado N° 2 está anulado y su reemplazo todavía no se emitió...". Taparlo
+      // con un genérico dejaría al usuario sin saber por qué no puede crear el certificado.
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1157,6 +1163,7 @@ class _GestionObraTabState extends State<GestionObraTab> {
   /// crear el reemplazo. Si alguna vez cambia la regla, cambiarla ahí y espejarla acá.
   bool _sinReemplazo(Certificado cert) {
     if (cert.estado != EstadoCertificado.anulado) return false;
+    if (cert.reemplazoNoRequerido) return false; // se decidió que no hace falta (0128)
     return !_certificados.any((r) => r.numero == cert.numero && r.version > cert.version);
   }
 
@@ -1217,6 +1224,19 @@ class _GestionObraTabState extends State<GestionObraTab> {
                   // adónde sigue la historia de este certificado. Las dos juntas cierran el vínculo
                   // en los dos sentidos, que es lo que faltaba para que un `bis` con fecha
                   // posterior se entienda.
+                  // Se decidió que no necesita reemplazo (0128): el hueco está cerrado a
+                  // conciencia, no abierto. Va el motivo, que es lo único que explica por qué la
+                  // numeración siguió sin ese certificado.
+                  else if (cert.reemplazoNoRequerido)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text(
+                        'No necesita reemplazo: ${cert.reemplazoNoRequeridoMotivo}',
+                        style: const TextStyle(fontSize: 10.5, color: Colors.black45),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    )
                   else if (_reemplazoDe(cert) != null)
                     Padding(
                       padding: const EdgeInsets.only(top: 2),

@@ -763,3 +763,53 @@ Se permite descartar aunque el acuerdo esté `propuesto` o `conforme`: bloquearl
 trampa que la función viene a sacar. Y si el borrador descartado era el reemplazo de un anulado, el
 hueco vuelve a existir y el aviso de §13 reaparece solo — es la propiedad que se busca, no un efecto
 colateral.
+
+---
+
+## §15 — Primero se resuelve la corrección, después sigue la numeración (2026-09-13, `0128`)
+
+**La regla, dicha por Seba**: cuando se anula un certificado, **hasta que su reemplazo no se emite no
+se puede crear ninguno con número nuevo**.
+
+**Se cumplía de casualidad.** El índice de un solo borrador por obra (0053) la hacía cierta mientras
+el reemplazo estuviera en borrador. Al poder descartar ese borrador (§14) el candado desaparece y el
+número siguiente se crea dejando el hueco atrás. Es lo que pasó en la obra real: el 2 quedó anulado
+sin reemplazo y se emitieron el 3 y el 4 encima.
+
+**Se hace explícito con un trigger BEFORE INSERT**, no con una policy ni con un chequeo en Dart: la
+creación del borrador es un `insert` directo desde la app (no hay función que interceptar), un
+chequeo en Dart no protege de nada, y el trigger cubre también el SQL a mano — que es justo el camino
+por el que se coló el problema original. `version = 1` es la marca de "número nuevo"; un reemplazo
+nace con `version + 1`, así que la regla no puede bloquear la única salida.
+
+### Dos funciones que parecen la misma y no lo son
+
+| | Mira | Para qué |
+| --- | --- | --- |
+| `falta_reemplazo_certificado` | ¿existe **alguna** versión mayor? | habilita **crear** el reemplazo |
+| `certificado_anulado_sin_resolver` | ¿existe una versión mayor **emitida**? | **bloquea** el número nuevo |
+
+Un reemplazo en borrador hace la primera falsa (no se puede crear otro) y la segunda verdadera
+(todavía no se resolvió). Eso es exactamente la regla.
+
+### La salida, sin la cual la regla traba la obra para siempre
+
+Con la regla a secas, una obra que ya está en ese estado no tiene escape: el reemplazo **nace vacío**
+cuando hay certificados posteriores (§14), y `emitir_certificado` rechaza un certificado sin avance
+cargado. Si los posteriores ya cubrieron todo lo que el anulado medía, no hay nada que cargar, el
+reemplazo no se puede emitir, y **la numeración queda trabada para siempre**.
+
+`marcar_reemplazo_no_requerido(certificado, motivo)`, con **motivo obligatorio a nivel base**, autor y
+fecha. Dice con todas las letras "este anulado no necesita reemplazo porque lo que medía ya está
+certificado en los que vinieron después", que es la verdad de esa obra y merece quedar escrita en el
+libro.
+
+**Autoridad: `puede_editar_presupuesto`**, a propósito más estricta que crear el reemplazo (tres roles
+técnicos, §13): crear un borrador es reversible —se descarta y no queda nada—, mientras que esto
+cierra un hueco del libro de forma definitiva y destraba la numeración. Es un acto de cierre, no una
+tarea de carga.
+
+**Alternativa descartada**: permitir emitir un reemplazo de monto 0. Dejaría un certificado de $0 en
+el historial, pasaría por todo el circuito de conformidad para nada, y le avisaría al cliente que
+tiene un certificado nuevo para leer. Un renglón que dice "no hizo falta corregir nada" es más honesto
+que un documento de cobro por cero pesos.

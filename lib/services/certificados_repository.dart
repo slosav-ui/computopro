@@ -298,6 +298,22 @@ class CertificadosRepository {
     return (data as num?)?.toInt() ?? 0;
   }
 
+  /// Deja dicho que un certificado anulado NO necesita reemplazo (0128), con el motivo. Es la
+  /// salida cuando los certificados emitidos después ya cubrieron lo que medía: sin esto, el
+  /// reemplazo nacería vacío, no se podría emitir (emitir_certificado rechaza monto 0) y la
+  /// numeración de la obra quedaría trabada para siempre.
+  ///
+  /// Autoridad más estricta que crear el reemplazo, y la valida la base: `puede_editar_presupuesto`.
+  Future<void> marcarReemplazoNoRequerido({
+    required String certificadoId,
+    required String motivo,
+  }) async {
+    await _client.rpc('marcar_reemplazo_no_requerido', params: {
+      'p_certificado_id': certificadoId,
+      'p_motivo': motivo,
+    });
+  }
+
   /// Descarta un borrador y sus filas de avance (0127). Solo borradores: la función rechaza
   /// cualquier otro estado, y `certificados` sigue sin policy de DELETE -- este es el único camino.
   Future<void> descartarBorrador(String certificadoId) async {
@@ -352,6 +368,9 @@ class CertificadosRepository {
       conformePor: row['conforme_por']?.toString(),
       conformeFecha: _fecha(row['conforme_fecha']),
       comentarioDevolucion: row['comentario_devolucion']?.toString(),
+      reemplazoNoRequeridoPor: row['reemplazo_no_requerido_por']?.toString(),
+      reemplazoNoRequeridoFecha: _fecha(row['reemplazo_no_requerido_fecha']),
+      reemplazoNoRequeridoMotivo: row['reemplazo_no_requerido_motivo']?.toString(),
     );
   }
 
