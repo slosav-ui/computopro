@@ -9,6 +9,13 @@ Textual de Seba: *"el constructor y profesional proponen avances de obra según 
 subítems dentro de los rubros, es un ida y vuelta entre ellos que lo puede iniciar uno u otro según
 sea el caso"*. Y sobre el pago: *"el cliente no debe pagar si tiene dudas"*.
 
+**Estado (2026-09-13, después de la ronda de ambigüedades):** las dos ambigüedades que bloqueaban
+quedaron cerradas (§8.1 y §8.2) y Seba confirmó los dos hallazgos de forma: la objeción va como **eje
+aparte** y no como estado nuevo (§5), y el avance global se **reparte en las filas por partida
+ponderado por el monto congelado** (§6) — *"por la vía del Modelo B se perdería todo el ciclo, y eso
+no conviene"*. **Tanda 1 (periodicidad y aviso) en marcha: migración `0123` escrita, sin aplicar
+(§3.1).** Las tandas 2, 3 y 4 siguen sin empezar.
+
 **Aclaración que corrige un malentendido de fondo:** lo que Seba llama **certificación global no son
 hitos con etapas pactadas**. Es **avance global sin desglose por partida** — un solo porcentaje de
 toda la obra, o de una parte — que es otra cosa que el Modelo B que está en la base (§6).
@@ -119,6 +126,39 @@ libre** que hoy tipea la persona.
   obra cuando no, o haciendo el campo nullable. Es una línea del modelo, no un rediseño.
 - Regalo de paso: con periodicidad, `certificados.periodo` puede venir sugerido en vez de tipeado.
 
+### 3.1 Tanda 1, como quedó diseñada — migración `0123`, escrita sin aplicar
+
+**Una sola columna**: `obras.periodicidad_certificacion` (`semanal`/`quincenal`/`mensual`, nullable =
+sin pactar), al lado de las otras columnas de certificación de `obras`, con el mismo panel y el mismo
+gate (`admin_maestro`).
+
+**El ancla del período se calcula, no se configura** — helper nuevo
+`proximo_periodo_certificacion(obra_id)`:
+
+1. El **último certificado emitido** de la obra (`max(fecha_emision)` excluyendo `anulado`), más el
+   intervalo de la periodicidad.
+2. Si no hay ninguno, el **congelamiento** (`presupuesto_congelado_en`) más el intervalo.
+3. **Si la obra no está congelada, no se avisa.** Sin contrato firmado no hay período pactado que
+   correr, y empujar a certificar contra precios vivos es justo lo que el Modelo A evita.
+
+Sin columna de ancla y sin tabla de calendario: el dato ya está en la base.
+
+**Cuándo aparece el aviso** (rama nueva de `mis_pendientes()`, tipo `certificacion_periodo`):
+periodicidad pactada + Modelo A + obra congelada + venció el período + **no hay borrador en curso**
+(si alguien ya está armando el certificado, el recordatorio es ruido) + el que mira es
+`admin_maestro`, `profesional` o `constructor` (los que cargan avance; el cliente no inicia la
+certificación). `entidad_id` en `null` — no es una fila de ninguna entidad —, y la app lleva a
+**Gestión de Obra** de esa obra, que es donde se crea el borrador.
+
+**Detalle de compatibilidad que permite aplicar la migración antes del Dart:**
+`Pendiente.desdeRow` devuelve `null` para un `tipo` que la app no conoce y esa fila se saltea (0117).
+Así que la `0123` se puede aplicar y verificar por SQL sin que la app vigente se entere.
+
+**Decisión de alcance, anotada**: el período corre **por intervalo desde el ancla**, no por corte de
+calendario (fin de mes). Si el uso real pide "siempre los días 30", es una columna más
+(`certificacion_dia_corte`) y un `case` en el helper — no se hace ahora porque el aviso es un
+recordatorio, no una regla contable.
+
 ---
 
 ## 4. Punto 3 — quién conforma técnicamente
@@ -138,8 +178,8 @@ pantallas). No lo resuelvo acá: es una de las ambigüedades de §8.
 
 ## 5. Punto 4 — la objeción del cliente
 
-**No hace falta agregar un estado al ciclo.** Esto contradice la intuición del pedido, y es la mejor
-noticia del diagnóstico: siguiendo el precedente de la anulación, la objeción es **un eje aparte**:
+**No hace falta agregar un estado al ciclo — confirmado por Seba (2026-09-13).** Esto contradice la
+intuición del pedido, y es la mejor noticia del diagnóstico: siguiendo el precedente de la anulación, la objeción es **un eje aparte**:
 
 - `objecion_estado` (`abierta` / `aclarada` / `aceptada`), `objecion_fundamento text`,
   `objecion_por` + `objecion_fecha`, `objecion_resuelta_por` + `objecion_resuelta_fecha`, con checks
@@ -185,7 +225,8 @@ función de reparto y un modo de carga en la UI.
 `calcular_avance_acumulado_subitem`, `calcular_excesos_certificado` (el candado del 100%),
 `calcular_avance_ponderado_rubros`. Es el camino que sí pone en riesgo lo que ya anda.
 
-**Recomendación: Forma A, y el modo elegido por obra** (no mezclar dentro de la misma obra: si una
+**Elegida por Seba (2026-09-13): Forma A**, *"que el avance global se reparta en las filas por
+partida ponderado por el monto congelado"*, **y el modo elegido por obra** (no mezclar dentro de la misma obra: si una
 obra certifica global, que no muestre porcentajes por partida como si fueran medidos).
 
 ---
@@ -207,10 +248,26 @@ obra certifica global, que no muestre porcentajes por partida como si fueran med
 
 ## 8. Ambigüedades a cerrar antes de escribir SQL
 
-1. **¿El cliente ve el borrador?** Hoy sí (RLS abierta a todo miembro). ¿Se deja, o se le esconde
-   hasta que esté conformado?
-2. **Sin profesional en la obra, ¿el cliente da conformidad ANTES de emitir** (firma el borrador) **o
-   simplemente es el que objeta y paga después?** Cambia bastante el flujo y la UI.
+1. **¿El cliente ve el borrador? — CERRADA (Seba, 2026-09-13): depende de si hay profesional.**
+   *"El cliente no ve el borrador cuando hay profesional en la obra. Si el flujo dice que recibe el
+   certificado ya conformado, ver el borrador lo mete en una discusión que es entre las partes
+   técnicas. Y si no hay profesional, sí lo ve, porque ahí es él quien acuerda."*
+
+   **Consecuencia técnica (Tanda 2):** la RLS de SELECT de `certificados` deja de ser
+   `is_obra_member(obra_id)` a secas. Pasa a ser: cualquier miembro para los estados distintos de
+   `borrador`; y para `borrador`, miembro **menos** el cliente/apoderado **cuando existe un
+   profesional activo en la obra**. Misma condición que ya usa el resto de la pieza ("¿hay
+   profesional?"), y afecta también a `certificado_subitems_avance` (su policy de SELECT delega en
+   `is_obra_member` de la obra del certificado) y a lo que el cliente ve en pantalla. **Es el único
+   cambio de RLS de toda la pieza: va con su propia verificación, con un usuario cliente real.**
+2. **Sin profesional, ¿el cliente conforma antes de emitir? — CERRADA (Seba, 2026-09-13): sí, ocupa
+   el lugar del profesional.** *"Acuerda con el constructor y después paga. Si no, quedaría objetando
+   algo que nunca acordó."*
+
+   **Consecuencia técnica (Tanda 2):** quién puede dar conformidad no es un rol fijo — es "la
+   contraparte": si hay profesional activo, el profesional (y el cliente no ve el borrador); si no
+   hay, el `cliente_principal` (o apoderado habilitado), que entonces sí lo ve. El guard de
+   `emitir_certificado` exige conformidad de esa contraparte, distinta de quien propuso.
 3. **¿La objeción suspende el plazo de pago?** Hoy el vencimiento se cuenta desde `fecha_emision` con
    los días congelados al emitir.
 4. **¿El constructor con `puede_editar_presupuesto` puede seguir emitiendo solo** cuando no hay
