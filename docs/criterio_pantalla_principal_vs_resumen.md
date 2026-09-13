@@ -135,6 +135,23 @@ del resto del renglón, no dos.
 Criterio que deja para la próxima vez: **el bloque de montos es solo para plata.** Lo que identifica a
 la obra va arriba; lo que es condición del contrato (el chip de CAC) puede quedar con los montos.
 
+### 5.4 Que se vea dónde termina una obra y empieza la otra (2026-09-13)
+
+Consecuencia directa de todo lo que se le sumó a la tarjeta (los renglones de montos, las barras): la
+lista empezó a leerse como **un bloque continuo**. Seba: *"de un vistazo se vea cuántas obras hay y
+dónde está cada una"*, sin recargar el diseño.
+
+Resuelto **sin agregar ningún elemento**: más aire entre tarjetas (12 → 18), un borde de 1px, sombra
+más marcada, y el fondo de la pantalla un punto más oscuro (`F4F6F9` → `E9EDF2`) para que el blanco de
+la tarjeta se lea como blanco. En Material 3 hizo falta además apagar el `surfaceTintColor`, que tiñe
+las superficies elevadas y acercaba el blanco al gris del fondo.
+
+**Criterio que queda**: cuando una tarjeta de la portada gane contenido, revisar la **separación**
+antes de revisar el contenido. El aire es lo que agrupa — una tarjeta alta con poco espacio alrededor
+se pega a la de al lado por más borde que tenga. Y todo lo que se sume tiene que caber sin necesitar un
+separador interno más: si hace falta dibujar líneas adentro para que se entienda, el problema es que la
+tarjeta tiene demasiado.
+
 ---
 
 ## 6. Referencias

@@ -2236,7 +2236,10 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF4F6F9),
+      // Un punto más oscuro que el F4F6F9 anterior: contra ese gris casi blanco, una tarjeta blanca
+      // no se distinguía del fondo y toda la lista se leía como una sola superficie. Sigue siendo un
+      // gris claro -- lo que cambia es que el blanco de las tarjetas ahora se lee como blanco.
+      backgroundColor: const Color(0xFFE9EDF2),
       appBar: AppBar(
         backgroundColor: const Color(0xFF1B365D),
         elevation: 0,
@@ -2440,10 +2443,32 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                           adicionalesAgrupados.fold(0.0, (t, a) => t + montoAdicional(a));
                       final String estadoServicio = obra['estadoServicioEspecial'] ?? 'Ninguno';
 
+                      // Separación entre tarjetas (Seba, 2026-09-13): con los renglones de montos y
+                      // las barras, la lista se leía como un bloque continuo y no se veía dónde
+                      // terminaba una obra y empezaba la otra. Cuatro cambios chicos, ningún elemento
+                      // nuevo -- la portada tiene que seguir limpia:
+                      //
+                      //   1. `margin` de 12 a 18: el aire es lo que agrupa. Una tarjeta alta con poco
+                      //      espacio alrededor se pega a la de al lado por más borde que tenga.
+                      //   2. Borde de 1px (`side`): un canto definido que no depende de la sombra.
+                      //      Es lo que hace que el límite se vea también en pantallas con poco
+                      //      contraste o con brillo alto al sol, que es donde se usa esta app.
+                      //   3. Sombra más marcada (`elevation` 3 + `shadowColor`), para que la tarjeta
+                      //      se despegue del fondo en vez de ser un rectángulo dibujado sobre él.
+                      //   4. `surfaceTintColor` transparente: Material 3 tiñe de color primario las
+                      //      superficies elevadas, y ese tinte acercaba el blanco de la tarjeta al
+                      //      gris del fondo -- justo al revés de lo que hace falta acá.
+                      //
+                      // El fondo de la pantalla también se oscureció un punto (ver el `Scaffold`).
                       return Card(
-                        margin: const EdgeInsets.only(bottom: 12),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        elevation: 2,
+                        margin: const EdgeInsets.only(bottom: 18),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          side: const BorderSide(color: Colors.black12),
+                        ),
+                        elevation: 3,
+                        shadowColor: Colors.black.withValues(alpha: 0.28),
+                        surfaceTintColor: Colors.transparent,
                         child: InkWell(
                           onTap: () => _abrirPresupuesto(obra),
                           borderRadius: BorderRadius.circular(12),
