@@ -33,6 +33,11 @@ class _PanelConfigCertificacionState extends State<PanelConfigCertificacion> {
 
   ObraConfigCertificacion? _config;
   ModeloCertificacion _modeloSeleccionado = ModeloCertificacion.avanceMedido;
+
+  /// `null` = sin pactar, y es una opción válida (la primera del selector), no un "todavía no
+  /// cargó": una obra puede no tener periodicidad y entonces no recibe el aviso de "ya se puede
+  /// certificar" (0123, docs/certificacion_acuerdo_partes_diagnostico.md §3.1).
+  PeriodicidadCertificacion? _periodicidadSeleccionada;
   TextEditingController? _diasPlazoPagoController;
   TextEditingController? _anticipoController;
   TextEditingController? _fondoReparoController;
@@ -53,6 +58,7 @@ class _PanelConfigCertificacionState extends State<PanelConfigCertificacion> {
     setState(() {
       _config = config;
       _modeloSeleccionado = config.modeloCertificacion;
+      _periodicidadSeleccionada = config.periodicidadCertificacion;
       _diasPlazoPagoController =
           TextEditingController(text: config.diasPlazoPagoCertificados?.toString() ?? '');
       _anticipoController = TextEditingController(text: _fmtEntrada(config.anticipoPct));
@@ -148,6 +154,7 @@ class _PanelConfigCertificacionState extends State<PanelConfigCertificacion> {
         diasPlazoPagoCertificados: validado['dias'] as int,
         anticipoPct: validado['anticipo'] as double,
         fondoReparoPct: validado['fondoReparo'] as double,
+        periodicidadCertificacion: _periodicidadSeleccionada,
       );
       final montoTotalContratado = validado['montoTotalContratado'] as double?;
       if (montoTotalContratado != null) {
@@ -280,6 +287,36 @@ class _PanelConfigCertificacionState extends State<PanelConfigCertificacion> {
                 ),
               ),
             const SizedBox(height: 8),
+            // Cada cuánto se CERTIFICA -- pegado al plazo de pago, que es cada cuánto se PAGA, con la
+            // aclaración al lado: son los dos datos de esta pantalla que más se mezclan.
+            const Text('Periodicidad de certificación', style: TextStyle(fontSize: 11, color: Colors.black87)),
+            DropdownButtonFormField<PeriodicidadCertificacion?>(
+              initialValue: _periodicidadSeleccionada,
+              isDense: true,
+              style: const TextStyle(fontSize: 12, color: Colors.black87),
+              decoration: const InputDecoration(isDense: true),
+              items: [
+                const DropdownMenuItem<PeriodicidadCertificacion?>(
+                  value: null,
+                  child: Text('Sin pactar', style: TextStyle(fontSize: 12)),
+                ),
+                for (final p in PeriodicidadCertificacion.values)
+                  DropdownMenuItem<PeriodicidadCertificacion?>(
+                    value: p,
+                    child: Text(p.label, style: const TextStyle(fontSize: 12)),
+                  ),
+              ],
+              onChanged: soloLectura ? null : (v) => setState(() => _periodicidadSeleccionada = v),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(top: 4, bottom: 8),
+              child: Text(
+                _periodicidadSeleccionada == null
+                    ? 'Sin pactar: no se avisa cuándo certificar.'
+                    : 'Cada cuánto se certifica. Cuando vence el período, aparece en "Esperándote".',
+                style: const TextStyle(fontSize: 10, color: Colors.black45),
+              ),
+            ),
             _buildCampo(label: 'Plazo de pago (días)', controller: diasController, habilitado: !soloLectura),
             _buildCampo(label: 'Anticipo (%)', controller: anticipoController, habilitado: !soloLectura),
             _buildCampo(label: 'Fondo de reparo (%)', controller: fondoReparoController, habilitado: !soloLectura),

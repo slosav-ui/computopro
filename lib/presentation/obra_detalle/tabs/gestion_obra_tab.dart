@@ -2,10 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/segurity/user_context.dart';
 import '../../../core/utils/conversion_dolar.dart';
+import '../../../core/utils/periodo_certificacion.dart';
 import '../../../data/models/certificado.dart';
+import '../../../data/models/obra_config_certificacion.dart';
 import '../../../services/auth_service.dart';
 import '../../../services/certificados_repository.dart';
 import '../../../services/indices_economicos_repository.dart';
+import '../../../services/obra_config_certificacion_repository.dart';
 import '../../../services/obras_repository.dart';
 import '../screens/adicionales_screen.dart';
 import '../screens/carga_avance_rubros_screen.dart';
@@ -41,6 +44,8 @@ class _GestionObraTabState extends State<GestionObraTab> {
       CertificadosRepository();
   final AuthService _authService = AuthService();
   final ObrasRepository _obrasRepository = ObrasRepository();
+  final ObraConfigCertificacionRepository _configRepository =
+      ObraConfigCertificacionRepository();
   final IndicesEconomicosRepository _indicesRepository =
       IndicesEconomicosRepository();
 
@@ -185,27 +190,30 @@ class _GestionObraTabState extends State<GestionObraTab> {
     }
   }
 
-  /// Sugiere el mes/año actual como período — sin `package:intl` (no es una dependencia limpia de
-  /// este proyecto, ver CLAUDE.md), doce nombres a mano alcanzan. El usuario puede cambiarlo antes
-  /// de crear.
+  /// Sugiere el período según la periodicidad pactada en la obra (`0123`): el mes si es mensual, la
+  /// quincena si es quincenal, la semana si es semanal, y el mes actual si no se pactó ninguna --
+  /// que es exactamente lo que sugería antes de la 0123. El texto se arma en `periodoSugerido`; el
+  /// cierre del período lo resuelve la base (`proximo_periodo_certificacion`), acá no se recalcula
+  /// el ancla. Ver docs/certificacion_acuerdo_partes_diagnostico.md §3.2.
+  ///
+  /// Sugerencia, no candado: el campo queda editable y `periodo` sigue siendo texto libre.
+  ///
+  /// Si algo de los dos datos falla (red, permisos), se sugiere igual con lo que haya -- crear un
+  /// certificado no puede depender de que el sugerido se pueda calcular.
   Future<String?> _pedirPeriodo() async {
-    const meses = [
-      'enero',
-      'febrero',
-      'marzo',
-      'abril',
-      'mayo',
-      'junio',
-      'julio',
-      'agosto',
-      'septiembre',
-      'octubre',
-      'noviembre',
-      'diciembre',
-    ];
-    final ahora = DateTime.now();
-    final mes = meses[ahora.month - 1];
-    final sugerido = '${mes[0].toUpperCase()}${mes.substring(1)} ${ahora.year}';
+    PeriodicidadCertificacion? periodicidad;
+    DateTime? cierrePeriodo;
+    try {
+      final config = await _configRepository.getConfig(widget.obraId);
+      periodicidad = config.periodicidadCertificacion;
+      if (periodicidad != null) {
+        cierrePeriodo = await _configRepository.getProximoPeriodo(widget.obraId);
+      }
+    } catch (_) {
+      // Silencioso a propósito -- ver el comentario de cabecera.
+    }
+    if (!mounted) return null;
+    final sugerido = periodoSugerido(periodicidad: periodicidad, cierrePeriodo: cierrePeriodo);
     final controller = TextEditingController(text: sugerido);
     return showDialog<String>(
       context: context,

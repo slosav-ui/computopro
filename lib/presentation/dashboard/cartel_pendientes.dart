@@ -34,6 +34,8 @@ class CartelPendientes extends StatelessWidget {
         return Icons.block_outlined;
       case TipoPendiente.firmaFisica:
         return Icons.draw_outlined;
+      case TipoPendiente.certificacionPeriodo:
+        return Icons.event_available_outlined;
     }
   }
 

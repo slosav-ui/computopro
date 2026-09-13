@@ -383,8 +383,19 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
         case TipoPendiente.certificadoPagado:
         case TipoPendiente.anulacion:
         case TipoPendiente.firmaFisica:
-          final certificado = await _certificadosRepository.getPorId(p.entidadId);
+          // Estos tipos siempre traen el certificado en entidad_id (0117) -- el único que puede
+          // venir sin entidad es certificacionPeriodo, que sale por la rama de abajo.
+          final certificado = await _certificadosRepository.getPorId(p.entidadId!);
           destino = DetalleCertificadoScreen(obraId: p.obraId, certificado: certificado, userContext: userContext);
+        case TipoPendiente.certificacionPeriodo:
+          // No hay entidad que abrir: lo que falta es crear el borrador, y eso vive en Gestión de
+          // Obra. La obra ya está cargada en la lista, no hace falta volver a pedirla.
+          final obra = _obras.firstWhere(
+            (o) => o['id'] == p.obraId,
+            orElse: () => <String, dynamic>{},
+          );
+          if (obra.isEmpty) return;
+          destino = PresupuestosScreen(obra: obra, solapaInicial: SolapaPresupuestos.gestionObra);
       }
       if (!mounted) return;
       await Navigator.push(context, MaterialPageRoute(builder: (_) => destino));
@@ -508,7 +519,7 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
   /// siempre.
   Widget _buildVinculoResumen(Map<String, dynamic> obra) {
     return InkWell(
-      onTap: () => _abrirPresupuesto(obra, enResumen: true),
+      onTap: () => _abrirPresupuesto(obra, solapa: SolapaPresupuestos.resumen),
       borderRadius: BorderRadius.circular(4),
       child: const Padding(
         padding: EdgeInsets.symmetric(vertical: 3),
@@ -726,15 +737,19 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
   // está encima, así que sin este await+recarga el presupuesto vivo de la card quedaba con el valor
   // de cuando se entró a la obra, sin importar cuánto cómputo se cargara adentro. No hay
   // RefreshIndicator en esta pantalla como alternativa manual -- hacía falta esto sí o sí.
-  /// `enResumen`: abre la obra directamente en la solapa Resumen, no en Cómputo. Lo usa el vínculo
-  /// de la card (ver `_buildVinculoResumen`) -- el criterio de las dos pantallas es que la portada
-  /// es panorámica y el análisis vive en Resumen, así que el "ver más" tiene que caer ahí y no
-  /// obligar a buscar la solapa a mano (docs/criterio_pantalla_principal_vs_resumen.md).
-  Future<void> _abrirPresupuesto(Map<String, dynamic> obra, {bool enResumen = false}) async {
+  /// `solapa`: en qué solapa abre la obra. El default es Cómputo (tocar la card). El vínculo de la
+  /// card va a Resumen -- la portada es panorámica y el análisis vive ahí
+  /// (docs/criterio_pantalla_principal_vs_resumen.md) -- y el aviso de "ya se puede certificar" va a
+  /// Gestión de Obra, que es donde se crea el borrador. En los dos casos el "ver más" tiene que caer
+  /// en la solapa correcta, sin obligar a buscarla a mano.
+  Future<void> _abrirPresupuesto(
+    Map<String, dynamic> obra, {
+    SolapaPresupuestos solapa = SolapaPresupuestos.computo,
+  }) async {
     await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => PresupuestosScreen(obra: obra, abrirEnResumen: enResumen),
+        builder: (context) => PresupuestosScreen(obra: obra, solapaInicial: solapa),
       ),
     );
     if (!mounted) return;

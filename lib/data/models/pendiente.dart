@@ -1,4 +1,5 @@
 import 'certificado.dart';
+import 'obra_config_certificacion.dart';
 
 /// Una cosa que espera la acción del usuario logueado -- fila de `mis_pendientes()` (0117,
 /// docs/avisos_pendientes_diseno.md). Quién ve cada una lo decide la base con la misma autoridad que
@@ -12,6 +13,10 @@ enum TipoPendiente {
   certificadoPagado,
   anulacion,
   firmaFisica,
+
+  /// "Ya se puede certificar": venció el período de la periodicidad pactada y no hay borrador en
+  /// curso (`0123`). El único tipo que NO es una fila de ninguna entidad -- ver `entidadId`.
+  certificacionPeriodo,
 }
 
 class Pendiente {
@@ -19,10 +24,13 @@ class Pendiente {
   final String obraNombre;
   final TipoPendiente tipo;
 
-  /// `modificaciones_obra.id` (adicional/quita/demasía) o `certificados.id` (el resto).
-  final String entidadId;
+  /// `modificaciones_obra.id` (adicional/quita/demasía) o `certificados.id` (casi todo el resto).
+  /// **`null` en `certificacionPeriodo`**: ahí el pendiente no es una fila, es un período que
+  /// venció, y lo que hay que abrir es Gestión de Obra de la obra.
+  final String? entidadId;
 
-  /// Descripción del adicional/quita/demasía, o período del certificado.
+  /// Descripción del adicional/quita/demasía, período del certificado, o la periodicidad pactada
+  /// (`mensual`/`quincenal`/`semanal`) en `certificacionPeriodo`.
   final String descripcion;
 
   final int? certificadoNumero;
@@ -35,7 +43,7 @@ class Pendiente {
     required this.obraId,
     required this.obraNombre,
     required this.tipo,
-    required this.entidadId,
+    this.entidadId,
     required this.descripcion,
     this.certificadoNumero,
     this.certificadoVersion,
@@ -64,10 +72,20 @@ class Pendiente {
         return 'Anulación propuesta del certificado N° $_numero';
       case TipoPendiente.firmaFisica:
         return 'Certificado N° $_numero: falta subir el PDF firmado';
+      case TipoPendiente.certificacionPeriodo:
+        return 'Ya se puede certificar';
     }
   }
 
-  String get detalle => esDeCertificado ? 'Período $descripcion' : descripcion;
+  String get detalle {
+    if (tipo == TipoPendiente.certificacionPeriodo) {
+      final periodicidad = periodicidadDesdeColumna(descripcion);
+      return periodicidad == null
+          ? 'Certificación pactada'
+          : 'Certificación ${periodicidad.labelMinuscula}';
+    }
+    return esDeCertificado ? 'Período $descripcion' : descripcion;
+  }
 
   /// `null` si la base devuelve un tipo que esta versión de la app no conoce -- se saltea esa fila
   /// en vez de romper el dashboard entero.
@@ -78,7 +96,8 @@ class Pendiente {
       obraId: row['obra_id'].toString(),
       obraNombre: row['obra_nombre']?.toString() ?? '',
       tipo: tipo,
-      entidadId: row['entidad_id'].toString(),
+      // null en certificacionPeriodo -- ver el campo.
+      entidadId: row['entidad_id']?.toString(),
       descripcion: row['descripcion']?.toString() ?? '',
       certificadoNumero: (row['certificado_numero'] as num?)?.toInt(),
       certificadoVersion: (row['certificado_version'] as num?)?.toInt(),
@@ -104,6 +123,8 @@ class Pendiente {
         return TipoPendiente.anulacion;
       case 'firma_fisica':
         return TipoPendiente.firmaFisica;
+      case 'certificacion_periodo':
+        return TipoPendiente.certificacionPeriodo;
       default:
         return null;
     }

@@ -22,7 +22,7 @@ class ObraConfigCertificacionRepository {
   final SupabaseClient _client = Supabase.instance.client;
 
   static const _columnas = 'id, modelo_certificacion, dias_plazo_pago_certificados, '
-      'anticipo_pct, fondo_reparo_pct, monto_total_contratado';
+      'anticipo_pct, fondo_reparo_pct, monto_total_contratado, periodicidad_certificacion';
 
   Future<ObraConfigCertificacion> getConfig(String obraId) async {
     final row = await _client.from('obras').select(_columnas).eq('id', obraId).single();
@@ -39,11 +39,14 @@ class ObraConfigCertificacionRepository {
   /// (`0005`), que exige un motivo obligatorio y deja rastro en `audit_log`. El cambio de modelo
   /// ahora es `cambiarModelo`, abajo — separado a propósito, un `update` genérico no puede pasar el
   /// `motivo` que esa función exige.
+  /// `periodicidadCertificacion` en `null` guarda "sin pactar" a propósito -- es un valor elegible
+  /// en el panel (la primera opción), no un "no lo mandes". Por eso viaja siempre en el `update`.
   Future<ObraConfigCertificacion> actualizarConfig({
     required String obraId,
     required int diasPlazoPagoCertificados,
     required double anticipoPct,
     required double fondoReparoPct,
+    PeriodicidadCertificacion? periodicidadCertificacion,
   }) async {
     final updated = await _client
         .from('obras')
@@ -51,11 +54,28 @@ class ObraConfigCertificacionRepository {
           'dias_plazo_pago_certificados': diasPlazoPagoCertificados,
           'anticipo_pct': anticipoPct,
           'fondo_reparo_pct': fondoReparoPct,
+          'periodicidad_certificacion': periodicidadCertificacion?.columna,
         })
         .eq('id', obraId)
         .select(_columnas)
         .single();
     return _fromRow(updated);
+  }
+
+  /// Cuándo cierra el período de certificación en curso -- RPC a `proximo_periodo_certificacion`
+  /// (`0123`). `null` si la obra no pactó periodicidad, si no está congelada, o si quien pregunta no
+  /// es miembro (la función tiene su propio guard de membresía).
+  ///
+  /// El ancla (último certificado emitido, o el congelamiento) lo resuelve la base: acá no se
+  /// recalcula nada, justamente para no tener dos versiones de esa regla. Lo usa el sugerido de
+  /// `periodo` al crear un borrador (`periodoSugerido`).
+  Future<DateTime?> getProximoPeriodo(String obraId) async {
+    final valor = await _client.rpc(
+      'proximo_periodo_certificacion',
+      params: {'p_obra_id': obraId},
+    );
+    if (valor == null) return null;
+    return DateTime.tryParse(valor.toString());
   }
 
   /// Cambia el modelo de certificación — RPC a `cambiar_modelo_certificacion` (`0005`), no un
@@ -113,6 +133,7 @@ class ObraConfigCertificacionRepository {
       anticipoPct: (row['anticipo_pct'] as num?)?.toDouble(),
       fondoReparoPct: (row['fondo_reparo_pct'] as num?)?.toDouble(),
       montoTotalContratado: (row['monto_total_contratado'] as num?)?.toDouble(),
+      periodicidadCertificacion: periodicidadDesdeColumna(row['periodicidad_certificacion']?.toString()),
     );
   }
 

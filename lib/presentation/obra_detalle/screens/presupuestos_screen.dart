@@ -15,18 +15,28 @@ import '../tabs/bloque_factor_k.dart';
 import 'composicion_apu_screen.dart';
 import 'miembros_obra_screen.dart';
 
+/// En qué solapa abre `PresupuestosScreen`. Nombres, no índices, a propósito: el índice real
+/// depende de si la obra es hija (un adicional presupuestado con la app no tiene Gestión de Obra),
+/// y quien navega no tiene por qué saberlo.
+///
+/// Lo usan los dos "ver más" que entran desde el dashboard: el vínculo a Resumen de la card
+/// (docs/criterio_pantalla_principal_vs_resumen.md) y el aviso de "ya se puede certificar", que
+/// tiene que caer en Gestión de Obra, donde se crea el borrador
+/// (docs/certificacion_acuerdo_partes_diagnostico.md §3.1).
+enum SolapaPresupuestos { computo, gestionObra, resumen }
+
 class PresupuestosScreen extends StatefulWidget {
   final dynamic obra;
 
-  /// Abre la pantalla directamente en la solapa **Resumen** en vez de Cómputo. Lo usa el vínculo
-  /// "Ver el detalle en Resumen" de la card del dashboard: la portada muestra los montos cerrados y
-  /// el análisis vive en Resumen (docs/criterio_pantalla_principal_vs_resumen.md), así que el "ver
-  /// más" tiene que caer en la solapa correcta sin que el usuario la busque. Es un booleano y no un
-  /// índice a propósito: el índice de Resumen cambia según si es obra hija (ver `_indiceResumen`) y
-  /// quien llama no tiene por qué saberlo.
-  final bool abrirEnResumen;
+  /// Solapa en la que abre. Empezó como un booleano `abrirEnResumen` y se generalizó al aparecer el
+  /// segundo destino (Gestión de Obra), para no ir sumando banderas.
+  final SolapaPresupuestos solapaInicial;
 
-  const PresupuestosScreen({Key? key, this.obra, this.abrirEnResumen = false}) : super(key: key);
+  const PresupuestosScreen({
+    Key? key,
+    this.obra,
+    this.solapaInicial = SolapaPresupuestos.computo,
+  }) : super(key: key);
 
   @override
   _PresupuestosScreenState createState() => _PresupuestosScreenState();
@@ -35,11 +45,26 @@ class PresupuestosScreen extends StatefulWidget {
 class _PresupuestosScreenState extends State<PresupuestosScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
 
-  /// Índice de la solapa Resumen. Depende de si es obra hija: un adicional presupuestado con la app
-  /// no tiene la solapa Gestión de Obra (ver el `tabs:` del build), así que Resumen se corre un
-  /// lugar. Si alguna vez se reordenan las solapas, esto se actualiza junto con el `tabs:` y con el
-  /// `animateTo(1)` de `_abrirComposicionDesdeComputo`.
+  /// Índice real de cada solapa. Depende de si es obra hija: un adicional presupuestado con la app
+  /// no tiene la solapa Gestión de Obra (ver el `tabs:` del build), así que lo que va después se
+  /// corre un lugar. Si alguna vez se reordenan las solapas, esto se actualiza junto con el `tabs:`
+  /// y con el `animateTo(1)` de `_abrirComposicionDesdeComputo`.
   int get _indiceResumen => _esObraHija ? 3 : 4;
+
+  /// Obra hija: no existe la solapa -> cae en Cómputo, que es donde se carga el adicional. Nunca un
+  /// índice fuera de rango.
+  int get _indiceGestionObra => _esObraHija ? 0 : 3;
+
+  int _indiceDe(SolapaPresupuestos solapa) {
+    switch (solapa) {
+      case SolapaPresupuestos.computo:
+        return 0;
+      case SolapaPresupuestos.gestionObra:
+        return _indiceGestionObra;
+      case SolapaPresupuestos.resumen:
+        return _indiceResumen;
+    }
+  }
   late Map<String, dynamic> _obraDatos;
   String? _obraId;
   bool _esObraHija = false;
@@ -132,7 +157,7 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> with SingleTick
 
     _tabController = TabController(
       length: _esObraHija ? 5 : 6,
-      initialIndex: widget.abrirEnResumen ? _indiceResumen : 0,
+      initialIndex: _indiceDe(widget.solapaInicial),
       vsync: this,
     );
     _cargarUserContext();
