@@ -70,8 +70,54 @@ class _DetalleCertificadoScreenState extends State<DetalleCertificadoScreen> {
   void initState() {
     super.initState();
     _cert = widget.certificado;
-    _marcarLeidoSiCorresponde();
+    _abrirConEstadoReal();
     _cargarMoneda();
+  }
+
+  /// El certificado que llega por parámetro es una FOTO del momento en que la pantalla anterior
+  /// cargó su lista, y este circuito tiene dos lados que marcan desde dispositivos distintos (el
+  /// Cliente marca Leído y Pagado; el que ejecuta impacta y cierra). Confiar en esa foto es lo que
+  /// hacía que la pantalla ofreciera "Impactar y cerrar" sobre un certificado que la base ya tenía
+  /// cerrado, y que al tocarlo contestara "no está pagado" (encontrado por Seba, 2026-09-13,
+  /// probando con dos usuarios reales). Por eso lo primero que hace la pantalla es releerlo, y
+  /// recién ahí decide si corresponde marcarlo como leído.
+  ///
+  /// Si la relectura falla se sigue con la foto: es mejor mostrar lo último que se sabía que no
+  /// abrir la pantalla. Los botones que queden de más igual los rechaza la base, y ahora ese
+  /// rechazo refresca la pantalla (ver `_avisarDeAccionFallida`).
+  Future<void> _abrirConEstadoReal() async {
+    await _recargar();
+    await _marcarLeidoSiCorresponde();
+  }
+
+  /// Relee el certificado de la base. Devuelve `true` si el estado que tenía la pantalla ya no era
+  /// el real -- lo usa el manejo de error de las acciones para explicar qué pasó.
+  Future<bool> _recargar() async {
+    final estadoAnterior = _cert.estado;
+    try {
+      final fresco = await _certificadosRepository.getPorId(_cert.id);
+      if (!mounted) return false;
+      setState(() => _cert = fresco);
+      return fresco.estado != estadoAnterior;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Una acción rechazada acá casi siempre significa lo mismo: otra persona movió el certificado
+  /// mientras esta pantalla mostraba el estado anterior. Se relee, y si efectivamente cambió se lo
+  /// dice con el estado real -- en vez de repetir el mensaje crudo de Postgres, que trae el uuid y
+  /// el nombre interno del estado ("certificado 5c5f... no está pagado (estado actual:
+  /// impactado_cerrado)"). Al volver de acá los botones ya son los que correspondan al estado real.
+  Future<void> _avisarDeAccionFallida(String mensajeSiSigueIgual) async {
+    final cambio = await _recargar();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(cambio
+          ? 'Este certificado ya fue actualizado por otra persona: ahora figura como '
+              '${_cert.estado.label}.'
+          : mensajeSiSigueIgual),
+    ));
   }
 
   /// Silencioso ante error -- si falla, la pantalla sigue mostrando los montos en ARS (moneda
@@ -171,10 +217,10 @@ class _DetalleCertificadoScreenState extends State<DetalleCertificadoScreen> {
       );
       if (!mounted) return;
       Navigator.pop(context, true); // recarga la lista del historial al volver
-    } on PostgrestException catch (e) {
+    } on PostgrestException catch (_) {
       if (!mounted) return;
       setState(() => _actualizando = false);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      await _avisarDeAccionFallida('No se pudo marcar el certificado como pagado.');
     } catch (_) {
       if (!mounted) return;
       setState(() => _actualizando = false);
@@ -283,10 +329,10 @@ class _DetalleCertificadoScreenState extends State<DetalleCertificadoScreen> {
       );
       if (!mounted) return;
       Navigator.pop(context, true);
-    } on PostgrestException catch (e) {
+    } on PostgrestException catch (_) {
       if (!mounted) return;
       setState(() => _actualizando = false);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      await _avisarDeAccionFallida('No se pudo impactar el certificado.');
     } catch (_) {
       if (!mounted) return;
       setState(() => _actualizando = false);
