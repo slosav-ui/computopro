@@ -583,6 +583,30 @@ class _GestionObraTabState extends State<GestionObraTab> {
   /// lado de la dupla (si tiene el rol y no es quien propuso) ve los botones de Aprobar/Rechazar.
   /// Un tercero (Cliente, Veedor, Admin Maestro) no ve ninguna acción, solo lo que ya muestra el
   /// chip de estado — el circuito de anulación es exclusivamente entre profesional y constructor.
+  /// "Reemplaza al N° 2, anulado el 12/09" — solo en un certificado que es la corrección de otro
+  /// (`version > 1`).
+  ///
+  /// Sin esta línea, un `bis` queda **sin ningún contexto a la vista**: el anulado que lo explica
+  /// está en la sección de anulados, colapsada por defecto, y el único indicio es el sufijo del
+  /// número. Eso importa sobre todo porque la lista va ordenada por número y un reemplazo se emite
+  /// TARDE: el `2 bis` aparece arriba del 3 y del 4 con fecha posterior a los dos, y sin decir de
+  /// qué es corrección eso se lee como un error de carga (observación de Seba, 2026-09-13). Con la
+  /// línea, la fecha desalineada se explica sola: las correcciones se hacen después.
+  ///
+  /// El orden por número no se toca: un libro de certificados va por número, y el reemplazo lleva
+  /// el del anulado.
+  Widget _buildLineaReemplaza(Certificado cert) {
+    if (cert.version <= 1) return const SizedBox.shrink();
+    final anulado = _versionAnterior(cert);
+    return Padding(
+      padding: const EdgeInsets.only(top: 2),
+      child: Text(
+        'Reemplaza al N° ${cert.numero}, anulado${_fechaCorta(anulado?.anulacionResueltaFecha)}',
+        style: TextStyle(fontSize: 11.5, color: Colors.blueGrey.shade600),
+      ),
+    );
+  }
+
   /// En qué punto del acuerdo entre partes está un borrador (0124). Solo aparece **una vez que el
   /// circuito arrancó**: un borrador recién creado, o uno de una obra sin contraparte, no muestra
   /// nada -- ahí no hay ningún acuerdo que informar y la línea sería ruido en el caso más común.
@@ -598,12 +622,12 @@ class _GestionObraTabState extends State<GestionObraTab> {
 
     final (String texto, Color color, IconData icono) = switch (cert.acuerdoEstado) {
       AcuerdoCertificado.propuesto => (
-          'Propuesto para revisión${_fechaCortaAcuerdo(cert.propuestaFecha)}',
+          'Propuesto para revisión${_fechaCorta(cert.propuestaFecha)}',
           Colors.blueGrey.shade700,
           Icons.hourglass_empty,
         ),
       AcuerdoCertificado.conforme => (
-          'Conforme${_fechaCortaAcuerdo(cert.conformeFecha)} — listo para emitir',
+          'Conforme${_fechaCorta(cert.conformeFecha)} — listo para emitir',
           Colors.green.shade800,
           Icons.handshake_outlined,
         ),
@@ -634,10 +658,34 @@ class _GestionObraTabState extends State<GestionObraTab> {
     );
   }
 
-  String _fechaCortaAcuerdo(DateTime? f) {
+  /// " el 12/09" o vacío. Devuelve el " el " incluido a propósito: así la frase que la usa se lee
+  /// igual con fecha y sin fecha ("anulado el 12/09" / "anulado").
+  String _fechaCorta(DateTime? f) {
     if (f == null) return '';
     final l = f.toLocal();
     return ' el ${l.day.toString().padLeft(2, '0')}/${l.month.toString().padLeft(2, '0')}';
+  }
+
+  /// La versión anterior de este certificado: el anulado al que reemplaza. Sale de la lista que la
+  /// pantalla ya tiene cargada, sin consultar nada.
+  Certificado? _versionAnterior(Certificado cert) {
+    if (cert.version <= 1) return null;
+    for (final c in _certificados) {
+      if (c.numero == cert.numero && c.version == cert.version - 1) return c;
+    }
+    return null;
+  }
+
+  /// El reemplazo inmediato de un anulado: la versión siguiente más baja de su mismo número. "La
+  /// más baja" y no "cualquiera mayor" porque una cadena de dos anulados (1 v1 -> 1 v2 -> 1 v3)
+  /// tiene que mostrar cada uno apuntando al que lo sigue, no todos al último.
+  Certificado? _reemplazoDe(Certificado cert) {
+    Certificado? mejor;
+    for (final c in _certificados) {
+      if (c.numero != cert.numero || c.version <= cert.version) continue;
+      if (mejor == null || c.version < mejor.version) mejor = c;
+    }
+    return mejor;
   }
 
   Widget _buildBloqueAnulacionPendiente(Certificado cert) {
@@ -947,6 +995,7 @@ class _GestionObraTabState extends State<GestionObraTab> {
                   ),
                 ],
               ),
+              _buildLineaReemplaza(cert),
               const SizedBox(height: 6),
               _buildLineaAcuerdo(cert),
               // Gateado por rol, no solo estético: quien no ve montos según la matriz (Veedor,
@@ -981,10 +1030,14 @@ class _GestionObraTabState extends State<GestionObraTab> {
                     ),
                   ),
               ],
-              Text(
-                'Emisión: ${_fmtFecha(cert.fechaEmision)}${cert.diasPlazoPago != null ? ' | Plazo: ${cert.diasPlazoPago} días' : ''}',
-                style: const TextStyle(fontSize: 11, color: Colors.black45),
-              ),
+              // En un borrador esta línea decía "Emisión: —" y no aportaba nada: todavía no hay
+              // emisión ni plazo que contar. El renglón se lo queda el estado del acuerdo, que en
+              // un borrador sí es lo que hay que mirar.
+              if (cert.estado != EstadoCertificado.borrador)
+                Text(
+                  'Emisión: ${_fmtFecha(cert.fechaEmision)}${cert.diasPlazoPago != null ? ' | Plazo: ${cert.diasPlazoPago} días' : ''}',
+                  style: const TextStyle(fontSize: 11, color: Colors.black45),
+                ),
               // Visible para cualquiera que ya vea el certificado (no gateado por rol): la
               // anulación queda en el historial con motivo, nunca se borra (0056) — es
               // información pública del certificado, no parte del circuito de propuesta/
@@ -1158,6 +1211,18 @@ class _GestionObraTabState extends State<GestionObraTab> {
                           color: Colors.orange.shade900,
                           fontWeight: FontWeight.w600,
                         ),
+                      ),
+                    )
+                  // La contraparte de la línea "Reemplaza al N° X" de la tarjeta: desde acá se ve
+                  // adónde sigue la historia de este certificado. Las dos juntas cierran el vínculo
+                  // en los dos sentidos, que es lo que faltaba para que un `bis` con fecha
+                  // posterior se entienda.
+                  else if (_reemplazoDe(cert) != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text(
+                        'Reemplazado por el N° ${_reemplazoDe(cert)!.numeroFormateado}',
+                        style: const TextStyle(fontSize: 10.5, color: Colors.black45),
                       ),
                     ),
                 ],
