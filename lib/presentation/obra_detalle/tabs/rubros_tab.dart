@@ -540,7 +540,11 @@ class _RubrosTabState extends State<RubrosTab> {
         return Card(
           // ReorderableListView exige una Key única y estable por ítem.
           key: ValueKey(rubro.id),
-          margin: const EdgeInsets.only(bottom: 4.0),
+          // 10px, no 4 (2026-09-13): con 4px las tarjetas de rubro se leían como un bloque
+          // continuo, y es la pantalla más usada de la app. El margen se declara acá, no en el
+          // `cardTheme` -- cambiarlo en el theme arrastraría a las 21 pantallas con `Card`. Es un
+          // problema de aire, no de sombra: ninguna sombra lo arregla (barrido §5).
+          margin: const EdgeInsets.only(bottom: 10.0),
           elevation: 1,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           child: ListTile(

@@ -931,7 +931,9 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
         // subítem ya es una tarjeta con margen propio) — la franja/fondo
         // marca el estado, no la posición en la lista.
         return Card(
-          margin: const EdgeInsets.only(bottom: 4.0),
+          // 10px, no 4 -- mismo criterio que la lista de rubros (`rubros_tab.dart`): con 4px la
+          // lista se leía como un bloque continuo. Declarado local a propósito, no en el `cardTheme`.
+          margin: const EdgeInsets.only(bottom: 10.0),
           elevation: 1,
           color: aplicable ? const Color(0xFFEAF1FB) : null,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),

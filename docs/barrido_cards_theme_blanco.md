@@ -104,7 +104,31 @@ lo toca en nada.**
 
 ---
 
-## 5. Recomendación, para cuando se decida
+## 5. Recomendación — **APLICADA el 2026-09-13**
+
+Las dos cosas que este barrido recomendaba se hicieron, y quedó a la vista que eran dos problemas
+distintos que no se arreglan con lo mismo:
+
+**La sombra, en el theme y una sola vez** (`app_theme.dart`): `shadowColor: Color(0xFF1B365D)` +
+`elevation: 3`, heredado por las 21 pantallas. **El navy va a opacidad plena, no al 10% como en MIS
+OBRAS**: Flutter aplica su propia rampa de opacidad según la elevación, así que un color que ya viene
+al 10% se multiplica de nuevo y la sombra desaparece — la intensidad se regula con `elevation`.
+`CardThemeData` no acepta `boxShadow`, así que el desplazamiento `(2,3)` de la portada no se replica:
+el offset lo calcula Flutter desde la elevación, y queda parecido pero no idéntico. Ningún `Card` se
+convirtió en `Container` para imitarla: la portada tiene tratamiento propio y está bien así.
+
+**El aire, en las dos pantallas** (`rubros_tab.dart`, `subitems_screen.dart`): margen de 4px → 10px.
+**Verificado antes de tocar: el margen se declara local en cada ítem**, no se hereda del `cardTheme`,
+así que no hizo falta tocar el theme ni se arrastró nada a las otras 19 pantallas.
+
+**Queda igual, dicho a propósito**: el mismo margen de 4px está en las dos pantallas espejo de carga
+de avance (`carga_avance_rubros_screen.dart:252`, `carga_avance_subitems_screen.dart:383`), que
+replican estas listas cuando se carga un certificado. No se tocaron porque no estaban en el pedido —
+si el aire nuevo funciona en Cómputo, son dos líneas más.
+
+---
+
+## 6. Lo que este barrido dejó como criterio
 
 No hace falta tocar 12 pantallas. El patrón de la lista de riesgo es siempre el mismo, así que
 convendría **un solo cambio en el theme, no doce en las pantallas**: subir la sombra del `cardTheme`
@@ -118,3 +142,15 @@ oscuro empieza a pelear con los campos de texto y los diálogos.
 Y **el margen de 4px de `rubros_tab`/`subitems_screen`** es un problema aparte, que ninguna sombra
 arregla: 4px entre ítems es poco aire para una lista larga, y es la misma lección de la portada (el
 aire es lo que agrupa). Ahí convendría mirar el margen antes que la sombra.
+
+---
+
+## 7. Nota de método, para el próximo barrido
+
+El primer relevamiento reportó "fondo navy" en ocho pantallas y **era falso**: el `backgroundColor`
+que encontraba estaba en el `AppBar`, no en el `Scaffold`, porque la ventana de búsqueda tomaba las
+líneas siguientes a `Scaffold(` sin distinguir a qué widget pertenecía la propiedad. Se corrigió
+mirando la indentación exacta (las propiedades del `Scaffold` están a 6 espacios; las del `AppBar`, a
+8). Conclusión para la próxima: en un barrido por grep, **una propiedad encontrada "cerca" de un
+widget no es una propiedad de ese widget** — y si el resultado sorprende (¿ocho pantallas con fondo
+navy?), casi siempre es el método y no el código.

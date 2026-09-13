@@ -29,11 +29,28 @@ class AppTheme {
       // Las tarjetas que declaran su propio `color` (navy, ámbar, `EAF1FB`, etc.) no se ven
       // afectadas -- el `color` de la instancia le gana al del theme.
       //
-      // El resto (elevation, margin, shape) queda tal cual estaba.
+      // Sombra navy y `elevation: 3` (2026-09-13, conclusión del barrido de
+      // docs/barrido_cards_theme_blanco.md §5): el problema de las 21 pantallas con `Card` no era que
+      // la tarjeta quedara plana -- ya tenía la sombra de `elevation: 1.5` -- sino que esa sombra es
+      // floja para el fondo `F4F6F8` que todas heredan. Un solo cambio acá en vez de doce por
+      // pantalla.
+      //
+      // **El navy va a opacidad PLENA (`0xFF1B365D`), no al 10% como en la tarjeta de MIS OBRAS.**
+      // Flutter aplica su propia rampa de opacidad según la elevación: si el color ya viene al 10%,
+      // la multiplica de nuevo y la sombra desaparece. Acá la intensidad se regula con `elevation`,
+      // no con la opacidad del color. Si queda floja, 4; más que eso, mirarlo antes.
+      //
+      // `CardThemeData` no acepta `boxShadow`, así que el desplazamiento `(2,3)` de MIS OBRAS no se
+      // puede replicar desde el theme -- el offset lo calcula Flutter desde la elevación. Queda
+      // parecido pero no idéntico, y está bien: la portada tiene tratamiento propio (un `Container`
+      // que no hereda nada de acá) y ninguna otra tarjeta se convierte en `Container` para imitarla.
+      //
+      // `margin` y `shape` quedan tal cual estaban.
       cardTheme: const CardThemeData(
         color: Colors.white,
         surfaceTintColor: Colors.transparent,
-        elevation: 1.5,
+        shadowColor: Color(0xFF1B365D),
+        elevation: 3,
         margin: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.all(Radius.circular(10)),
