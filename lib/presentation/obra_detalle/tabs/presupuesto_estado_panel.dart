@@ -48,15 +48,29 @@ class _PresupuestoEstadoPanelState extends State<PresupuestoEstadoPanel> {
   bool _aplicaCac = false;
   bool _enviando = false;
 
-  // Moneda de la obra + cotización de hoy -- todos los montos de este panel (presupuesto vivo,
-  // pactado, saldo pendiente) se guardan en ARS (ver comentarios de obras_repository.dart), la
-  // conversión es puramente de visualización. Mismo mecanismo que ya usa DetalleCertificadoScreen
-  // (`convertirArsAMoneda`) -- a diferencia de un certificado ya emitido, acá no hay ningún
-  // snapshot de cotización que congelar: pactado/saldo pendiente son una vista viva de un monto
-  // fijo en pesos, así que corresponde convertir siempre a la cotización de HOY, igual que
-  // ObrasListScreen hace con el presupuesto vivo.
+  // Moneda de la obra + cotizaciones -- todos los montos de este panel se guardan en ARS (ver
+  // comentarios de obras_repository.dart), la conversión es puramente de visualización. Mismo
+  // mecanismo que ya usa DetalleCertificadoScreen (`convertirArsAMoneda`).
+  //
+  // Corregido por la 0122: antes acá decía que no había ningún snapshot que congelar, porque
+  // "pactado/saldo pendiente son una vista viva de un monto fijo en pesos". Era cierto dentro del
+  // modelo viejo y era justamente el problema -- el número en dólares del pactado se movía solo
+  // cuando subía el dólar, sobre un monto ya firmado. Ahora hay snapshot
+  // (`obras.cotizacion_dolar_al_congelar`) y la regla es:
+  //
+  //   - **Pactado** -> cotización del congelamiento. Es lo que se firmó, no se mueve más.
+  //   - **Presupuesto actual (vivo)** -> cotización de hoy. Es un número vivo, tiene que moverse.
+  //   - **Saldo pendiente** -> depende del rótulo: con CAC activo dice "ajustado a hoy" y ES un
+  //     número de hoy (cotización de hoy); sin CAC es contrato puro (pactado - certificado), así que
+  //     va con la cotización del pacto.
+  //
+  // Ver docs/cotizacion_congelada_montos_cerrados_diseno.md §4-§5.
   String _moneda = 'ARS';
   double _cotizacionHoy = 0;
+
+  /// `obras.cotizacion_dolar_al_congelar` (0122). null = obra congelada antes de esa migración: se
+  /// cae a la cotización de hoy y el panel avisa que la conversión es aproximada.
+  double? _cotizacionAlCongelar;
 
   // Aviso "el precio pactado queda fijo aunque cambien los interruptores de la Solapa APU" --
   // descartable, primera vez, mismo mecanismo que el aviso de zona UOCRA de CartelCostoManoObra
@@ -115,6 +129,7 @@ class _PresupuestoEstadoPanelState extends State<PresupuestoEstadoPanel> {
         _validezDias = estado['validezDias'] as int;
         _congeladoEn = congeladoEn;
         _aplicaCac = estado['aplicaCac'] as bool;
+        _cotizacionAlCongelar = estado['cotizacionDolarAlCongelar'] as double?;
         _moneda = moneda;
         _cotizacionHoy = cotizacion?.promedio ?? 0;
         _cargando = false;
@@ -311,8 +326,13 @@ class _PresupuestoEstadoPanelState extends State<PresupuestoEstadoPanel> {
 
   /// `montoArs`: siempre en pesos (ver comentario de `_moneda` arriba) -- convierte a la moneda de
   /// la obra antes de formatear. Mismo patrón que `DetalleCertificadoScreen._fmt`.
-  String _fmtMonto(double montoArs) {
-    final convertido = convertirArsAMoneda(montoArs, _moneda, _cotizacionHoy);
+  /// `cotizacion`: la del propio monto, para los que están firmados (ver el comentario de
+  /// `_cotizacionAlCongelar`). Sin ella, la de hoy. Una cotización no positiva se ignora -- mismo
+  /// fallback que una obra sin snapshot.
+  String _fmtMonto(double montoArs, {double? cotizacion}) {
+    final double cotizacionAUsar =
+        (cotizacion != null && cotizacion > 0) ? cotizacion : _cotizacionHoy;
+    final convertido = convertirArsAMoneda(montoArs, _moneda, cotizacionAUsar);
     final valorInt = convertido.round();
     final str = valorInt.toString();
     final reg = RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))');
@@ -425,11 +445,26 @@ class _PresupuestoEstadoPanelState extends State<PresupuestoEstadoPanel> {
                 onPressed: _restaurarAvisoCongelado,
               ),
             ),
-          _buildFilaMonto('Pactado', _montoPactado!),
+          _buildFilaMonto('Pactado', _montoPactado!, cotizacion: _cotizacionAlCongelar),
           _buildFilaMonto(
             _aplicaCac ? 'Saldo pendiente (ajustado a hoy)' : 'Saldo pendiente',
             _saldoPendiente!,
+            // Con CAC el saldo YA está ajustado a hoy (lo dice el rótulo): es un número de hoy y va
+            // con el dólar de hoy. Sin CAC es contrato puro, va con el dólar del pacto.
+            cotizacion: _aplicaCac ? null : _cotizacionAlCongelar,
           ),
+          // Obra en dólares congelada antes de la 0122: no hay snapshot y no hay cómo reconstruirlo
+          // (`cotizacion_dolar_bna` es una fila única, sin serie histórica). Se muestra a la
+          // cotización de hoy, dicho en voz alta -- mismo criterio que un certificado viejo.
+          if (_moneda == 'USD' && _cotizacionAlCongelar == null)
+            const Padding(
+              padding: EdgeInsets.only(top: 4),
+              child: Text(
+                'La conversión a dólares es a la cotización de hoy: esta obra se congeló antes de que '
+                'se guardara la del día del pacto.',
+                style: TextStyle(fontSize: 10, color: Colors.black45, fontStyle: FontStyle.italic),
+              ),
+            ),
           if (_aplicaCac && _indiceBasePendiente) ...[
             const SizedBox(height: 6),
             Container(
@@ -495,14 +530,17 @@ class _PresupuestoEstadoPanelState extends State<PresupuestoEstadoPanel> {
     );
   }
 
-  Widget _buildFilaMonto(String etiqueta, double monto) {
+  Widget _buildFilaMonto(String etiqueta, double monto, {double? cotizacion}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(etiqueta, style: const TextStyle(fontSize: 12, color: Colors.black87)),
-          Text(_fmtMonto(monto), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF1B365D))),
+          Text(
+            _fmtMonto(monto, cotizacion: cotizacion),
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF1B365D)),
+          ),
         ],
       ),
     );

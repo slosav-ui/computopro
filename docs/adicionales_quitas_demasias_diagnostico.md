@@ -1316,7 +1316,22 @@ para el contrato), y con eso hay que decidir qué pasa con todo lo que hoy asume
   `docs/criterio_pantalla_principal_vs_resumen.md` §2, un dato que necesita aclaración no es de
   portada: la conversión y su cotización van en Resumen.
 
-### 15.4 Recomendación de orden
+### 15.4 Recomendación de orden — aceptada por Seba (2026-09-13)
+
+**Nivel 0 y Nivel 1 se hicieron; el Nivel 2 queda para cuando haya una obra real pactada en otra
+moneda.** Palabras de Seba al decidirlo: *"el problema que encontraste es más importante que la
+pregunta que te hice: si el número en dólares que le mostré al cliente se mueve solo cuando sube el
+dólar, ese monto no está cerrado"*.
+
+- **Nivel 0, hecho**: el campo del diálogo de monto fijo dice "Costo en pesos" y lleva `$` de
+  prefijo; en obra en dólares se aclara que el precio final de la previa es a la cotización de hoy y
+  queda fijo al aprobar.
+- **Nivel 1**: diseño y decisiones en **`docs/cotizacion_congelada_montos_cerrados_diseno.md`**,
+  migración `0122` escrita sin aplicar, Dart hecho. La aritmética entre montos con cotizaciones
+  distintas se resolvió como **histórico puro** (cada monto a su cotización, el total es la suma de
+  esos números, nada se mueve).
+
+Lo que sigue del planteo original queda como estaba:
 
 Nivel 0 cuando se toque el diálogo de carga por cualquier otra razón (es de una línea). **Nivel 1
 como pieza propia y corta, antes que cualquier cosa de multi-moneda**: hace consistente lo que ya

@@ -337,7 +337,8 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
     }
   }
 
-  Future<Map<String, List<({String id, String descripcion, double montoArs})>>> _adicionalesAprobadosSeguro(
+  Future<Map<String, List<({String id, String descripcion, double montoArs, double? cotizacionAlAprobar})>>>
+      _adicionalesAprobadosSeguro(
     List<String> obraIds,
   ) async {
     try {
@@ -415,18 +416,28 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
   // siempre sin que nadie la verifique. El error real va a la consola antes de tirar la
   // excepción -- antes esto no decía nada, ver el comentario de más abajo sobre la causa real
   // del bug reportado.
-  double _convertirMonto(double monto, String monedaOrigen, String monedaDestino) {
+  /// `cotizacion`: la cotización **propia de ese monto**, para los que están firmados y congelados
+  /// (0122 -- el pactado usa la del congelamiento, cada adicional aprobado la de su aprobación). Sin
+  /// ella se usa `_cotizacionUsdEfectiva`, que es lo correcto para todo lo vivo (presupuesto
+  /// estimado, el "Hoy" del chip) e incluye la proyección personalizada PRO. Un monto ya firmado
+  /// nunca se convierte con la efectiva: era justamente el problema -- el número en dólares se movía
+  /// solo, y la proyección los movía todos juntos. Ver
+  /// docs/cotizacion_congelada_montos_cerrados_diseno.md.
+  ///
+  /// Una `cotizacion` no positiva se ignora (cae a la efectiva): un snapshot roto no tiene que
+  /// romper la card, y es el mismo fallback que una fila vieja sin snapshot.
+  double _convertirMonto(double monto, String monedaOrigen, String monedaDestino, {double? cotizacion}) {
     if (monedaOrigen == monedaDestino) return monto;
-    if (_cotizacionUsdEfectiva <= 0) {
+    final double cotizacionAUsar =
+        (cotizacion != null && cotizacion > 0) ? cotizacion : _cotizacionUsdEfectiva;
+    if (cotizacionAUsar <= 0) {
       debugPrint(
-        '_convertirMonto: cotización USD inválida ($_cotizacionUsdEfectiva) -- no se puede '
+        '_convertirMonto: cotización USD inválida ($cotizacionAUsar) -- no se puede '
         'convertir $monto de $monedaOrigen a $monedaDestino.',
       );
       throw StateError('La cotización del dólar todavía no está disponible. Probá de nuevo en un momento.');
     }
-    return monedaOrigen == 'ARS'
-        ? monto / _cotizacionUsdEfectiva
-        : monto * _cotizacionUsdEfectiva;
+    return monedaOrigen == 'ARS' ? monto / cotizacionAUsar : monto * cotizacionAUsar;
   }
 
   /// `montoVivoArs`: presupuesto vivo recién calculado (ver _cargarObras) -- SIEMPRE en ARS, sin
@@ -442,27 +453,33 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
     double montoVivoArs,
     double? montoPactadoArs,
     double? montoHoyConfigCongeladaArs, [
-    List<({String id, String descripcion, double montoArs})>? adicionalesAprobados,
+    List<({String id, String descripcion, double montoArs, double? cotizacionAlAprobar})>? adicionalesAprobados,
   ]) {
+    // 0122: la cotización del día en que se congeló el presupuesto. El pactado se convierte con
+    // ESTA; el estimado vivo y el "Hoy" del chip, con la efectiva de hoy (son números vivos).
+    final double? cotizacionAlCongelar = (obra['cotizacionDolarAlCongelar'] as num?)?.toDouble();
     return {
       ...obra,
       'montoEstimadoArs': montoVivoArs,
       'montoEstimadoUsd': _convertirMonto(montoVivoArs, 'ARS', 'USD'),
       'montoPactadoArs': montoPactadoArs,
-      'montoPactadoUsd': montoPactadoArs == null ? null : _convertirMonto(montoPactadoArs, 'ARS', 'USD'),
+      'montoPactadoUsd': montoPactadoArs == null
+          ? null
+          : _convertirMonto(montoPactadoArs, 'ARS', 'USD', cotizacion: cotizacionAlCongelar),
       'montoHoyConfigCongeladaArs': montoHoyConfigCongeladaArs,
       'montoHoyConfigCongeladaUsd': montoHoyConfigCongeladaArs == null
           ? null
           : _convertirMonto(montoHoyConfigCongeladaArs, 'ARS', 'USD'),
       // Uno por adicional, no un total -- la card pinta un renglón por cada uno. La conversión a
-      // USD se hace acá, de una vez, para que la card no tenga que saber nada de cotizaciones.
+      // USD se hace acá, de una vez, para que la card no tenga que saber nada de cotizaciones: cada
+      // adicional aprobado con la cotización de SU aprobación (0122), no con la de hoy.
       'adicionalesAprobados': <_AdicionalAprobadoCard>[
         for (final a in adicionalesAprobados ?? const [])
           (
             id: a.id,
             descripcion: a.descripcion,
             montoArs: a.montoArs,
-            montoUsd: _convertirMonto(a.montoArs, 'ARS', 'USD'),
+            montoUsd: _convertirMonto(a.montoArs, 'ARS', 'USD', cotizacion: a.cotizacionAlAprobar),
           ),
       ],
     };
@@ -561,13 +578,25 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
   /// contra `calcular_presupuesto_vivo_obra` (config vigente) y podía mostrar un desfasaje que en
   /// realidad era un cambio de configuración, no de costos -- caso real: obra congelada con
   /// impuestos aplicados, interruptor de impuestos apagado después, "desfasaje" de 20% que no
-  /// existía. `montoHoy`/`montoPactado` llegan ya convertidos a la misma moneda de visualización
-  /// -- el desfasaje da igual calculado en ARS o en USD (la conversión se cancela en la división).
+  /// `montoHoyMostrar` llega en la moneda de visualización (es lo único que se imprime); el
+  /// **porcentaje se calcula siempre en pesos**, con `montoHoyArs`/`montoPactadoArs`. Antes los dos
+  /// llegaban convertidos y daba igual, porque compartían cotización y esta se cancelaba en la
+  /// división. Desde la 0122 no la comparten -- el pactado usa la del congelamiento y "Hoy" la de
+  /// hoy -- así que calcularlo sobre los convertidos le sumaría al desfasaje la variación del dólar,
+  /// justo la mezcla que la 0110 vino a sacar (desfasaje de costos vs. de configuración). El
+  /// desfasaje mide costos: se calcula en pesos y vale igual en cualquier moneda.
   ///
   /// `Wrap`, no `Row` -- incluso con textos cortos, varias piezas de texto en una card angosta
   /// (memoria de overflow en pantalla angosta) tienen que poder pasar a una segunda línea.
-  Widget _buildComparacionCongelada(String obraId, double montoHoy, double montoPactado, String moneda) {
-    final double? desfasajePct = montoPactado != 0 ? ((montoHoy - montoPactado) / montoPactado) * 100 : null;
+  Widget _buildComparacionCongelada(
+    String obraId,
+    double montoHoyMostrar,
+    double montoHoyArs,
+    double montoPactadoArs,
+    String moneda,
+  ) {
+    final double? desfasajePct =
+        montoPactadoArs != 0 ? ((montoHoyArs - montoPactadoArs) / montoPactadoArs) * 100 : null;
     final bool subio = (desfasajePct ?? 0) >= 0;
     final bool avisoDescartado = _avisoDesfasajeDescartadoObras.contains(obraId);
     return Container(
@@ -589,7 +618,7 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     Text(
-                      'Hoy ${_formatearMonto(montoHoy, moneda)}',
+                      'Hoy ${_formatearMonto(montoHoyMostrar, moneda)}',
                       style: TextStyle(fontSize: 10.5, color: Colors.indigo.shade900),
                     ),
                     if (desfasajePct != null)
@@ -2511,7 +2540,8 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                                       _buildComparacionCongelada(
                                         obra['id'] as String,
                                         montoHoyConfigCongelada,
-                                        montoPactado,
+                                        obra['montoHoyConfigCongeladaArs'] as double,
+                                        obra['montoPactadoArs'] as double,
                                         obra['moneda'],
                                       ),
                                     ],

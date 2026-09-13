@@ -138,25 +138,31 @@ class AdicionalesRepository {
   ///
   /// Orden: por fecha de resolución (el orden en que se fueron firmando, que es como se lee un
   /// contrato con sus adicionales), con la fecha de solicitud como desempate.
-  Future<Map<String, List<({String id, String descripcion, double montoArs})>>> getAprobadosPorObra(
+  ///
+  /// `cotizacionAlAprobar` (0122): el dólar del día en que se aprobó, para mostrar el monto en
+  /// dólares fijo y no a la cotización de hoy. `null` para los aprobados antes de esa migración.
+  Future<Map<String, List<({String id, String descripcion, double montoArs, double? cotizacionAlAprobar})>>>
+      getAprobadosPorObra(
     List<String> obraIds,
   ) async {
     if (obraIds.isEmpty) return {};
     final rows = await _client
         .from('modificaciones_obra')
-        .select('id, obra_id, descripcion, monto_total')
+        .select('id, obra_id, descripcion, monto_total, cotizacion_dolar_al_aprobar')
         .eq('tipo', 'adicional')
         .eq('estado', 'aprobado')
         .inFilter('obra_id', obraIds)
         .order('fecha_resolucion', ascending: true, nullsFirst: false)
         .order('fecha_solicitud', ascending: true);
-    final porObra = <String, List<({String id, String descripcion, double montoArs})>>{};
+    final porObra =
+        <String, List<({String id, String descripcion, double montoArs, double? cotizacionAlAprobar})>>{};
     for (final row in rows as List) {
       final obraId = row['obra_id'].toString();
       porObra.putIfAbsent(obraId, () => []).add((
         id: row['id'].toString(),
         descripcion: (row['descripcion'] ?? '').toString().trim(),
         montoArs: _aDouble(row['monto_total']),
+        cotizacionAlAprobar: (row['cotizacion_dolar_al_aprobar'] as num?)?.toDouble(),
       ));
     }
     return porObra;

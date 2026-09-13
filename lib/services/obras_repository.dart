@@ -155,7 +155,7 @@ class ObrasRepository {
         .from('obras')
         .select(
           'presupuesto_fecha_presentacion, presupuesto_validez_dias, presupuesto_congelado_en, '
-          'aplica_cac, cac_serie',
+          'aplica_cac, cac_serie, cotizacion_dolar_al_congelar',
         )
         .eq('id', obraId)
         .single();
@@ -169,6 +169,9 @@ class ObrasRepository {
           : null,
       'aplicaCac': row['aplica_cac'] == true,
       'cacSerie': row['cac_serie']?.toString() ?? 'materiales_mano_obra',
+      // 0122 -- ver el comentario de `_fromRow`. El panel la usa para mostrar el pactado en dólares
+      // a la cotización del congelamiento y avisar cuando no la tiene.
+      'cotizacionDolarAlCongelar': (row['cotizacion_dolar_al_congelar'] as num?)?.toDouble(),
     };
   }
 
@@ -279,6 +282,11 @@ class ObrasRepository {
       'presupuestoCongeladoEn': row['presupuesto_congelado_en'] != null
           ? DateTime.parse(row['presupuesto_congelado_en'] as String)
           : null,
+      // Cotización del dólar el día que se congeló el presupuesto (0122) -- el pactado en dólares se
+      // muestra con ESTA, no con la de hoy: es un monto firmado y no puede moverse porque el dólar
+      // subió después (docs/cotizacion_congelada_montos_cerrados_diseno.md). null = obra congelada
+      // antes de la 0122 -> se cae a la de hoy, como aproximación.
+      'cotizacionDolarAlCongelar': (row['cotizacion_dolar_al_congelar'] as num?)?.toDouble(),
       // Obra hija de un adicional presupuestado con la app (0113) -- null para toda obra real.
       // `PresupuestosScreen` la usa para esconder la solapa Gestión de Obra (un adicional nunca
       // certifica por su cuenta); `ComposicionApuScreen` mira `esObraHija` (chequeo aparte, más

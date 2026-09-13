@@ -33,6 +33,18 @@ actualizado cuando algo relevante cambie, no dejarlo envejecer. La estrategia co
 en `docs/monetizacion.md`; el relevamiento de qué config/función quedó desconectada de qué, en
 `docs/relevamiento_sincronizacion_config_precios.md`.
 
+**Cotización congelada de los montos cerrados** (`obras.cotizacion_dolar_al_congelar`,
+`modificaciones_obra.cotizacion_dolar_al_aprobar`, migración `0122`) —
+`docs/cotizacion_congelada_montos_cerrados_diseno.md`. Todo el sistema de precios guarda **pesos** y
+`obras.moneda` es una lente; hasta la `0122` una obra en dólares mostraba el pactado y cada adicional
+aprobado a la cotización *del día en que se los mira*, así que el número en USD que el cliente vio al
+firmar se movía solo. Regla desde acá: **un monto firmado se convierte con la cotización de su
+momento** (el pactado con la del congelamiento, cada adicional con la de su aprobación, cada
+certificado con la de su emisión — `0107`), **lo vivo con la de hoy**, y las cuentas entre montos
+firmados son sumas/restas de esos valores históricos (nada se recalcula a hoy). No permite pactar en
+una moneda distinta a la de la obra — eso es el Nivel 2 del relevamiento
+(`docs/adicionales_quitas_demasias_diagnostico.md` §15), pospuesto a propósito.
+
 **Qué va en la pantalla principal y qué va en Resumen** — criterio cerrado por Seba el 2026-09-13,
 `docs/criterio_pantalla_principal_vs_resumen.md`. La portada (`ObrasListScreen`) es **panorámica y
 amable** (qué obras tenés, cómo van, qué te espera; es la primera llegada de cualquier usuario

@@ -114,6 +114,13 @@ class ModificacionObra {
   /// en esta fila -- no en la obra hija -- para que la lista lo sepa sin poder leer la hija.
   final DateTime? enviadoAAprobacionEn;
 
+  /// Seguimiento de un adicional APROBADO (0120) -- sin ciclo propio, solo registro: el acumulado
+  /// (0 a 100) y lo que representa en pesos sobre `montoTotal`. En 0 para todo lo demás (check en
+  /// la base). Cada carga es firme y el acumulado nunca baja; quién cargó cada una queda en
+  /// audit_log (`certificar_avance_adicional`).
+  final double porcentajeAvance;
+  final double montoCertificado;
+
   final String solicitadoPor;
   final String subidoPor;
 
@@ -123,6 +130,17 @@ class ModificacionObra {
   final DateTime fechaSolicitud;
   final DateTime? fechaResolucion;
   final String? comentarioResolucion;
+
+  /// Promedio compra/venta del dólar BNA al momento de **aprobar** el adicional (`0122`). Un
+  /// adicional aprobado es un monto firmado: su valor en dólares tiene que quedar fijo con la
+  /// cotización de ese día, no moverse con la de hoy — mismo criterio que
+  /// `certificados.cotizacion_dolar_promedio_al_emitir` (`0107`). Ver
+  /// docs/cotizacion_congelada_montos_cerrados_diseno.md.
+  ///
+  /// `null` = aprobado antes de la `0122` (se muestra a la cotización de hoy, marcado como
+  /// aproximación: no hay serie histórica para reconstruirla) o todavía pendiente — mientras no está
+  /// firmado, el monto en dólares sigue vivo a propósito.
+  final double? cotizacionDolarAlAprobar;
 
   const ModificacionObra({
     required this.id,
@@ -140,6 +158,8 @@ class ModificacionObra {
     this.incluyeImpuestos = true,
     this.obraHijaId,
     this.enviadoAAprobacionEn,
+    this.porcentajeAvance = 0,
+    this.montoCertificado = 0,
     required this.solicitadoPor,
     required this.subidoPor,
     this.estado = EstadoModificacion.pendiente,
@@ -147,6 +167,7 @@ class ModificacionObra {
     required this.fechaSolicitud,
     this.fechaResolucion,
     this.comentarioResolucion,
+    this.cotizacionDolarAlAprobar,
   });
 
   factory ModificacionObra.fromRow(Map<String, dynamic> row) {
@@ -168,6 +189,8 @@ class ModificacionObra {
       enviadoAAprobacionEn: row['enviado_a_aprobacion_en'] != null
           ? DateTime.tryParse(row['enviado_a_aprobacion_en'].toString())
           : null,
+      porcentajeAvance: (row['porcentaje_avance'] as num?)?.toDouble() ?? 0.0,
+      montoCertificado: (row['monto_certificado'] as num?)?.toDouble() ?? 0.0,
       solicitadoPor: row['solicitado_por'].toString(),
       subidoPor: row['subido_por'].toString(),
       estado: _estadoDesdeColumna(row['estado']?.toString()),
@@ -177,6 +200,7 @@ class ModificacionObra {
           ? DateTime.tryParse(row['fecha_resolucion'].toString())
           : null,
       comentarioResolucion: row['comentario_resolucion']?.toString(),
+      cotizacionDolarAlAprobar: (row['cotizacion_dolar_al_aprobar'] as num?)?.toDouble(),
     );
   }
 

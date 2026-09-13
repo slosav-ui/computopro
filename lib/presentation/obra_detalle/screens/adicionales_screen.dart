@@ -13,7 +13,7 @@ import '../../../services/perfil_repository.dart';
 import 'presupuestos_screen.dart';
 
 /// Historial, creación y aprobación de Adicionales de una obra (docs/adicionales_quitas_demasias_
-/// diagnostico.md §11/§12/§13). Todavía SIN seguimiento de avance certificado (Tanda 2, después).
+/// diagnostico.md §11/§12/§13/§14), con el seguimiento de avance de los aprobados (0120).
 ///
 /// Circuito de aprobación (0116, §13.6): un adicional presupuestado con la app lo **envía** quien lo
 /// cotiza (congela la obra hija con sus recetas y precios -- "te mandan un presupuesto cerrado, no
@@ -110,20 +110,47 @@ class _AdicionalesScreenState extends State<AdicionalesScreen> {
     }
   }
 
+  // Montos del adicional (monto, certificado, saldo, precio final al crear): los ve quien los ve en
+  // Gestión de Obra (`puedeVerMontosGestionObra`) y, además, quien puede aprobar o rechazar
+  // adicionales -- nadie aprueba un monto que no ve, y un apoderado con delegación permanente hoy no
+  // pasa aquel getter (divergencia de fechas, docs/adicionales_quitas_demasias_diagnostico.md §13.4).
+  // Antes esta pantalla no filtraba nada: cualquier miembro veía acá lo que en Gestión de Obra no
+  // ve -- cerrado en la tanda del seguimiento de avance (§14.5). Desde el cambio de matriz
+  // (2026-09-12) el constructor sí ve montos, así que el que queda afuera es el veedor.
+  bool get _veMontos =>
+      widget.userContext?.puedeVerMontosGestionObra == true ||
+      widget.userContext?.puedeRechazarAdicional == true;
+
   String _nombreUsuario(String usuarioId) => _perfilPorUsuarioId[usuarioId]?.nombre ?? usuarioId;
 
   String _fmtFecha(DateTime? f) => f == null ? '—' : '${f.day}/${f.month}/${f.year}';
 
   /// `montoArs`: siempre en pesos (el sistema de precios entero trabaja en ARS) -- convierte a la
   /// moneda de la obra antes de formatear, mismo patrón que el resto de Gestión de Obra.
-  String _fmtMonto(double montoArs) {
-    final convertido = convertirArsAMoneda(montoArs, _moneda, _cotizacionHoy);
+  ///
+  /// `cotizacion` (0122): la del momento en que el monto quedó firmado. Para un adicional APROBADO
+  /// es la de su aprobación (`cotizacionDolarAlAprobar`) -- su valor en dólares no puede moverse
+  /// después. Sin ella, la de hoy, que es lo correcto para todo lo que todavía no está firmado.
+  /// Usar `_fmtMontoDe` en vez de elegir a mano. Ver
+  /// docs/cotizacion_congelada_montos_cerrados_diseno.md.
+  String _fmtMonto(double montoArs, {double? cotizacion}) {
+    final double cotizacionAUsar =
+        (cotizacion != null && cotizacion > 0) ? cotizacion : _cotizacionHoy;
+    final convertido = convertirArsAMoneda(montoArs, _moneda, cotizacionAUsar);
     final valorInt = convertido.round();
     final str = valorInt.toString();
     final reg = RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))');
     final formateado = str.replaceAllMapped(reg, (Match m) => '${m[1]}.');
     return _moneda == 'USD' ? 'USD $formateado' : '\$ $formateado';
   }
+
+  /// Formatea un monto que pertenece a una modificación puntual, eligiendo la cotización correcta:
+  /// la de la aprobación si ya está aprobada (monto firmado, no se mueve), la de hoy si todavía no
+  /// (está vivo a propósito). Un aprobado antes de la 0122 no tiene snapshot y cae a la de hoy.
+  String _fmtMontoDe(ModificacionObra m, double montoArs) => _fmtMonto(
+        montoArs,
+        cotizacion: m.estado == EstadoModificacion.aprobado ? m.cotizacionDolarAlAprobar : null,
+      );
 
   Color _colorEstado(EstadoModificacion e) {
     switch (e) {
@@ -167,6 +194,7 @@ class _AdicionalesScreenState extends State<AdicionalesScreen> {
         usuarioId: usuarioId,
         moneda: _moneda,
         cotizacionHoy: _cotizacionHoy,
+        mostrarPrecio: _veMontos,
       ),
     );
     if (creado == true) await _cargarDatos();
@@ -310,7 +338,7 @@ class _AdicionalesScreenState extends State<AdicionalesScreen> {
     if (confirmar != true || !mounted) return;
     await _transicion(m, () async {
       final monto = await _repo.enviarAAprobacion(m.id);
-      return 'Enviado para aprobación: ${_fmtMonto(monto)}';
+      return _veMontos ? 'Enviado para aprobación: ${_fmtMonto(monto)}' : 'Enviado para aprobación.';
     }, 'No se pudo enviar el adicional.');
   }
 
@@ -347,6 +375,69 @@ class _AdicionalesScreenState extends State<AdicionalesScreen> {
       await _repo.rechazarAdicional(modificacionId: m.id, comentario: motivo.isEmpty ? null : motivo);
       return 'Adicional rechazado.';
     }, 'No se pudo rechazar el adicional.');
+  }
+
+  /// Seguimiento de un aprobado (0120): suma el avance del período. Firme -- el diálogo pide
+  /// confirmación explícita antes de devolver el porcentaje (§14.5-C).
+  Future<void> _certificarAvance(ModificacionObra m) async {
+    final porcentaje = await showDialog<double>(
+      context: context,
+      builder: (ctx) => _CertificarAvanceDialog(
+        adicional: m,
+        mostrarMontos: _veMontos,
+        // Los montos de este diálogo son porciones del monto ya aprobado: van con la cotización de
+        // esa aprobación, no con la de hoy (0122).
+        fmtMonto: (montoArs) => _fmtMontoDe(m, montoArs),
+      ),
+    );
+    if (porcentaje == null || !mounted) return;
+    await _transicion(m, () async {
+      final acumulado = await _repo.certificarAvance(modificacionId: m.id, porcentaje: porcentaje);
+      return 'Avance certificado: +${_fmtPorcentaje(porcentaje)}%, acumulado ${_fmtPorcentaje(acumulado)}%.';
+    }, 'No se pudo certificar el avance.');
+  }
+
+  /// Barra de avance + certificado/saldo de un aprobado (0120). Quien no ve montos ve la barra y el
+  /// porcentaje, sin pesos.
+  Widget _buildAvance(ModificacionObra m) {
+    final completo = m.porcentajeAvance >= 100;
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(3),
+                  child: LinearProgressIndicator(
+                    value: (m.porcentajeAvance / 100).clamp(0.0, 1.0),
+                    minHeight: 6,
+                    backgroundColor: Colors.grey.shade200,
+                    color: completo ? Colors.green.shade700 : const Color(0xFF1B365D),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                completo ? 'Certificado 100%' : '${_fmtPorcentaje(m.porcentajeAvance)}% certificado',
+                style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Colors.black87),
+              ),
+            ],
+          ),
+          if (_veMontos)
+            Padding(
+              padding: const EdgeInsets.only(top: 3),
+              child: Text(
+                'Certificado ${_fmtMontoDe(m, m.montoCertificado)} · '
+                'Saldo ${_fmtMontoDe(m, m.montoTotal - m.montoCertificado)}',
+                style: const TextStyle(fontSize: 11, color: Colors.black54),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 
   /// `null` = "Volver"; texto vacío = confirmó sin comentario.
@@ -403,6 +494,9 @@ class _AdicionalesScreenState extends State<AdicionalesScreen> {
     final aprobable = esPendiente && (!esPresupuestado || enviado);
     final puedeAprobar = aprobable && ctx?.puedeAprobarAdicional(m.montoTotal) == true;
     final superaTope = aprobable && puedeRechazar && !puedeAprobar;
+    final esAprobado = m.estado == EstadoModificacion.aprobado;
+    final puedeCertificar =
+        esAprobado && m.porcentajeAvance < 100 && ctx?.puedeCertificarAvanceAdicional == true;
     final resolviendoEste = _resolviendo.contains(m.id);
 
     return Card(
@@ -439,9 +533,9 @@ class _AdicionalesScreenState extends State<AdicionalesScreen> {
                   'Presupuestándose con la app -- tocá para seguir cargando el cómputo.',
                   style: TextStyle(fontSize: 12.5, color: Colors.black54, fontStyle: FontStyle.italic),
                 )
-              else
+              else if (_veMontos)
                 Text(
-                  _fmtMonto(m.montoTotal),
+                  _fmtMontoDe(m, m.montoTotal),
                   style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1B365D)),
                 ),
               const SizedBox(height: 2),
@@ -454,6 +548,7 @@ class _AdicionalesScreenState extends State<AdicionalesScreen> {
                     const Text('Sin materiales', style: TextStyle(fontSize: 10.5, color: Colors.black45)),
                 ],
               ),
+              if (esAprobado) _buildAvance(m),
               const SizedBox(height: 4),
               Text(
                 'Solicitado por ${_nombreUsuario(m.solicitadoPor)} — ${_fmtFecha(m.fechaSolicitud)}',
@@ -493,7 +588,7 @@ class _AdicionalesScreenState extends State<AdicionalesScreen> {
                     style: TextStyle(fontSize: 10.5, color: Colors.red.shade700),
                   ),
                 ),
-              if (puedeEnviar || puedeRechazar || puedeAprobar)
+              if (puedeEnviar || puedeRechazar || puedeAprobar || puedeCertificar)
                 Padding(
                   padding: const EdgeInsets.only(top: 6),
                   child: Align(
@@ -527,6 +622,12 @@ class _AdicionalesScreenState extends State<AdicionalesScreen> {
                                   onPressed: () => _aprobar(m),
                                   style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(0, 0)),
                                   child: const Text('Aprobar', style: TextStyle(fontSize: 12)),
+                                ),
+                              if (puedeCertificar)
+                                TextButton(
+                                  onPressed: () => _certificarAvance(m),
+                                  style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(0, 0)),
+                                  child: const Text('Certificar avance', style: TextStyle(fontSize: 12)),
                                 ),
                             ],
                           ),
@@ -671,6 +772,158 @@ class _AdicionalesScreenState extends State<AdicionalesScreen> {
   }
 }
 
+/// Mismo formato que la carga de avance de la obra (`carga_avance_subitems_screen.dart`): entero si
+/// no tiene decimales, si no, dos.
+String _fmtPorcentaje(double v) => v == v.roundToDouble() ? v.toInt().toString() : v.toStringAsFixed(2);
+
+/// Certificar avance de un adicional aprobado (0120) -- el mismo gesto que la carga de avance de la
+/// obra: se ingresa el % DEL PERÍODO con el acumulado y lo disponible a la vista, y si se pasa ofrece
+/// certificar solo lo que queda. Antes de devolver el porcentaje pide confirmación explícita: la
+/// carga es firme, sin borrador ni anulación (§14.5-C). El candado real del 100% está en la base.
+class _CertificarAvanceDialog extends StatefulWidget {
+  final ModificacionObra adicional;
+  final bool mostrarMontos;
+  final String Function(double montoArs) fmtMonto;
+
+  const _CertificarAvanceDialog({
+    required this.adicional,
+    required this.mostrarMontos,
+    required this.fmtMonto,
+  });
+
+  @override
+  State<_CertificarAvanceDialog> createState() => _CertificarAvanceDialogState();
+}
+
+class _CertificarAvanceDialogState extends State<_CertificarAvanceDialog> {
+  final TextEditingController _controller = TextEditingController();
+  String? _error;
+
+  double get _acumulado => widget.adicional.porcentajeAvance;
+  double get _disponible => double.parse((100 - _acumulado).toStringAsFixed(2));
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  /// Solo para mostrar mientras se escribe -- la misma cuenta que `certificar_avance_adicional`
+  /// (sobre el acumulado nuevo, exacto al 100%), que es la que manda: el monto real lo fija la base.
+  double _montoDelPeriodo(double porcentaje) {
+    final a = widget.adicional;
+    final nuevoAcumulado = _acumulado + porcentaje;
+    final nuevoMonto = nuevoAcumulado >= 100
+        ? a.montoTotal
+        : (a.montoTotal * nuevoAcumulado / 100 * 100).roundToDouble() / 100;
+    return nuevoMonto - a.montoCertificado;
+  }
+
+  Future<void> _continuar() async {
+    var valor = ParserNumeroAr.parsear(_controller.text.trim());
+    if (valor == null || valor <= 0) {
+      setState(() => _error = 'Ingresá un porcentaje mayor a 0.');
+      return;
+    }
+    if (valor > _disponible) {
+      final disponible = _disponible;
+      final usarDisponible = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Excede lo disponible', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+          content: Text(
+            'Para llegar al 100% le queda solamente un ${_fmtPorcentaje(disponible)}% disponible. '
+            '¿Querés certificar ese ${_fmtPorcentaje(disponible)}% o preferís revisar el número?',
+            style: const TextStyle(fontSize: 13),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Revisar')),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text('Certificar ${_fmtPorcentaje(disponible)}%'),
+            ),
+          ],
+        ),
+      );
+      if (usarDisponible != true || !mounted) return;
+      valor = disponible;
+    }
+
+    final porcentaje = valor;
+    final nuevoAcumulado = _acumulado + porcentaje;
+    final confirmado = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Confirmar avance', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+        content: Text(
+          '+${_fmtPorcentaje(porcentaje)}% → acumulado ${_fmtPorcentaje(nuevoAcumulado)}%'
+          '${widget.mostrarMontos ? ", ${widget.fmtMonto(_montoDelPeriodo(porcentaje))} en este período" : ""}.\n\n'
+          'Queda firme: no se puede deshacer ni bajar después.',
+          style: const TextStyle(fontSize: 13),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Volver')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Certificar')),
+        ],
+      ),
+    );
+    if (confirmado != true || !mounted) return;
+    Navigator.pop(context, porcentaje);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final valor = ParserNumeroAr.parsear(_controller.text.trim());
+    final valorValido = valor != null && valor > 0 && valor <= _disponible;
+    return AlertDialog(
+      title: const Text('Certificar avance', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(widget.adicional.descripcion, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 6),
+            Text(
+              'Acumulado: ${_fmtPorcentaje(_acumulado)}% · Disponible: ${_fmtPorcentaje(_disponible)}%',
+              style: const TextStyle(fontSize: 12, color: Colors.black54),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: _controller,
+              autofocus: true,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(labelText: 'Avance de este período (%)', isDense: true),
+              style: const TextStyle(fontSize: 13),
+              onChanged: (_) => setState(() => _error = null),
+            ),
+            if (widget.mostrarMontos && valorValido)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  'Este período: ${widget.fmtMonto(_montoDelPeriodo(valor))}',
+                  style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: Color(0xFF1B365D)),
+                ),
+              ),
+            if (_error != null) ...[
+              const SizedBox(height: 8),
+              Text(_error!, style: TextStyle(fontSize: 11.5, color: Colors.red.shade700)),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
+        ElevatedButton(
+          onPressed: _continuar,
+          style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1B365D)),
+          child: const Text('Continuar', style: TextStyle(color: Colors.white)),
+        ),
+      ],
+    );
+  }
+}
+
 enum _ViaCargaAdicional { montoFijo, presupuestar, importar }
 
 /// Las tres vías de carga (§12.6) -- se muestra antes de cualquier diálogo de datos, para que el
@@ -754,11 +1007,16 @@ class _CrearAdicionalDialog extends StatefulWidget {
   final String moneda;
   final double cotizacionHoy;
 
+  /// El precio final ya trae la cascada de Factor K del contrato -- mostrárselo a quien no ve montos
+  /// (el veedor) le deja deducir los márgenes. Sin esto, solo carga el costo.
+  final bool mostrarPrecio;
+
   const _CrearAdicionalDialog({
     required this.obraId,
     required this.usuarioId,
     required this.moneda,
     required this.cotizacionHoy,
+    required this.mostrarPrecio,
   });
 
   @override
@@ -794,6 +1052,7 @@ class _CrearAdicionalDialogState extends State<_CrearAdicionalDialog> {
   }
 
   Future<void> _recalcular() async {
+    if (!widget.mostrarPrecio) return;
     final costo = ParserNumeroAr.parsear(_costoController.text.trim());
     if (costo == null || costo < 0) {
       setState(() => _previa = null);
@@ -875,11 +1134,17 @@ class _CrearAdicionalDialogState extends State<_CrearAdicionalDialog> {
               style: const TextStyle(fontSize: 13),
             ),
             const SizedBox(height: 12),
+            // "en pesos" explícito (Nivel 0 del diagnóstico de monedas, §15): el sistema de precios
+            // entero trabaja en ARS y este campo no lo decía. En una obra en dólares el usuario
+            // tipeaba un número que el sistema interpretaba en pesos, y encima veía el "Precio
+            // final" de abajo ya convertido a USD -- confusión servida. El `prefixText` lo repite
+            // sobre el propio campo, para el que no lee la etiqueta.
             TextField(
               controller: _costoController,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
               decoration: const InputDecoration(
-                labelText: 'Costo (antes de Gastos Generales, Beneficio, etc.)',
+                labelText: 'Costo en pesos (antes de Gastos Generales, Beneficio, etc.)',
+                prefixText: '\$ ',
                 isDense: true,
               ),
               style: const TextStyle(fontSize: 13),
@@ -904,22 +1169,35 @@ class _CrearAdicionalDialogState extends State<_CrearAdicionalDialog> {
               },
             ),
             const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(6)),
-              child: Row(
-                children: [
-                  const Text('Precio final: ', style: TextStyle(fontSize: 12.5, color: Colors.black54)),
-                  if (_calculando)
-                    const SizedBox(height: 12, width: 12, child: CircularProgressIndicator(strokeWidth: 2))
-                  else
-                    Text(
-                      _previa != null ? _fmtMonto(_previa!) : '—',
-                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF1B365D)),
-                    ),
-                ],
+            if (widget.mostrarPrecio)
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(6)),
+                child: Row(
+                  children: [
+                    const Text('Precio final: ', style: TextStyle(fontSize: 12.5, color: Colors.black54)),
+                    if (_calculando)
+                      const SizedBox(height: 12, width: 12, child: CircularProgressIndicator(strokeWidth: 2))
+                    else
+                      Text(
+                        _previa != null ? _fmtMonto(_previa!) : '—',
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF1B365D)),
+                      ),
+                  ],
+                ),
               ),
-            ),
+            // Obra en dólares: el precio final se muestra convertido a la cotización de HOY, y
+            // todavía no hay nada firmado que congelar (el snapshot se toma al aprobar, ver
+            // docs/cotizacion_congelada_montos_cerrados_diseno.md). Decirlo acá evita que el número
+            // en USD de la previa se lea como un precio cerrado.
+            if (widget.mostrarPrecio && widget.moneda == 'USD')
+              const Padding(
+                padding: EdgeInsets.only(top: 4),
+                child: Text(
+                  'El precio final en dólares es a la cotización de hoy -- queda fijo cuando se aprueba.',
+                  style: TextStyle(fontSize: 10, color: Colors.black45),
+                ),
+              ),
             // Ya aplica la cascada de Factor K del contrato (GG, Imprevistos, EPP, Costo
             // Financiero, Beneficio) + impuestos si el toggle está activo -- los 6 conceptos NO se
             // eligen acá, se heredan tal cual (decisión de Seba, 2026-09-13: "son la estructura de
