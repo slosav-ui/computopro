@@ -2236,10 +2236,15 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // Un punto más oscuro que el F4F6F9 anterior: contra ese gris casi blanco, una tarjeta blanca
-      // no se distinguía del fondo y toda la lista se leía como una sola superficie. Sigue siendo un
-      // gris claro -- lo que cambia es que el blanco de las tarjetas ahora se lee como blanco.
-      backgroundColor: const Color(0xFFE9EDF2),
+      // Fondo del listado, en dos pasos y los dos mirados en el emulador por Seba: `F4F6F9` original
+      // -> `E9EDF2` (todavía justo) -> `E2E7EE`. Contra un gris casi blanco, una tarjeta blanca no se
+      // distingue y toda la lista se lee como una sola superficie; con este gris el blanco de la
+      // tarjeta se lee como blanco y el límite entre obras aparece solo.
+      //
+      // Es el tope de lo que conviene oscurecer por acá: más abajo (D8DEE7 y siguientes) la pantalla
+      // empieza a verse gris y pesada, y el contraste hay que buscarlo en el canto de la tarjeta, no
+      // en el fondo -- ver el criterio de docs/criterio_pantalla_principal_vs_resumen.md §5.4.
+      backgroundColor: const Color(0xFFE2E7EE),
       appBar: AppBar(
         backgroundColor: const Color(0xFF1B365D),
         elevation: 0,

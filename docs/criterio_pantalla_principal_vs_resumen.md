@@ -142,9 +142,15 @@ lista empezó a leerse como **un bloque continuo**. Seba: *"de un vistazo se vea
 dónde está cada una"*, sin recargar el diseño.
 
 Resuelto **sin agregar ningún elemento**: más aire entre tarjetas (12 → 18), un borde de 1px, sombra
-más marcada, y el fondo de la pantalla un punto más oscuro (`F4F6F9` → `E9EDF2`) para que el blanco de
-la tarjeta se lea como blanco. En Material 3 hizo falta además apagar el `surfaceTintColor`, que tiñe
-las superficies elevadas y acercaba el blanco al gris del fondo.
+más marcada, y el fondo de la pantalla más oscuro para que el blanco de la tarjeta se lea como blanco.
+En Material 3 hizo falta además apagar el `surfaceTintColor`, que tiñe las superficies elevadas y
+acercaba el blanco al gris del fondo.
+
+El fondo se ajustó en **dos pasos, los dos mirados en el emulador**: `F4F6F9` → `E9EDF2` (todavía
+quedaba justo) → **`E2E7EE`**. Ese es el tope recomendado: más oscuro que eso la pantalla se ve gris y
+pesada, y el contraste hay que buscarlo en el **canto** de la tarjeta (borde más definido, esquina más
+redondeada, sombra con desplazamiento) y no en el fondo. Si alguna vez hace falta más separación, ese
+es el orden en que conviene probarlo.
 
 **Criterio que queda**: cuando una tarjeta de la portada gane contenido, revisar la **separación**
 antes de revisar el contenido. El aire es lo que agrupa — una tarjeta alta con poco espacio alrededor
