@@ -190,6 +190,61 @@ class CertificadosRepository {
     });
   }
 
+  // ===========================================================================
+  // Acuerdo entre partes dentro del borrador (0124)
+  // ===========================================================================
+  //
+  // Las tres transiciones del ida y vuelta, por RPC como el resto del ciclo -- nunca con un update
+  // directo. La autoridad la resuelve entera la base; acá no se duplica ningún chequeo.
+
+  /// "Esto que cargué es mi propuesta, revisala". La puede iniciar cualquiera de los que cargan
+  /// avance: no hay rol fijo del lado del que propone.
+  Future<void> proponerAvance(String certificadoId) async {
+    await _client.rpc('proponer_avance_certificado', params: {'p_certificado_id': certificadoId});
+  }
+
+  /// "Revisé y estoy de acuerdo". Solo la contraparte, y nunca quien propuso.
+  Future<void> darConformidad(String certificadoId) async {
+    await _client.rpc('dar_conformidad_certificado', params: {'p_certificado_id': certificadoId});
+  }
+
+  /// Devuelve la propuesta para corregir. El comentario es obligatorio del lado del servidor; acá
+  /// solo se evita el viaje si viene vacío, mismo patrón que `proponerAnulacion`.
+  Future<void> devolverAvance({
+    required String certificadoId,
+    required String comentario,
+  }) async {
+    await _client.rpc('devolver_avance_certificado', params: {
+      'p_certificado_id': certificadoId,
+      'p_comentario': comentario,
+    });
+  }
+
+  /// ¿El usuario logueado es la contraparte de ESTE certificado, ahora? Se pregunta a la base en vez
+  /// de calcularlo en Dart: depende de si la obra tiene profesional activo y de quién propuso, y
+  /// `UserContext` solo conoce las membresías del usuario logueado. Es además la misma función que
+  /// usan `dar_conformidad_certificado` y `devolver_avance_certificado`, así que la app no puede
+  /// ofrecer un botón que la base después rechace.
+  Future<bool> puedeDarConformidad(String certificadoId) async {
+    final data = await _client
+        .rpc('puede_dar_conformidad_certificado', params: {'p_certificado_id': certificadoId});
+    return data == true;
+  }
+
+  /// ¿Hay alguien del otro lado que tenga que dar la conformidad de una propuesta hecha por
+  /// `propuestoPor`? Si no lo hay, el circuito del acuerdo no se muestra y emitir sigue funcionando
+  /// como antes de la 0124 -- que es el caso de una obra de una sola persona.
+  Future<bool> hayContraparte({
+    required String obraId,
+    String? propuestoPor,
+  }) async {
+    final data = await _client.rpc('hay_contraparte_certificacion', params: {
+      'p_obra_id': obraId,
+      'p_propuesto_por': propuestoPor,
+    });
+    return data == true;
+  }
+
   Certificado _fromRow(Map<String, dynamic> row) {
     return Certificado(
       id: row['id'].toString(),
@@ -231,6 +286,12 @@ class CertificadosRepository {
       anulacionResueltaPor: row['anulacion_resuelta_por']?.toString(),
       anulacionResueltaFecha: _fecha(row['anulacion_resuelta_fecha']),
       anulacionMotivoRechazo: row['anulacion_motivo_rechazo']?.toString(),
+      acuerdoEstado: _acuerdoDesdeColumna(row['acuerdo_estado']?.toString()),
+      propuestoPor: row['propuesto_por']?.toString(),
+      propuestaFecha: _fecha(row['propuesta_fecha']),
+      conformePor: row['conforme_por']?.toString(),
+      conformeFecha: _fecha(row['conforme_fecha']),
+      comentarioDevolucion: row['comentario_devolucion']?.toString(),
     );
   }
 
@@ -259,6 +320,21 @@ class CertificadosRepository {
         // mostrarlo como el estado menos avanzado, nunca como pagado/cerrado
         // sin serlo.
         return EstadoCertificado.borrador;
+    }
+  }
+
+  /// Mismo criterio de fallback que el estado: ante un valor desconocido, el punto menos avanzado
+  /// del acuerdo. Que la app crea que falta conformidad y la base diga que está, se resuelve con un
+  /// mensaje; al revés, ofrecería emitir algo que nadie acordó.
+  AcuerdoCertificado _acuerdoDesdeColumna(String? valor) {
+    switch (valor) {
+      case 'propuesto':
+        return AcuerdoCertificado.propuesto;
+      case 'conforme':
+        return AcuerdoCertificado.conforme;
+      case 'en_carga':
+      default:
+        return AcuerdoCertificado.enCarga;
     }
   }
 }

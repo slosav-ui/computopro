@@ -27,6 +27,11 @@ enum TipoPendiente {
   /// "Ya se puede certificar": venció el período de la periodicidad pactada y no hay borrador en
   /// curso (`0123`). El único tipo que NO es una fila de ninguna entidad -- ver `entidadId`.
   certificacionPeriodo,
+
+  /// "Te proponen un avance para revisar": el borrador tiene una propuesta esperando la conformidad
+  /// de la contraparte (`0124`). Va solo a quien puede conformarla, nunca a quien propuso -- lo
+  /// decide `puede_dar_conformidad_certificado`, la misma función que ejecuta la acción.
+  certificadoPropuesto,
 }
 
 class Pendiente {
@@ -84,6 +89,8 @@ class Pendiente {
         return 'Certificado N° $_numero para subir el PDF firmado';
       case TipoPendiente.certificacionPeriodo:
         return 'Ya se puede certificar';
+      case TipoPendiente.certificadoPropuesto:
+        return 'Certificado N° $_numero para revisar y conformar';
     }
   }
 
@@ -114,6 +121,8 @@ class Pendiente {
         return _conFecha('Período $descripcion', 'pagado el', cuando);
       case TipoPendiente.anulacion:
         return _conFecha('Período $descripcion', 'propuesta el', cuando);
+      case TipoPendiente.certificadoPropuesto:
+        return _conFecha('Período $descripcion', 'propuesto el', cuando);
     }
   }
 
@@ -165,6 +174,8 @@ class Pendiente {
         return TipoPendiente.firmaFisica;
       case 'certificacion_periodo':
         return TipoPendiente.certificacionPeriodo;
+      case 'certificado_propuesto':
+        return TipoPendiente.certificadoPropuesto;
       default:
         return null;
     }

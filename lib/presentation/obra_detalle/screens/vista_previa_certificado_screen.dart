@@ -6,6 +6,7 @@ import '../../../data/models/certificado.dart';
 import '../../../data/models/certificado_subitem_avance.dart';
 import '../../../services/auth_service.dart';
 import '../../../services/certificado_subitems_avance_repository.dart';
+import '../../../services/certificados_repository.dart';
 import '../../../services/indices_economicos_repository.dart';
 import '../../../services/obra_subitems_repository.dart';
 import '../../../services/obras_repository.dart';
@@ -46,6 +47,7 @@ class _VistaPreviaCertificadoScreenState extends State<VistaPreviaCertificadoScr
   final AuthService _authService = AuthService();
   final ObrasRepository _obrasRepository = ObrasRepository();
   final IndicesEconomicosRepository _indicesRepository = IndicesEconomicosRepository();
+  final CertificadosRepository _certificadosRepository = CertificadosRepository();
 
   bool _cargando = true;
   bool _emitiendo = false;
@@ -59,13 +61,37 @@ class _VistaPreviaCertificadoScreenState extends State<VistaPreviaCertificadoScr
   String _moneda = 'ARS';
   double _cotizacionHoy = 0;
 
+  /// Igual que en la pantalla de carga: el certificado se relee de la base, porque el acuerdo lo
+  /// mueve la otra parte desde otro dispositivo (0124). Acá importa el doble -- de este estado
+  /// depende si el botón "Emitir" está habilitado.
+  late Certificado _cert;
+  bool _hayContraparte = false;
+
   bool get _puedeEmitir => widget.userContext?.puedeEmitirCertificado == true;
 
   @override
   void initState() {
     super.initState();
+    _cert = widget.certificado;
     _cargarDatos();
     _cargarMoneda();
+  }
+
+  /// Por qué todavía no se puede emitir, o `null` si se puede. Espejo del guard de
+  /// `emitir_certificado` (0124): solo aplica si la obra tiene contraparte, y son las dos mismas
+  /// condiciones, en el mismo orden. No reemplaza al guard de la base -- lo adelanta, para que el
+  /// botón explique en vez de fallar al tocarlo.
+  String? get _motivoParaNoEmitir {
+    if (!_hayContraparte || _cert.estado != EstadoCertificado.borrador) return null;
+    if (_cert.acuerdoEstado != AcuerdoCertificado.conforme) {
+      return 'Falta la conformidad de la otra parte. Proponelo para revisión desde la carga de '
+          'avance y emitilo cuando lo conformen.';
+    }
+    if (_cert.propuestoPor != null && _cert.propuestoPor == _authService.usuarioActual?.id) {
+      return 'Este avance lo propusiste vos: lo emite la otra parte. Si tiene que emitirlo este '
+          'usuario, que la otra parte lo devuelva y vuelva a proponerlo ella.';
+    }
+    return null;
   }
 
   /// Siempre la cotización de HOY -- a diferencia de un certificado ya emitido
@@ -96,12 +122,12 @@ class _VistaPreviaCertificadoScreenState extends State<VistaPreviaCertificadoScr
     try {
       final usuarioId = _authService.usuarioActual?.id;
 
-      final avances = await _avanceRepository.getAvancesDeCertificado(widget.certificado.id);
+      final avances = await _avanceRepository.getAvancesDeCertificado(_cert.id);
       final obraSubitemIds = avances.map((a) => a.obraSubitemId).toList();
 
       final obraSubitemsFuture = _obraSubitemsRepository.getPorIds(obraSubitemIds);
-      final totalesFuture = _avanceRepository.getTotalesCertificado(widget.certificado.id);
-      final excesosFuture = _avanceRepository.getExcesosCertificado(widget.certificado.id);
+      final totalesFuture = _avanceRepository.getTotalesCertificado(_cert.id);
+      final excesosFuture = _avanceRepository.getExcesosCertificado(_cert.id);
       final rubrosFuture = usuarioId == null
           ? _rubrosRepository.getCatalogoOficial()
           : _rubrosRepository.getCatalogoCompleto(usuarioId);
@@ -115,6 +141,8 @@ class _VistaPreviaCertificadoScreenState extends State<VistaPreviaCertificadoScr
       final rubros = await rubrosFuture;
       final totales = await totalesFuture;
       final excesos = await excesosFuture;
+      final cert = await _certificadoFresco();
+      final hayContraparte = await _hayContraparteSegura(cert);
 
       final descripcionPorSubitemCatalogo = {
         for (final s in subitemsCatalogo) s.id: '${s.codigo} - ${s.descripcion}',
@@ -141,6 +169,8 @@ class _VistaPreviaCertificadoScreenState extends State<VistaPreviaCertificadoScr
           ));
         _totales = totales;
         _excesos = excesos;
+        _cert = cert;
+        _hayContraparte = hayContraparte;
         _cargando = false;
       });
     } catch (e) {
@@ -161,13 +191,36 @@ class _VistaPreviaCertificadoScreenState extends State<VistaPreviaCertificadoScr
     return mapa;
   }
 
+  /// Silenciosas ante error las dos, con el mismo criterio que el resto de los datos secundarios de
+  /// este proyecto: si fallan se sigue con lo que se tenía, y el guard real de la base es el que
+  /// decide igual. Lo único que se pierde es el aviso anticipado.
+  Future<Certificado> _certificadoFresco() async {
+    try {
+      return await _certificadosRepository.getPorId(_cert.id);
+    } catch (_) {
+      return _cert;
+    }
+  }
+
+  Future<bool> _hayContraparteSegura(Certificado cert) async {
+    if (cert.estado != EstadoCertificado.borrador) return false;
+    try {
+      return await _certificadosRepository.hayContraparte(
+        obraId: widget.obraId,
+        propuestoPor: cert.propuestoPor,
+      );
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<void> _onEmitir() async {
     final requiereFirma = await _preguntarFirmaFisica();
     if (requiereFirma == null) return; // canceló el diálogo
     setState(() => _emitiendo = true);
     try {
       await _avanceRepository.emitirCertificado(
-        certificadoId: widget.certificado.id,
+        certificadoId: _cert.id,
         requiereFirmaFisica: requiereFirma,
       );
       if (!mounted) return;
@@ -233,7 +286,7 @@ class _VistaPreviaCertificadoScreenState extends State<VistaPreviaCertificadoScr
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          'Certificado Nº ${widget.certificado.numeroFormateado} — vista previa',
+          'Certificado Nº ${_cert.numeroFormateado} — vista previa',
           style: const TextStyle(fontSize: 15),
         ),
         backgroundColor: const Color(0xFF1B365D),
@@ -386,20 +439,38 @@ class _VistaPreviaCertificadoScreenState extends State<VistaPreviaCertificadoScr
   }
 
   Widget _buildBarraEmitir() {
-    final habilitado = _excesos.isEmpty && !_emitiendo;
+    final motivo = _motivoParaNoEmitir;
+    final habilitado = _excesos.isEmpty && !_emitiendo && motivo == null;
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.all(12.0),
-        child: ElevatedButton(
-          onPressed: habilitado ? _onEmitir : null,
-          style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1B365D), foregroundColor: Colors.white),
-          child: _emitiendo
-              ? const SizedBox(
-                  height: 16,
-                  width: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                )
-              : const Text('Emitir certificado'),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // El botón deshabilitado sin explicación se lee como una falla de la app. El motivo va
+            // arriba, con el texto del acuerdo (0124), no como snackbar al tocarlo.
+            if (motivo != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  motivo,
+                  style: TextStyle(fontSize: 11.5, color: Colors.blueGrey.shade700),
+                ),
+              ),
+            ElevatedButton(
+              onPressed: habilitado ? _onEmitir : null,
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF1B365D), foregroundColor: Colors.white),
+              child: _emitiendo
+                  ? const SizedBox(
+                      height: 16,
+                      width: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    )
+                  : const Text('Emitir certificado'),
+            ),
+          ],
         ),
       ),
     );

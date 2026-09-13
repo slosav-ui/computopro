@@ -201,6 +201,15 @@ class _DetalleCertificadoScreenState extends State<DetalleCertificadoScreen> {
       anulacionResueltaPor: c.anulacionResueltaPor,
       anulacionResueltaFecha: c.anulacionResueltaFecha,
       anulacionMotivoRechazo: c.anulacionMotivoRechazo,
+      // Acuerdo entre partes (0124). Se copian aunque en un certificado ya emitido no cambien
+      // nada: este constructor a mano es el único lugar del proyecto donde un campo nuevo del
+      // modelo se pierde en silencio si alguien se olvida de agregarlo.
+      acuerdoEstado: c.acuerdoEstado,
+      propuestoPor: c.propuestoPor,
+      propuestaFecha: c.propuestaFecha,
+      conformePor: c.conformePor,
+      conformeFecha: c.conformeFecha,
+      comentarioDevolucion: c.comentarioDevolucion,
     );
   }
 

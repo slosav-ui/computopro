@@ -22,6 +22,28 @@ extension EstadoCertificadoLabel on EstadoCertificado {
   }
 }
 
+/// El acuerdo entre partes DENTRO del borrador (0124, Tanda 2 de
+/// docs/certificacion_acuerdo_partes_diagnostico.md §2.1). Es un eje aparte de
+/// `EstadoCertificado` -- calcado del de la anulación: mientras el ida y vuelta pasa, el
+/// certificado se queda en `borrador` de punta a punta.
+///
+/// `enCarga` es a la vez "recién creado" y "devuelto para corregir": los distingue
+/// `comentarioDevolucion`, que solo existe en el segundo caso.
+enum AcuerdoCertificado { enCarga, propuesto, conforme }
+
+extension AcuerdoCertificadoLabel on AcuerdoCertificado {
+  String get label {
+    switch (this) {
+      case AcuerdoCertificado.enCarga:
+        return 'En carga';
+      case AcuerdoCertificado.propuesto:
+        return 'Propuesto para revisión';
+      case AcuerdoCertificado.conforme:
+        return 'Conforme';
+    }
+  }
+}
+
 class Certificado {
   final String id;
   final String obraId;
@@ -91,6 +113,20 @@ class Certificado {
   final DateTime? anulacionResueltaFecha;
   final String? anulacionMotivoRechazo;
 
+  // Acuerdo entre partes dentro del borrador (0124). Se llenan con las funciones
+  // proponer_avance_certificado / dar_conformidad_certificado / devolver_avance_certificado, nunca
+  // con un update directo. En un certificado emitido antes de esa migración `acuerdoEstado` queda
+  // en `enCarga` y no significa nada: la columna solo gobierna el borrador.
+  final AcuerdoCertificado acuerdoEstado;
+  final String? propuestoPor;
+  final DateTime? propuestaFecha;
+  final String? conformePor;
+  final DateTime? conformeFecha;
+
+  /// Por qué la contraparte devolvió la última propuesta. Presente solo si hubo una devolución --
+  /// es lo que distingue un borrador "devuelto para corregir" de uno recién creado.
+  final String? comentarioDevolucion;
+
   Certificado({
     required this.id,
     required this.obraId,
@@ -131,6 +167,12 @@ class Certificado {
     this.anulacionResueltaPor,
     this.anulacionResueltaFecha,
     this.anulacionMotivoRechazo,
+    this.acuerdoEstado = AcuerdoCertificado.enCarga,
+    this.propuestoPor,
+    this.propuestaFecha,
+    this.conformePor,
+    this.conformeFecha,
+    this.comentarioDevolucion,
   });
 
   /// "1", "1 bis", "1 ter" -- el número que ve el usuario, en TODAS las pantallas que lo muestran
@@ -159,4 +201,10 @@ class Certificado {
   }
 
   String get numeroFormateado => formatearNumero(numero, version);
+
+  /// Hubo una devolución con comentario y todavía no se volvió a proponer. No alcanza con mirar
+  /// `comentarioDevolucion`: al volver a proponer, la función lo limpia, pero mientras el acuerdo
+  /// esté `propuesto` el comentario viejo no es lo que hay que mostrar.
+  bool get fueDevuelto =>
+      acuerdoEstado == AcuerdoCertificado.enCarga && (comentarioDevolucion?.isNotEmpty ?? false);
 }

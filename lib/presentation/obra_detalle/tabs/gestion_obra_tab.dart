@@ -512,6 +512,63 @@ class _GestionObraTabState extends State<GestionObraTab> {
   /// lado de la dupla (si tiene el rol y no es quien propuso) ve los botones de Aprobar/Rechazar.
   /// Un tercero (Cliente, Veedor, Admin Maestro) no ve ninguna acción, solo lo que ya muestra el
   /// chip de estado — el circuito de anulación es exclusivamente entre profesional y constructor.
+  /// En qué punto del acuerdo entre partes está un borrador (0124). Solo aparece **una vez que el
+  /// circuito arrancó**: un borrador recién creado, o uno de una obra sin contraparte, no muestra
+  /// nada -- ahí no hay ningún acuerdo que informar y la línea sería ruido en el caso más común.
+  ///
+  /// El detalle y los botones viven en la pantalla de carga de avance, al lado de los números que se
+  /// están conformando; acá es solo el estado, para que se vea desde la lista sin entrar.
+  Widget _buildLineaAcuerdo(Certificado cert) {
+    if (cert.estado != EstadoCertificado.borrador) return const SizedBox.shrink();
+    final devuelto = cert.fueDevuelto;
+    if (cert.acuerdoEstado == AcuerdoCertificado.enCarga && !devuelto) {
+      return const SizedBox.shrink();
+    }
+
+    final (String texto, Color color, IconData icono) = switch (cert.acuerdoEstado) {
+      AcuerdoCertificado.propuesto => (
+          'Propuesto para revisión${_fechaCortaAcuerdo(cert.propuestaFecha)}',
+          Colors.blueGrey.shade700,
+          Icons.hourglass_empty,
+        ),
+      AcuerdoCertificado.conforme => (
+          'Conforme${_fechaCortaAcuerdo(cert.conformeFecha)} — listo para emitir',
+          Colors.green.shade800,
+          Icons.handshake_outlined,
+        ),
+      AcuerdoCertificado.enCarga => (
+          'Devuelto para corregir: ${cert.comentarioDevolucion}',
+          Colors.orange.shade900,
+          Icons.undo,
+        ),
+    };
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icono, size: 13, color: color),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              texto,
+              style: TextStyle(fontSize: 11.5, color: color, fontWeight: FontWeight.w600),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _fechaCortaAcuerdo(DateTime? f) {
+    if (f == null) return '';
+    final l = f.toLocal();
+    return ' el ${l.day.toString().padLeft(2, '0')}/${l.month.toString().padLeft(2, '0')}';
+  }
+
   Widget _buildBloqueAnulacionPendiente(Certificado cert) {
     final usuarioActualId = _authService.usuarioActual?.id;
     final esQuienPropuso =
@@ -814,6 +871,7 @@ class _GestionObraTabState extends State<GestionObraTab> {
                 ],
               ),
               const SizedBox(height: 6),
+              _buildLineaAcuerdo(cert),
               // Gateado por rol, no solo estético: quien no ve montos según la matriz (Veedor,
               // apoderado sin delegación) no ve el monto certificado. Hasta 2026-09-12 el
               // Constructor también quedaba afuera ("vista operativa"); desde el cambio de matriz

@@ -6,6 +6,7 @@ import '../../core/utils/parser_numero_ar.dart';
 import '../../data/models/invitacion.dart';
 import '../../data/models/pendiente.dart';
 import '../obra_detalle/screens/adicionales_screen.dart';
+import '../obra_detalle/screens/carga_avance_rubros_screen.dart';
 import '../obra_detalle/screens/detalle_certificado_screen.dart';
 import '../obra_detalle/screens/presupuestos_screen.dart';
 import '../obra_detalle/screens/quitas_demasias_screen.dart';
@@ -417,6 +418,16 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
           // venir sin entidad es certificacionPeriodo, que sale por la rama de abajo.
           final certificado = await _certificadosRepository.getPorId(p.entidadId!);
           destino = DetalleCertificadoScreen(obraId: p.obraId, certificado: certificado, userContext: userContext);
+        case TipoPendiente.certificadoPropuesto:
+          // El único tipo de certificado que NO abre el detalle: lo que hay que revisar es el
+          // avance cargado del borrador, y eso vive en la pantalla de carga (0124). El botón de
+          // conformar/devolver está ahí, al lado de los números que se están conformando.
+          final borrador = await _certificadosRepository.getPorId(p.entidadId!);
+          destino = CargaAvanceRubrosScreen(
+            obraId: p.obraId,
+            certificado: borrador,
+            userContext: userContext,
+          );
         case TipoPendiente.certificacionPeriodo:
           // No hay entidad que abrir: lo que falta es crear el borrador, y eso vive en Gestión de
           // Obra. La obra ya está cargada en la lista, no hace falta volver a pedirla.

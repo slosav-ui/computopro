@@ -13,8 +13,9 @@ sea el caso"*. Y sobre el pago: *"el cliente no debe pagar si tiene dudas"*.
 quedaron cerradas (§8.1 y §8.2) y Seba confirmó los dos hallazgos de forma: la objeción va como **eje
 aparte** y no como estado nuevo (§5), y el avance global se **reparte en las filas por partida
 ponderado por el monto congelado** (§6) — *"por la vía del Modelo B se perdería todo el ciclo, y eso
-no conviene"*. **Tanda 1 (periodicidad y aviso) en marcha: migración `0123` escrita, sin aplicar
-(§3.1).** Las tandas 2, 3 y 4 siguen sin empezar.
+no conviene"*. **Tanda 1 (periodicidad y aviso): `0123` aplicada, Dart commiteado (§3.1). Tanda 2 (el acuerdo en
+el borrador): migración `0124` escrita, con las tres decisiones de forma cerradas (§2.1); el Dart
+va después de aplicarla.** Las tandas 3 y 4 siguen sin empezar.
 
 **Aclaración que corrige un malentendido de fondo:** lo que Seba llama **certificación global no son
 hitos con etapas pactadas**. Es **avance global sin desglose por partida** — un solo porcentaje de
@@ -101,6 +102,72 @@ vuelta de cargar y corregir porcentajes por subítem **ya funciona hoy**, y cada
 **La devolución con comentario cierra el ida y vuelta sin estados nuevos**: vuelve a `en_carga` con
 `comentario_devolucion`, y el historial completo de cada vuelta queda en `audit_log`, igual que la
 anulación hace con sus intentos.
+
+---
+
+### 2.1 Tanda 2, como quedó escrita — migración `0124`
+
+**Siete pasos**: las 6 columnas del acuerdo en `certificados` (con el check `conforme_por <>
+propuesto_por` **en la tabla**, no solo en la función), 4 helpers, las 2 policies de SELECT, las 3
+funciones del circuito (proponer / dar conformidad / devolver con comentario), el trigger del paso 5,
+el guard en `emitir_certificado` y la rama `certificado_propuesto` en `mis_pendientes()`.
+
+**Quién es la contraparte — una sola regla para todo.** ¿Hay profesional activo en la obra? Sí →
+conforma el otro lado técnico (propuso el constructor, conforma el profesional; propuso el
+profesional, conforma el constructor) y el cliente no ve el borrador. No → conforma el
+`cliente_principal` (o su apoderado), que entonces sí lo ve. Y encima de eso, el precedente de la
+casa: **si no hay contraparte, no se exige contraparte** — una obra de un solo usuario emite
+exactamente como antes de esta migración. Esa última cláusula es la que protege todo lo que ya está
+andando.
+
+**Las tres decisiones de forma (Seba, 2026-09-13), con su fundamento:**
+
+1. **El trigger "si se toca el avance, se cae la conformidad" VA** (paso 5), aunque no estaba en el
+   alcance de la tanda. *"Si se puede conformar un avance, cambiarle los números y emitir con esa
+   conformidad, el acuerdo no vale nada. Es justo lo que la pieza viene a resolver."* El borrador
+   sigue editable mientras es borrador (RLS de `0052`, a propósito), así que sin el trigger la
+   conformidad podía quedar apuntando a otros números.
+
+2. **El guard de emisión es "no emite el mismo que propuso"**, y no el `conforme_por <> auth.uid()`
+   que proponía §2.2 de este mismo doc. *"Es más estricto y el caso que marcás tiene salida — el otro
+   devuelve y lo vuelve a proponer. Prefiero eso a que el que propuso emita su propia propuesta."*
+   El caso medido y aceptado: si la única persona con `puede_editar_presupuesto` es la que propuso,
+   ese certificado no se emite hasta que se invierten los roles de la propuesta. El mensaje de error
+   de la función dice exactamente eso.
+
+3. **El `invitado_veedor` tampoco ve el borrador** mientras haya profesional. La regla escrita es
+   "quien no carga avance no ve el borrador si hay profesional", y el veedor cae ahí. *"Es coherente
+   con la regla y el borrador es la discusión técnica entre las partes. Al que mira desde afuera le
+   alcanza el certificado emitido."*
+
+**`0124` aplicada y verificada por Seba (2026-09-13).**
+
+**Dart, hecho — `flutter analyze` sin errores ni warnings nuevos, sin verificar en el emulador
+todavía:**
+- `Certificado`: enum `AcuerdoCertificado` + 6 campos + `fueDevuelto`.
+- `CertificadosRepository`: `proponerAvance`, `darConformidad`, `devolverAvance`, y dos consultas de
+  autoridad que se le preguntan a la base en vez de calcularlas en Dart —
+  `puedeDarConformidad(certificadoId)` y `hayContraparte(obraId, propuestoPor)`. `UserContext` **no
+  cambia**: la autoridad depende de si la obra tiene profesional activo y de quién propuso, y
+  `UserContext` solo conoce las membresías del usuario logueado.
+- `CargaAvanceRubrosScreen`: el bloque del acuerdo con Proponer / Conforme / Devolver con
+  comentario, y la relectura del certificado en cada carga (la foto que llega por parámetro
+  envejece: el acuerdo lo mueve la otra parte desde otro dispositivo).
+- `VistaPreviaCertificadoScreen`: el botón Emitir explica por qué está deshabilitado, adelantando
+  las dos condiciones del guard de la base en el mismo orden.
+- `GestionObraTab`: la tarjeta del borrador muestra en qué punto del acuerdo está, **solo una vez
+  que el circuito arrancó** — un borrador recién creado, o uno de una obra sin contraparte, no
+  muestra nada.
+- Pendiente `certificadoPropuesto` (modelo, ícono, navegación) → abre la carga de avance, no el
+  detalle: lo que hay que revisar son los números que se están conformando.
+- `DetalleCertificadoScreen._copiarComoLeido`: los 6 campos nuevos copiados. Ese constructor a mano
+  es el único lugar del proyecto donde un campo nuevo del modelo se pierde en silencio.
+
+**Lo único que cambia de RLS en toda la pieza son dos policies, las dos de SELECT**:
+`certificados_select` (los estados distintos de borrador siguen idénticos; el borrador pasa por
+`ve_borradores_certificado`) y `certificado_subitems_avance_select` (lo mismo, para que esconder el
+encabezado y dejar el detalle a la vista no sea una opción). `INSERT`/`UPDATE`/`DELETE` de las dos
+tablas: sin tocar.
 
 ---
 
