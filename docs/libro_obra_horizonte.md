@@ -147,9 +147,20 @@ el casco puesto, va a tipear un texto largo parado"*. Adjuntar archivo al lado.
 **Pendientes**: una Orden de Servicio sin acuse es un candidato natural a `mis_pendientes()` (una rama
 más, el mecanismo ya está). No entra en la primera tanda, pero el diseño no lo estorba.
 
-# §D · Las decisiones abiertas, con opciones
+# §D · Las decisiones — **las 4 CERRADAS por Seba el 2026-09-13**
 
-### 0 · ¿El cliente escribe en algún libro? (nueva, sale del conflicto de §B)
+**Resumen de lo decidido, para no leer las opciones de abajo:**
+
+1. **El cliente no escribe en ningún libro** — hay que alinear la RLS (migración de policy).
+2. **Órdenes de Servicio numeradas y correlativas, sin candado de secuencia.**
+3. **Aviso legal, redacción directa**: *"Este registro es un respaldo interno de la obra. No reemplaza
+   al Libro de Obra rubricado ante el colegio profesional o el municipio, que es el que tiene validez
+   legal."*
+4. **Audio + una línea de texto** que escribe el autor. Transcripción automática, después, como PRO.
+
+Las opciones que se descartaron quedan abajo con su fundamento, para no reabrirlas.
+
+### 0 · ¿El cliente escribe en algún libro? — **CERRADA: A, no escribe en ninguno**
 
 - **A — No escribe en ninguno** (fiel a lo textual de §A): se saca `cliente_principal` e
   `invitado_apoderado` de la rama `'obra'` y `cliente_principal` de la respuesta a Notas de Pedido.
@@ -160,7 +171,7 @@ más, el mecanismo ya está). No entra en la primera tanda, pero el diseño no l
 - **C — Como está hoy** (escribe en el Libro de Obra y responde Notas de Pedido): cero trabajo, pero
   contradice §A.
 
-### 1 · Numeración y secuencia de las Órdenes de Servicio
+### 1 · Numeración y secuencia — **CERRADA: B, número correlativo sin candado**
 
 - **A — Sin número** (como hoy): cero trabajo. En obra real las órdenes se citan por número ("la OS
   N° 7"), así que probablemente falte.
@@ -174,7 +185,7 @@ más, el mecanismo ya está). No entra en la primera tanda, pero el diseño no l
   por un aviso no bloqueante (`docs/certificados_ciclo_vida_diseno_datos.md` §11). Repetirlo acá es
   repetir un error ya medido.
 
-### 2 · El texto del aviso legal
+### 2 · El texto del aviso legal — **CERRADA: A, la redacción directa**
 
 Tres redacciones posibles (la decisión es el tono, no el contenido):
 
@@ -192,7 +203,7 @@ veces en la app (cartel UOCRA, aviso de desfasaje, aviso de presupuesto congelad
 de cualquier exportación a PDF**, cuando exista. Un cartel permanente en pantalla se vuelve
 invisible en dos días.
 
-### 3 · Los audios
+### 3 · Los audios — **CERRADA: C, audio + una línea de texto; transcripción como PRO después**
 
 - **A — Solo audio, sin texto**: lo más rápido de construir (Storage ya probado). Contra: no se puede
   buscar nada, y con cincuenta notas el libro se vuelve inútil como respaldo — hay que escuchar una
@@ -217,8 +228,10 @@ texto es para leer y buscar. Faltaría definir tope de duración y formato al co
 | **3** | Audios (según la decisión 3) + adjuntos | Media |
 | **4** | Numeración/acuse (según la decisión 1) y, si se quiere, la rama de pendientes | Chica |
 
-La migración de la decisión 0 va **antes de la tanda 1** (es una policy, y conviene que la pantalla
-nazca contra la matriz definitiva). La pieza 4 de la visión original (archivo de documentación
+**Con las 4 decisiones cerradas, la tanda 0 es una migración sola** y va antes que todo lo demás: la
+policy de INSERT recreada sin el cliente (decisión 0) **y** la columna `numero` con su `unique(obra_id,
+libro, numero)` (decisión 1) — las dos son schema/RLS, entran juntas en un archivo, y conviene que la
+pantalla nazca contra la matriz definitiva en vez de adaptarse después. La pieza 4 de la visión original (archivo de documentación
 administrativa) queda afuera de este orden: es un gestor de archivos, no una conversación.
 
 ## Fuera de esto, sin tocar
