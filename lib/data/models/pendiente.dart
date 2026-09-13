@@ -1,9 +1,19 @@
 import 'certificado.dart';
 import 'obra_config_certificacion.dart';
 
-/// Una cosa que espera la acción del usuario logueado -- fila de `mis_pendientes()` (0117,
+/// Una acción requerida del usuario logueado -- fila de `mis_pendientes()` (0117,
 /// docs/avisos_pendientes_diseno.md). Quién ve cada una lo decide la base con la misma autoridad que
 /// usa la transición que la resuelve; la app solo la muestra y lleva a donde se resuelve.
+///
+/// **Criterio de tono, fijado por Seba el 2026-09-13** (antes los textos eran coloquiales -- "tenés
+/// 1 cosa esperándote", "falta registrar el pago"):
+///
+/// - `titulo`: **qué hay que hacer**, en la forma "&lt;qué&gt; para &lt;acción&gt;". Sin "falta" ni
+///   "sin": nombran lo que no se hizo y suenan a reproche, cuando el que mira recién se está
+///   enterando.
+/// - `detalle`: **el dato concreto y cuándo**, para que el ítem se explique solo sin abrirlo.
+/// - Nada de "vencido" ni de lenguaje que dé a entender que algo se hizo mal: un período de
+///   certificación que llegó es una **habilitación que se abre**, no un problema.
 enum TipoPendiente {
   adicional,
   quita,
@@ -63,28 +73,58 @@ class Pendiente {
       case TipoPendiente.demasia:
         return 'Demasía para aprobar';
       case TipoPendiente.certificadoEmitido:
-        return 'Certificado N° $_numero emitido, sin leer';
+        return 'Certificado N° $_numero para leer';
       case TipoPendiente.certificadoLeido:
-        return 'Certificado N° $_numero: falta registrar el pago';
+        return 'Certificado N° $_numero para registrar el pago';
       case TipoPendiente.certificadoPagado:
-        return 'Certificado N° $_numero pagado: falta cerrarlo';
+        return 'Certificado N° $_numero para cerrar';
       case TipoPendiente.anulacion:
-        return 'Anulación propuesta del certificado N° $_numero';
+        return 'Anulación del certificado N° $_numero para resolver';
       case TipoPendiente.firmaFisica:
-        return 'Certificado N° $_numero: falta subir el PDF firmado';
+        return 'Certificado N° $_numero para subir el PDF firmado';
       case TipoPendiente.certificacionPeriodo:
         return 'Ya se puede certificar';
     }
   }
 
+  /// El dato concreto de este pendiente y desde cuándo, para que el ítem se explique solo. El verbo
+  /// es el del hecho que lo abrió (emitido, leído, pagado, propuesta, solicitado), no una carencia.
   String get detalle {
-    if (tipo == TipoPendiente.certificacionPeriodo) {
-      final periodicidad = periodicidadDesdeColumna(descripcion);
-      return periodicidad == null
-          ? 'Certificación pactada'
-          : 'Certificación ${periodicidad.labelMinuscula}';
+    final cuando = _fechaCorta(desde);
+    switch (tipo) {
+      case TipoPendiente.certificacionPeriodo:
+        // "habilitado", nunca "vencido": el período que llega ABRE la posibilidad de certificar,
+        // no denuncia un atraso (criterio de Seba, 2026-09-13).
+        final periodicidad = periodicidadDesdeColumna(descripcion);
+        final base = periodicidad == null
+            ? 'Período de certificación pactado'
+            : 'Período ${periodicidad.labelMinuscula}';
+        return cuando == null ? base : '$base, habilitado desde el $cuando';
+      case TipoPendiente.adicional:
+        return _conFecha(descripcion, 'presentado el', cuando);
+      case TipoPendiente.quita:
+      case TipoPendiente.demasia:
+        return _conFecha(descripcion, 'solicitada el', cuando);
+      case TipoPendiente.certificadoEmitido:
+      case TipoPendiente.firmaFisica:
+        return _conFecha('Período $descripcion', 'emitido el', cuando);
+      case TipoPendiente.certificadoLeido:
+        return _conFecha('Período $descripcion', 'leído el', cuando);
+      case TipoPendiente.certificadoPagado:
+        return _conFecha('Período $descripcion', 'pagado el', cuando);
+      case TipoPendiente.anulacion:
+        return _conFecha('Período $descripcion', 'propuesta el', cuando);
     }
-    return esDeCertificado ? 'Período $descripcion' : descripcion;
+  }
+
+  static String _conFecha(String base, String verbo, String? cuando) =>
+      cuando == null ? base : '$base, $verbo $cuando';
+
+  /// Día y mes, sin año: el pendiente es de ahora, el año no aporta y alarga el renglón.
+  static String? _fechaCorta(DateTime? f) {
+    if (f == null) return null;
+    final l = f.toLocal();
+    return '${l.day.toString().padLeft(2, '0')}/${l.month.toString().padLeft(2, '0')}';
   }
 
   /// `null` si la base devuelve un tipo que esta versión de la app no conoce -- se saltea esa fila

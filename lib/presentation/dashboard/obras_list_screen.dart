@@ -2379,9 +2379,10 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                                     // es el que cede ancho (Expanded + ellipsis), esto es chico y fijo.
                                     if (pendientesDeObra > 0) ...[
                                       Tooltip(
+                                        // Mismo criterio de tono que el cartel (ver `Pendiente`).
                                         message: pendientesDeObra == 1
-                                            ? '1 cosa esperándote'
-                                            : '$pendientesDeObra cosas esperándote',
+                                            ? '1 acción requerida'
+                                            : '$pendientesDeObra acciones requeridas',
                                         child: Container(
                                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                                           decoration: BoxDecoration(

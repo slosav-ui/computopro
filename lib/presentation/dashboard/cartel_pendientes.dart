@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import '../../data/models/pendiente.dart';
 
-/// "Tenés N cosas esperándote" -- arriba de la lista de obras (docs/avisos_pendientes_diseno.md §3).
+/// "N acciones requeridas" -- arriba de la lista de obras (docs/avisos_pendientes_diseno.md §3).
 /// Al tocarlo, una hoja con el detalle; cada ítem lleva a donde se resuelve (`onAbrir`, lo resuelve
 /// el dashboard, que es quien sabe navegar y recargar).
+///
+/// El texto era "Tenés N cosas esperándote" hasta el 2026-09-13: demasiado coloquial para una app
+/// profesional (Seba). El criterio de tono de todos estos textos vive en `Pendiente`.
 ///
 /// Mismo criterio que `CartelFirmaPendiente`: no se descarta ni recuerda si se cerró -- desaparece
 /// cuando ya no hay nada pendiente. Quien lo usa no lo muestra con la lista vacía.
@@ -12,12 +15,6 @@ class CartelPendientes extends StatelessWidget {
   final Future<void> Function(Pendiente) onAbrir;
 
   const CartelPendientes({super.key, required this.pendientes, required this.onAbrir});
-
-  static String _fmtFecha(DateTime? f) {
-    if (f == null) return '';
-    final l = f.toLocal();
-    return '${l.day}/${l.month}/${l.year}';
-  }
 
   static IconData _icono(TipoPendiente tipo) {
     switch (tipo) {
@@ -52,7 +49,7 @@ class CartelPendientes extends StatelessWidget {
               const Padding(
                 padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
                 child: Text(
-                  'Esperándote',
+                  'Acciones requeridas',
                   style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1B365D)),
                 ),
               ),
@@ -61,12 +58,13 @@ class CartelPendientes extends StatelessWidget {
                   dense: true,
                   leading: Icon(_icono(p.tipo), color: const Color(0xFF1B365D)),
                   title: Text(p.titulo, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                  // Sin la línea "Desde el ..." de antes: la fecha ahora va dentro de `detalle`, con
+                  // el verbo que corresponde a cada tipo ("emitido el 12/09", "habilitado desde el
+                  // 12/09"), que dice lo mismo en menos lugar y sin sonar a reloj corriendo.
                   subtitle: Text(
-                    '${p.obraNombre} · ${p.detalle}'
-                    '${p.desde != null ? "\nDesde el ${_fmtFecha(p.desde)}" : ""}',
+                    '${p.obraNombre} · ${p.detalle}',
                     style: const TextStyle(fontSize: 11.5),
                   ),
-                  isThreeLine: p.desde != null,
                   trailing: const Icon(Icons.chevron_right, size: 18),
                   onTap: () {
                     Navigator.pop(ctx);
@@ -100,7 +98,7 @@ class CartelPendientes extends StatelessWidget {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    n == 1 ? 'Tenés 1 cosa esperándote' : 'Tenés $n cosas esperándote',
+                    n == 1 ? '1 acción requerida' : '$n acciones requeridas',
                     style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.black87),
                   ),
                 ),
