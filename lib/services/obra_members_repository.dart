@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../core/utils/filas_afectadas.dart';
 import '../data/models/obra_member.dart';
 
 /// Acceso a la tabla `obra_members` de Supabase (Etapa 3, paso 1).
@@ -63,6 +64,21 @@ class ObraMembersRepository {
     });
   }
 
+  /// Otorga o saca `puede_editar_presupuesto` a un miembro ya existente (0121, doc de roles §10) --
+  /// UPDATE directo bajo `obra_members_update`, que solo deja a admin_maestro (y el check de la base
+  /// solo lo acepta en filas de profesional/constructor). Pide la fila de vuelta: con RLS, un UPDATE
+  /// sin permiso no da error, afecta 0 filas -- sin este chequeo la pantalla diría que guardó.
+  Future<void> actualizarPuedeEditarPresupuesto(String obraMemberId, bool valor) {
+    return _conLog('actualizarPuedeEditarPresupuesto', () async {
+      final filas = await _client
+          .from('obra_members')
+          .update({'puede_editar_presupuesto': valor})
+          .eq('id', obraMemberId)
+          .select('id');
+      exigirFilasAfectadas(filas, mensaje: 'Solo un administrador de la obra puede cambiar este permiso.');
+    });
+  }
+
   /// Los `obra_id` donde el usuario actual tiene `admin_maestro` activo -- `0108`, reemplaza el
   /// criterio viejo de `ObrasListScreen` (`obras.id_admin_creador == auth.uid()`, que no reflejaba
   /// ni la posibilidad de varios administradores ni la renuncia al rol). Una sola consulta para
@@ -100,6 +116,7 @@ class ObraMembersRepository {
             : null,
         puedeInvitarTerceros: row['puede_invitar_terceros'] == true,
         puedeVerApuAjena: row['puede_ver_apu_ajena'] == true,
+        puedeEditarPresupuesto: row['puede_editar_presupuesto'] == true,
       ),
     );
   }

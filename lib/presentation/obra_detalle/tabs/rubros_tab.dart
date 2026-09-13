@@ -377,7 +377,14 @@ class _RubrosTabState extends State<RubrosTab> {
       alignment: WrapAlignment.end,
       spacing: 8,
       runSpacing: 4,
-      children: [_buildBotonImportarExcel(), _buildBotonNuevoRubro()],
+      children: [
+        // Importar escribe el cómputo de la obra (confirmar_importacion): desde la 0121 pide el
+        // permiso de editar el presupuesto -- sin él la base rechaza la importación entera, así que
+        // el botón no se ofrece. (Antes solo miraba PRO y lo veía cualquier rol.) "Nuevo rubro"
+        // crea un rubro del catálogo PROPIO del usuario, no de la obra -- sin cambios.
+        if (widget.puedeEditarComputo) _buildBotonImportarExcel(),
+        _buildBotonNuevoRubro(),
+      ],
     );
   }
 

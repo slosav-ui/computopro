@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../data/models/obra_presupuesto_config.dart';
+import '../core/utils/filas_afectadas.dart';
 
 /// Acceso a `obra_presupuesto_config` (1:1 con obras, ver
 /// `supabase/migrations/0020_obra_presupuesto_config.sql`). La fila se crea
@@ -28,12 +29,13 @@ class ObraPresupuestoConfigRepository {
     required String obraId,
     required TipoPresupuesto tipo,
   }) async {
-    final updated = await _client
+    final filas = await _client
         .from('obra_presupuesto_config')
         .update({'tipo_presupuesto': _columnaDesdeTipo(tipo)})
         .eq('obra_id', obraId)
-        .select()
-        .single();
+        .select();
+    // 0121: 0 filas = la RLS no dejó (sin permiso de editar el presupuesto), no "guardado".
+    final updated = filaAfectadaOSinPermiso(filas);
     return _fromRow(updated);
   }
 
@@ -41,12 +43,13 @@ class ObraPresupuestoConfigRepository {
     required String obraId,
     required bool aplicaImpuestos,
   }) async {
-    final updated = await _client
+    final filas = await _client
         .from('obra_presupuesto_config')
         .update({'aplica_impuestos': aplicaImpuestos})
         .eq('obra_id', obraId)
-        .select()
-        .single();
+        .select();
+    // 0121: 0 filas = la RLS no dejó (sin permiso de editar el presupuesto), no "guardado".
+    final updated = filaAfectadaOSinPermiso(filas);
     return _fromRow(updated);
   }
 
@@ -56,12 +59,13 @@ class ObraPresupuestoConfigRepository {
     required String obraId,
     required bool aplicaCargasSociales,
   }) async {
-    final updated = await _client
+    final filas = await _client
         .from('obra_presupuesto_config')
         .update({'aplica_cargas_sociales': aplicaCargasSociales})
         .eq('obra_id', obraId)
-        .select()
-        .single();
+        .select();
+    // 0121: 0 filas = la RLS no dejó (sin permiso de editar el presupuesto), no "guardado".
+    final updated = filaAfectadaOSinPermiso(filas);
     return _fromRow(updated);
   }
 
@@ -85,7 +89,7 @@ class ObraPresupuestoConfigRepository {
     required double horasImproductivasMensuales,
     required double vacacionesJornalesMes,
   }) async {
-    final updated = await _client
+    final filas = await _client
         .from('obra_presupuesto_config')
         .update({
           'suss_pct': sussPct,
@@ -96,8 +100,9 @@ class ObraPresupuestoConfigRepository {
           'vacaciones_jornales_mes': vacacionesJornalesMes,
         })
         .eq('obra_id', obraId)
-        .select()
-        .single();
+        .select();
+    // 0121: 0 filas = la RLS no dejó (sin permiso de editar el presupuesto), no "guardado".
+    final updated = filaAfectadaOSinPermiso(filas);
     return _fromRow(updated);
   }
 
@@ -108,12 +113,13 @@ class ObraPresupuestoConfigRepository {
     required String obraId,
     required String zonaUocra,
   }) async {
-    final updated = await _client
+    final filas = await _client
         .from('obra_presupuesto_config')
         .update({'zona_uocra': zonaUocra})
         .eq('obra_id', obraId)
-        .select()
-        .single();
+        .select();
+    // 0121: 0 filas = la RLS no dejó (sin permiso de editar el presupuesto), no "guardado".
+    final updated = filaAfectadaOSinPermiso(filas);
     return _fromRow(updated);
   }
 
@@ -132,7 +138,7 @@ class ObraPresupuestoConfigRepository {
     required double beneficioPct,
     required double gestionMaterialesTercerosPct,
   }) async {
-    final updated = await _client
+    final filas = await _client
         .from('obra_presupuesto_config')
         .update({
           'gg_pct': ggPct,
@@ -143,8 +149,9 @@ class ObraPresupuestoConfigRepository {
           'gestion_materiales_terceros_pct': gestionMaterialesTercerosPct,
         })
         .eq('obra_id', obraId)
-        .select()
-        .single();
+        .select();
+    // 0121: 0 filas = la RLS no dejó (sin permiso de editar el presupuesto), no "guardado".
+    final updated = filaAfectadaOSinPermiso(filas);
     return _fromRow(updated);
   }
 

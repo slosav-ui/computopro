@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../data/models/obra_impuesto.dart';
+import '../core/utils/filas_afectadas.dart';
 
 /// Acceso a `obra_impuestos` (ver `supabase/migrations/0020_obra_presupuesto_config.sql` y
 /// `0079_obra_impuestos_nombre_otro_longitud.sql`). Sin `crear`/`eliminar` a propósito -- las 4
@@ -23,12 +24,13 @@ class ObraImpuestosRepository {
     required String id,
     required double porcentaje,
   }) async {
-    final updated = await _client
+    final filas = await _client
         .from('obra_impuestos')
         .update({'porcentaje': porcentaje})
         .eq('id', id)
-        .select()
-        .single();
+        .select();
+    // 0121: 0 filas = la RLS no dejó (sin permiso de editar el presupuesto), no "guardado".
+    final updated = filaAfectadaOSinPermiso(filas);
     return _fromRow(updated);
   }
 
@@ -41,15 +43,16 @@ class ObraImpuestosRepository {
     required double porcentaje,
     required String? nombreOtro,
   }) async {
-    final updated = await _client
+    final filas = await _client
         .from('obra_impuestos')
         .update({
           'porcentaje': porcentaje,
           'nombre_otro': (nombreOtro == null || nombreOtro.trim().isEmpty) ? null : nombreOtro.trim(),
         })
         .eq('id', id)
-        .select()
-        .single();
+        .select();
+    // 0121: 0 filas = la RLS no dejó (sin permiso de editar el presupuesto), no "guardado".
+    final updated = filaAfectadaOSinPermiso(filas);
     return _fromRow(updated);
   }
 

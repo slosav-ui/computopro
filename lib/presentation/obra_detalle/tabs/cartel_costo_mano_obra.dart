@@ -22,7 +22,12 @@ class CartelCostoManoObra extends StatefulWidget {
   /// cambia con el toggle, así que el consolidado de `MatYMoTab` tiene que recargarse.
   final VoidCallback onCambio;
 
-  const CartelCostoManoObra({Key? key, required this.obraId, required this.onCambio}) : super(key: key);
+  /// `UserContext.puedeEditarPreciosObra` -- sin él, el tilde de cargas sociales se ve pero no se
+  /// cambia (RLS de `obra_presupuesto_config`: admin_maestro/profesional).
+  final bool puedeEditar;
+
+  const CartelCostoManoObra({Key? key, required this.obraId, required this.onCambio, required this.puedeEditar})
+      : super(key: key);
 
   @override
   State<CartelCostoManoObra> createState() => _CartelCostoManoObraState();
@@ -198,7 +203,7 @@ class _CartelCostoManoObraState extends State<CartelCostoManoObra> {
                   scale: 0.75,
                   child: Switch(
                     value: conCargas,
-                    onChanged: _onCambiarCargasSociales,
+                    onChanged: widget.puedeEditar ? _onCambiarCargasSociales : null,
                   ),
                 ),
               ],

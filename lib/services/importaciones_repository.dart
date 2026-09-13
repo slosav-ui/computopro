@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../data/models/importacion.dart';
 import '../data/models/importacion_item.dart';
+import '../core/utils/filas_afectadas.dart';
 
 /// Acceso a `importaciones`/`importaciones_items` + el bucket de Storage `importaciones` + la
 /// función `confirmar_importacion`. Ver supabase/migrations/0080_importaciones.sql /
@@ -73,19 +74,25 @@ class ImportacionesRepository {
   /// hace falta) la hace quien llama con `RubrosRepository`/`SubitemsRepository`, esta función solo
   /// deja el vínculo escrito en la fila importada.
   Future<void> resolverItem(String itemId, {required String rubroId, required String subitemId}) async {
-    await _client
+    // 0121: con `.select()` y el chequeo, un UPDATE que la RLS no deja pasar se ve como error en
+    // vez de dejar la fila "resuelta" solo en pantalla.
+    final filas = await _client
         .from('importaciones_items')
         .update({'rubro_id': rubroId, 'subitem_id': subitemId})
-        .eq('id', itemId);
+        .eq('id', itemId)
+        .select('id');
+    exigirFilasAfectadas(filas);
   }
 
   /// Deshace una resolución (por si el usuario se equivocó de fila del catálogo) -- vuelve al
   /// estado "sin resolver", mismo que "descartar" a nivel de base (ver ImportacionItem, doc §3).
   Future<void> desresolverItem(String itemId) async {
-    await _client
+    final filas = await _client
         .from('importaciones_items')
         .update({'rubro_id': null, 'subitem_id': null})
-        .eq('id', itemId);
+        .eq('id', itemId)
+        .select('id');
+    exigirFilasAfectadas(filas);
   }
 
   Future<void> confirmarImportacion(String importacionId) async {

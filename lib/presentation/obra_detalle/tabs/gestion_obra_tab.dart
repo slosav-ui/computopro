@@ -750,10 +750,10 @@ class _GestionObraTabState extends State<GestionObraTab> {
                 ],
               ),
               const SizedBox(height: 6),
-              // Gateado por rol, no solo estético: el Constructor "vista operativa" no ve
-              // montos según la matriz de permisos — encontrado como agujero real al construir
-              // la pieza 3 (esta pantalla no tenía ningún UserContext hasta ahora), cerrado acá
-              // de una vez ya que se está conectando UserContext a este archivo por primera vez.
+              // Gateado por rol, no solo estético: quien no ve montos según la matriz (Veedor,
+              // apoderado sin delegación) no ve el monto certificado. Hasta 2026-09-12 el
+              // Constructor también quedaba afuera ("vista operativa"); desde el cambio de matriz
+              // los ve -- ver UserContext.puedeVerMontosGestionObra.
               if (widget.userContext?.puedeVerMontosGestionObra == true) ...[
                 Text(
                   'Monto Certificado: ${_fmt(cert.monto, cert)}',

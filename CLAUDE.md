@@ -34,7 +34,8 @@ en `docs/monetizacion.md`; el relevamiento de qué config/función quedó descon
 `docs/relevamiento_sincronizacion_config_precios.md`.
 
 **Cotización congelada de los montos cerrados** (`obras.cotizacion_dolar_al_congelar`,
-`modificaciones_obra.cotizacion_dolar_al_aprobar`, migración `0122`) —
+`modificaciones_obra.cotizacion_dolar_al_aprobar`, migración `0122` aplicada y verificada
+2026-09-13) —
 `docs/cotizacion_congelada_montos_cerrados_diseno.md`. Todo el sistema de precios guarda **pesos** y
 `obras.moneda` es una lente; hasta la `0122` una obra en dólares mostraba el pactado y cada adicional
 aprobado a la cotización *del día en que se los mira*, así que el número en USD que el cliente vio al

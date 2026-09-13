@@ -28,11 +28,12 @@ class _SeccionInsumos {
 class MatYMoTab extends StatefulWidget {
   final String obraId;
 
-  // Regla de visibilidad 1 de UserContext (Caja Blanca: admin_maestro/profesional) — mismo gate
-  // que ya usan RubrosTab/SubitemsScreen para precio/subtotal. Constructor (Vista Operativa) y
-  // Cliente Principal (Caja Negra Comercial, ve montos de certificados pero no la estructura de
-  // costo interna) quedan afuera igual: acá no hay un permiso aparte para "ve montos de obra pero
-  // no de insumos" — es la misma pregunta que ya resuelve este getter en el resto de la app.
+  // Regla de visibilidad 1 de UserContext (Caja Blanca: admin_maestro/profesional/constructor
+  // desde el cambio de matriz de 2026-09-12 -- el constructor es quien cotiza y compra, necesita los
+  // precios) — mismo gate que ya usan RubrosTab/SubitemsScreen para precio/subtotal. Cliente
+  // Principal (Caja Negra Comercial, ve montos de certificados pero no la estructura de costo
+  // interna) queda afuera: acá no hay un permiso aparte para "ve montos de obra pero no de insumos"
+  // — es la misma pregunta que ya resuelve este getter en el resto de la app.
   //
   // Sin puedeVerMontosYAPU: cantidad sola por insumo, sin precio/valor hora/cartel de costo de
   // mano de obra ni lápiz de edición — oculto, no deshabilitado (mismo criterio que
@@ -40,7 +41,17 @@ class MatYMoTab extends StatefulWidget {
   // al cliente para estos roles, esto es exclusivamente el gate de la capa de app.
   final bool puedeVerMontosYAPU;
 
-  const MatYMoTab({Key? key, required this.obraId, required this.puedeVerMontosYAPU}) : super(key: key);
+  // `UserContext.puedeEditarPreciosObra` -- lápiz de precio/valor hora, "Volver" del override y el
+  // tilde de cargas sociales. Separado de ver desde 2026-09-12: el constructor ve los precios pero
+  // no los cambia (RLS de obra_insumo_precios/obra_valor_hora_override/obra_presupuesto_config).
+  final bool puedeEditarPrecios;
+
+  const MatYMoTab({
+    Key? key,
+    required this.obraId,
+    required this.puedeVerMontosYAPU,
+    required this.puedeEditarPrecios,
+  }) : super(key: key);
 
   @override
   State<MatYMoTab> createState() => _MatYMoTabState();
@@ -275,7 +286,11 @@ class _MatYMoTabState extends State<MatYMoTab> {
               if (seccion.titulo == 'Mano de obra' &&
                   _insumos.any(seccion.predicado) &&
                   widget.puedeVerMontosYAPU)
-                CartelCostoManoObra(obraId: widget.obraId, onCambio: _cargarConsolidado),
+                CartelCostoManoObra(
+                  obraId: widget.obraId,
+                  onCambio: _cargarConsolidado,
+                  puedeEditar: widget.puedeEditarPrecios,
+                ),
               ..._buildSeccion(seccion),
             ],
         ],
@@ -378,7 +393,7 @@ class _MatYMoTabState extends State<MatYMoTab> {
                 const SizedBox(height: 4),
                 _buildBadgeManual(),
               ],
-              if (muestraVolver) ...[
+              if (muestraVolver && widget.puedeEditarPrecios) ...[
                 const SizedBox(height: 2),
                 InkWell(
                   onTap: () => _onVolverDesdeFila(insumo),
@@ -394,13 +409,14 @@ class _MatYMoTabState extends State<MatYMoTab> {
           )
         else
           _buildFaltaPrecio(),
-        InkWell(
-          onTap: () => _onTocarLapiz(insumo),
-          child: const Padding(
-            padding: EdgeInsets.all(6),
-            child: Icon(Icons.edit, size: 16, color: Color(0xFF1B365D)),
+        if (widget.puedeEditarPrecios)
+          InkWell(
+            onTap: () => _onTocarLapiz(insumo),
+            child: const Padding(
+              padding: EdgeInsets.all(6),
+              child: Icon(Icons.edit, size: 16, color: Color(0xFF1B365D)),
+            ),
           ),
-        ),
       ],
     );
   }

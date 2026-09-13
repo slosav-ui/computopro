@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../data/models/insumo_consolidado_obra.dart';
+import '../core/utils/filas_afectadas.dart';
 
 /// Acceso a `obra_insumo_precios` (precio editado/en firme por obra, ver
 /// `supabase/migrations/0030_obra_insumo_precios.sql`) y al consolidado real de insumos de una
@@ -74,10 +75,14 @@ class ObraInsumosRepository {
     required String obraId,
     required String categoriaUocra,
   }) async {
-    await _client
+    // 0121: sin `.select()` un DELETE que la RLS no deja pasar no da error -- afecta 0 filas y la
+    // pantalla creía que había vuelto al valor UOCRA.
+    final filas = await _client
         .from('obra_valor_hora_override')
         .delete()
         .eq('obra_id', obraId)
-        .eq('categoria_uocra', categoriaUocra);
+        .eq('categoria_uocra', categoriaUocra)
+        .select('obra_id');
+    exigirFilasAfectadas(filas);
   }
 }

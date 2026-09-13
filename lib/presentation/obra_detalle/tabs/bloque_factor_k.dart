@@ -37,7 +37,11 @@ import 'panel_editar_impuestos.dart';
 class BloqueFactorK extends StatefulWidget {
   final String obraId;
 
-  const BloqueFactorK({Key? key, required this.obraId}) : super(key: key);
+  /// `UserContext.puedeEditarPreciosObra` -- sin él, el bloque se ve completo pero sin los botones
+  /// de editar (la RLS de `obra_presupuesto_config`/`obra_impuestos` es admin_maestro/profesional).
+  final bool puedeEditar;
+
+  const BloqueFactorK({Key? key, required this.obraId, required this.puedeEditar}) : super(key: key);
 
   @override
   State<BloqueFactorK> createState() => _BloqueFactorKState();
@@ -213,15 +217,17 @@ class _BloqueFactorKState extends State<BloqueFactorK> {
                   style: TextStyle(fontSize: 9, color: Colors.black45),
                 ),
               ],
-              const SizedBox(height: 8),
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton(
-                  onPressed: _verificandoPro ? null : _onEditar,
-                  style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
-                  child: Text(_verificandoPro ? 'Verificando...' : 'Editar'),
+              if (widget.puedeEditar) ...[
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: _verificandoPro ? null : _onEditar,
+                    style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                    child: Text(_verificandoPro ? 'Verificando...' : 'Editar'),
+                  ),
                 ),
-              ),
+              ],
               const Divider(height: 20),
               const Text(
                 'IMPUESTOS',
@@ -234,15 +240,17 @@ class _BloqueFactorKState extends State<BloqueFactorK> {
                 // que mostrar, mismo criterio que "no hay renglones vacíos" del resto de la app.
                 if (impuesto.tipo != TipoImpuesto.otro || (impuesto.nombreOtro?.isNotEmpty ?? false))
                   _buildLinea(impuesto.nombre, impuesto.porcentaje, 'Costo Total del Trabajo'),
-              const SizedBox(height: 8),
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton(
-                  onPressed: _onEditarImpuestos,
-                  style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
-                  child: const Text('Editar impuestos'),
+              if (widget.puedeEditar) ...[
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: _onEditarImpuestos,
+                    style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                    child: const Text('Editar impuestos'),
+                  ),
                 ),
-              ),
+              ],
             ],
           ],
         ],

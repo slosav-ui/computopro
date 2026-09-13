@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import '../../../core/segurity/user_context.dart';
 import '../../../core/utils/currency_formatter.dart';
 import '../../../data/models/apu_composicion_item_detalle.dart';
 import '../../../data/models/apu_precio_subitem.dart';
 import '../../../services/apu_composiciones_repository.dart';
 import '../../../services/auth_service.dart';
 import '../../../services/insumos_repository.dart';
+import '../../../services/obra_members_repository.dart';
 import '../../../services/obras_repository.dart';
 import '../../../services/perfil_repository.dart';
 import '../../shared/pro_gate_dialog.dart';
@@ -74,6 +76,11 @@ class _ComposicionApuScreenState extends State<ComposicionApuScreen> {
   // de esta pantalla (los botones no son tocables hasta que `_cargando` termina).
   bool _esObraHija = false;
 
+  // `UserContext.puedeEditarPreciosObra` para esta obra -- resuelto acá mismo, igual que
+  // `_esObraHija`, para que los 3 call sites (SubitemsScreen, ApuListadoTab, PresupuestosScreen) no
+  // tengan que pasarlo. Fail-closed: false hasta que carga.
+  bool _puedeEditarPrecios = false;
+
   /// Recalculado siempre desde `_items`, nunca desde `widget.precioAgregado` (ver comentario del
   /// campo en el widget) -- mismo COALESCE que ya hace `calcular_precio_apu_subitems`/
   /// `calcular_composicion_detalle_subitem`, solo que sumado acá porque `_items` puede cambiar
@@ -95,6 +102,14 @@ class _ComposicionApuScreenState extends State<ComposicionApuScreen> {
     _cargarDetalle();
   }
 
+  Future<bool> _resolverPuedeEditarPrecios() async {
+    final usuarioId = _authService.usuarioActual?.id;
+    if (usuarioId == null) return false;
+    final miembros = await ObraMembersRepository().getMiembrosDeObra(widget.obraId);
+    return UserContext.desdeObraMembers(userId: usuarioId, obraId: widget.obraId, todasLasMembresias: miembros)
+        .puedeEditarPreciosObra;
+  }
+
   Future<void> _cargarDetalle() async {
     setState(() {
       _cargando = true;
@@ -107,13 +122,18 @@ class _ComposicionApuScreenState extends State<ComposicionApuScreen> {
       // secundario. El riesgo real (§12.2) es sobre obras hijas nuevas, que si esto falla
       // simplemente no lo detectan esta vez -- no hay ninguna obra hija en producción todavía.
       final esObraHijaFuture = _obrasRepository.esObraHija(widget.obraId).catchError((_) => false);
+      // Mismo criterio silencioso, pero fallando hacia el lado seguro: sin permiso de precios si no
+      // se pudo resolver (el campo de precio del panel queda de solo lectura).
+      final puedeEditarPreciosFuture = _resolverPuedeEditarPrecios().catchError((_) => false);
 
       final items = await itemsFuture;
       final esObraHija = await esObraHijaFuture;
+      final puedeEditarPrecios = await puedeEditarPreciosFuture;
       if (!mounted) return;
       setState(() {
         _items = items;
         _esObraHija = esObraHija;
+        _puedeEditarPrecios = puedeEditarPrecios;
         _cargando = false;
       });
     } catch (e) {
@@ -350,6 +370,7 @@ class _ComposicionApuScreenState extends State<ComposicionApuScreen> {
         obraId: widget.obraId,
         subitemId: widget.subitemId,
         item: item,
+        puedeEditarPrecio: _puedeEditarPrecios,
       ),
     );
     if (resultado == null || !mounted) return;

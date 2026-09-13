@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../data/models/obra_subitem.dart';
+import '../core/utils/filas_afectadas.dart';
 
 /// Acceso a la tabla `obra_subitems` de Supabase (el cómputo métrico real de
 /// una obra: qué subítem está tildado, con qué cantidad).
@@ -194,15 +195,16 @@ class ObraSubitemsRepository {
   }) async {
     // updated_at lo mantiene un trigger de la base (0035_updated_at_trigger.sql),
     // no se manda desde acá.
-    final updated = await _client
+    final filas = await _client
         .from('obra_subitems')
         .update({
           'es_aplicable': esAplicable,
           'ultima_modificacion_usuario_id': usuarioId,
         })
         .eq('id', id)
-        .select()
-        .single();
+        .select();
+    // 0121: 0 filas = la RLS no dejó (sin permiso de editar el presupuesto), no "guardado".
+    final updated = filaAfectadaOSinPermiso(filas);
     return _fromRow(updated);
   }
 
@@ -217,15 +219,16 @@ class ObraSubitemsRepository {
   }) async {
     // updated_at lo mantiene un trigger de la base (0035_updated_at_trigger.sql),
     // no se manda desde acá.
-    final updated = await _client
+    final filas = await _client
         .from('obra_subitems')
         .update({
           'cantidad': cantidad,
           'ultima_modificacion_usuario_id': usuarioId,
         })
         .eq('id', id)
-        .select()
-        .single();
+        .select();
+    // 0121: 0 filas = la RLS no dejó (sin permiso de editar el presupuesto), no "guardado".
+    final updated = filaAfectadaOSinPermiso(filas);
     return _fromRow(updated);
   }
 
@@ -246,15 +249,16 @@ class ObraSubitemsRepository {
   }) async {
     // updated_at lo mantiene un trigger de la base (0035_updated_at_trigger.sql),
     // no se manda desde acá.
-    final updated = await _client
+    final filas = await _client
         .from('obra_subitems')
         .update({
           'precio_unitario_manual': precio,
           'ultima_modificacion_usuario_id': usuarioId,
         })
         .eq('id', id)
-        .select()
-        .single();
+        .select();
+    // 0121: 0 filas = la RLS no dejó (sin permiso de editar el presupuesto), no "guardado".
+    final updated = filaAfectadaOSinPermiso(filas);
     return _fromRow(updated);
   }
 

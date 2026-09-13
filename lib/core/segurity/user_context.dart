@@ -35,17 +35,27 @@ class UserContext {
   bool _tieneAlgunRol(List<RolProyecto> buscados) =>
       membresias.any((m) => buscados.contains(m.rol));
 
-  // Regla de visibilidad 1: ¿Puede ver valores financieros y APU? (Caja Blanca)
+  // Regla de visibilidad 1: ¿Puede ver valores financieros y APU? (Caja Blanca) -- precios del
+  // cómputo, Mat y MO con precios, la Solapa APU y el Factor K de la obra.
+  //
+  // CAMBIO DE MATRIZ (Seba, 2026-09-12): `constructor` pasa a ver montos igual que `profesional`.
+  // El diseño lo había pensado como capataz ("vista operativa sin montos"), pero en el rubro
+  // argentino el constructor es la empresa que cotiza y ejecuta -- textual: "es el que HACE EL
+  // PRESUPUESTO. Nunca es el capataz -- el capataz es capataz". El rol le estaba ocultando montos
+  // justamente a quien los armó. Ver docs/etapa3_roles_permisos_diseno_datos.md §8.
+  //
+  // Ver no es editar: los precios de la obra, el Factor K y la vista del presupuesto siguen siendo
+  // de admin_maestro/profesional (`puedeEditarPreciosObra`, `puedeEditarComputo`), igual que en la
+  // RLS. La receta personal de cada uno sigue siendo privada (APU por persona, `puede_ver_apu_ajena`)
+  // -- eso no cambia.
   bool get puedeVerMontosYAPU =>
-      _tieneAlgunRol([RolProyecto.adminMaestro, RolProyecto.profesional]);
+      _tieneAlgunRol([RolProyecto.adminMaestro, RolProyecto.profesional, RolProyecto.constructor]);
 
-  // Regla de visibilidad 2: ¿Es vista estrictamente operativa sin dinero? (Constructor)
-  // "Constructor puro": si la misma persona combina Constructor con un rol que
-  // otorga visibilidad económica (ej. Cliente+Constructor), deja de aplicar —
-  // es su propia obra, tiene que ver los montos.
-  bool get esVistaOperativa =>
-      _tieneAlgunRol([RolProyecto.constructor]) &&
-      !_tieneAlgunRol([RolProyecto.adminMaestro, RolProyecto.profesional, RolProyecto.clientePrincipal]);
+  // Regla de visibilidad 2: ¿no ve montos en ningún lado? Antes era "constructor puro" (vista
+  // operativa); desde el cambio de matriz de arriba el constructor ya no es eso. Queda como la
+  // negación de las dos reglas de montos: hoy, el invitado_veedor (y un apoderado sin delegación
+  // vigente). Sin uso en pantallas al momento del cambio -- se deja coherente, no se borra.
+  bool get esVistaOperativa => !puedeVerMontosYAPU && !puedeVerMontosGestionObra;
 
   // Regla de visibilidad 3: ¿Puede aprobar certificados de obra?
   // Admin Maestro y Cliente/Propietario Principal aprueban siempre (ver
@@ -58,14 +68,37 @@ class UserContext {
           m.permisosEspeciales.puedeAprobarCertificados &&
           _delegacionVigente(m));
 
-  // Regla de visibilidad 4: ¿Puede tildar/destildar subitems y cargar
-  // cantidades (obra_subitems)? Mismos dos roles que la política
-  // INSERT/UPDATE de supabase/migrations/0019_obra_subitems.sql. No es lo
-  // mismo que puedeVerMontosYAPU (esa regla es sobre visibilidad de $ y APU,
-  // esta es sobre edición de cómputo métrico) aunque hoy coincidan los
-  // mismos dos roles — no reusar una por la otra si en algún momento divergen.
-  bool get puedeEditarComputo =>
-      _tieneAlgunRol([RolProyecto.adminMaestro, RolProyecto.profesional]);
+  // Regla de visibilidad 4-ter (0121, docs/etapa3_roles_permisos_diseno_datos.md §10): ¿puede
+  // editar el presupuesto y firmar sus actos formales? Espejo EXACTO del helper SQL
+  // `puede_editar_presupuesto(obra)`: admin_maestro siempre; profesional o constructor solo con el
+  // permiso `puedeEditarPresupuesto` de su fila. "El rol define qué ves, el permiso qué editás."
+  // Los getters de edición y actos formales de abajo se apoyan en esta regla -- un solo lugar, igual
+  // que en la base.
+  bool get puedeEditarPresupuesto =>
+      _tieneAlgunRol([RolProyecto.adminMaestro]) ||
+      membresias.any((m) =>
+          (m.rol == RolProyecto.profesional || m.rol == RolProyecto.constructor) &&
+          m.permisosEspeciales.puedeEditarPresupuesto);
+
+  // ¿Puede otorgar o sacar `puedeEditarPresupuesto` a otro? Solo admin_maestro (0121, §10.6-3):
+  // mismo chequeo que `invitaciones_insert`/`obra_members_insert`/`obra_members_update` para este
+  // permiso. Getter propio aunque hoy coincida con `puedeOtorgarAdminMaestro`.
+  bool get puedeOtorgarEditarPresupuesto => _tieneAlgunRol([RolProyecto.adminMaestro]);
+
+  // Regla de visibilidad 4: ¿Puede tildar/destildar subitems y cargar cantidades (obra_subitems)?
+  // Desde la 0121, el permiso de editar el presupuesto (políticas de 0019/0028). No es lo mismo que
+  // puedeVerMontosYAPU: esa es qué ve, esta qué edita.
+  bool get puedeEditarComputo => puedeEditarPresupuesto;
+
+  // Regla de visibilidad 4-bis: ¿puede EDITAR los precios y la configuración económica de la obra
+  // -- Factor K e impuestos, vista del presupuesto (con/sin materiales, impuestos), precio de un
+  // insumo o valor hora en Mat y MO, precio desde la composición de APU? Mirroreada contra la RLS
+  // real de esas tablas (`obra_presupuesto_config`/`obra_impuestos`, 0020; `obra_insumo_precios`,
+  // 0030; `obra_valor_hora_override`, 0036) -- desde la 0121, el permiso de editar el presupuesto.
+  // Separada de `puedeVerMontosYAPU` desde que el constructor ve montos (2026-09-12): ver no implica
+  // editar, y sin este gate la app ofrecía controles que la base rechaza (o, en un UPDATE, ignora sin
+  // error). Getter propio aunque hoy coincida con `puedeEditarComputo`: otras tablas.
+  bool get puedeEditarPreciosObra => puedeEditarPresupuesto;
 
   // Regla de visibilidad 5: ¿puede editar la configuración de certificación de la obra (Modelo
   // A/B, plazo de pago, anticipo, fondo de reparo, carga inicial de monto total contratado)?
@@ -97,29 +130,38 @@ class UserContext {
   // invitado_apoderado solo con delegación vigente (mismo criterio que puedeAprobarCertificados,
   // extendido acá a la visibilidad, no solo a la aprobación — el resto de la matriz no distingue
   // explícitamente este caso, es una lectura razonable, no algo verificado literal en la spec).
-  // Constructor y Veedor quedan afuera de la lista: ven porcentajes de avance, nunca pesos.
+  // Veedor queda afuera de la lista: ve porcentajes de avance, nunca pesos. Constructor entra desde
+  // el cambio de matriz (2026-09-12):
+  // CAMBIO DE MATRIZ (Seba, 2026-09-12): `constructor` pasa a ver montos igual que `profesional`.
+  // El diseño lo había pensado como capataz ("vista operativa sin montos"), pero en el rubro
+  // argentino el constructor es la empresa que cotiza y ejecuta -- textual: "es el que HACE EL
+  // PRESUPUESTO. Nunca es el capataz -- el capataz es capataz". El rol le estaba ocultando montos
+  // justamente a quien los armó. Ver docs/etapa3_roles_permisos_diseno_datos.md §8.
   bool get puedeVerMontosGestionObra =>
-      _tieneAlgunRol([RolProyecto.adminMaestro, RolProyecto.profesional, RolProyecto.clientePrincipal]) ||
+      _tieneAlgunRol([
+        RolProyecto.adminMaestro,
+        RolProyecto.profesional,
+        RolProyecto.constructor,
+        RolProyecto.clientePrincipal,
+      ]) ||
       membresias.any((m) => m.rol == RolProyecto.invitadoApoderado && _delegacionVigente(m));
 
-  // Regla de visibilidad 8: ¿puede emitir un certificado (Borrador -> Emitido)? Verificado contra
-  // el chequeo de autoridad real dentro de `emitir_certificado` (0011/0054), no asumido: solo
-  // `admin_maestro`/`profesional` — a propósito distinto de `puedeCargarAvance` (que suma
-  // `constructor`, porque cargar el borrador sí es tarea de posta entre los 3). Emitir es un paso
-  // más restringido que cargar, con autoridad propia, no una extensión del mismo permiso.
-  bool get puedeEmitirCertificado =>
-      _tieneAlgunRol([RolProyecto.adminMaestro, RolProyecto.profesional]);
+  // Regla de visibilidad 8: ¿puede emitir un certificado (Borrador -> Emitido)? Espejo de
+  // `emitir_certificado` (0121): el permiso de editar el presupuesto -- "si cotiza y ejecuta la obra,
+  // es el que emite los certificados" (Seba). A propósito distinto de `puedeCargarAvance` (por rol:
+  // cargar el borrador es tarea de posta, lo hace también quien no tiene el permiso).
+  bool get puedeEmitirCertificado => puedeEditarPresupuesto;
 
   // Regla de visibilidad 9: ¿puede proponer o resolver (aprobar/rechazar) la anulación de un
-  // certificado emitido? Verificado contra proponer_anulacion_certificado/
-  // resolver_anulacion_certificado (0056), no asumido: solo profesional o constructor — la dupla
-  // que arma el borrador —, a propósito SIN admin_maestro (a diferencia de casi todos los demás
-  // getters de acá) y sin cliente_principal (el Cliente observa el error, no participa del
+  // certificado emitido? Espejo de proponer_anulacion_certificado/resolver_anulacion_certificado
+  // (0121): profesional o constructor — la dupla que arma el borrador — Y con el permiso de editar
+  // el presupuesto (anular es un acto formal, como emitir: §10.6-1). A propósito SIN admin_maestro
+  // que no sea técnico y sin cliente_principal (el Cliente observa el error, no participa del
   // circuito). La regla de "nunca la misma persona en los dos lados" no se puede expresar acá
   // (depende de quién propuso una anulación puntual, no de los roles del usuario en general) — la
   // verifica la propia función del lado del servidor.
   bool get puedeGestionarAnulacionCertificado =>
-      _tieneAlgunRol([RolProyecto.profesional, RolProyecto.constructor]);
+      _tieneAlgunRol([RolProyecto.profesional, RolProyecto.constructor]) && puedeEditarPresupuesto;
 
   // Regla de visibilidad 10: ¿puede invitar gente a la obra (generar un código de invitación)?
   // Mismo criterio que la política `invitaciones_insert` (`0095_invitaciones.sql`): admin_maestro,
@@ -176,21 +218,22 @@ class UserContext {
               monto <= m.permisosEspeciales.topeMontoAprobacion!) &&
           _delegacionVigente(m));
 
-  // Regla 14: ¿puede marcar un certificado como Impactado y Cerrado? El lado de la
-  // Empresa/Constructor que cobra y cierra administrativamente -- admin_maestro o constructor,
-  // nunca el Cliente (mismo par que `marcar_certificado_impactado`, 0011).
-  bool get puedeMarcarCertificadoImpactado =>
-      _tieneAlgunRol([RolProyecto.adminMaestro, RolProyecto.constructor]);
+  // Regla 14: ¿puede marcar un certificado como Impactado y Cerrado? El lado que cobra y cierra
+  // administrativamente -- espejo de `marcar_certificado_impactado` (0121): el permiso de editar el
+  // presupuesto (desde §9.5-C el profesional también cierra), nunca el Cliente.
+  bool get puedeMarcarCertificadoImpactado => puedeEditarPresupuesto;
 
   // Regla de visibilidad 15: ¿puede aprobar/rechazar una Demasía o Quita? Mirroreada EXACTO contra
   // `puede_aprobar_quita_demasia` (0109), no contra `puedeGestionarAnulacionCertificado` (regla 9)
   // aunque hoy compartan el mismo par de roles -- son autoridades de circuitos distintos que no
   // tienen por qué seguir coincidiendo (mismo criterio que ya separó `puedeQuitarMiembros` de
-  // `puedeOtorgarAdminMaestro`, regla 11-bis). A propósito SIN cliente_principal ni admin_maestro:
-  // "al propietario se le informa, no se le pide permiso" (docs/adicionales_quitas_demasias_
-  // diagnostico.md §7-A/§6) -- el Cliente comenta vía `observar`, nunca aprueba.
+  // `puedeOtorgarAdminMaestro`, regla 11-bis). A propósito SIN cliente_principal ni admin_maestro
+  // que no sea técnico: "al propietario se le informa, no se le pide permiso" (docs/adicionales_
+  // quitas_demasias_diagnostico.md §7-A/§6). Desde la 0121 además pide el permiso de editar el
+  // presupuesto: aprobar cambia cantidades del cómputo y del congelado (§10.6-1). Solicitar sigue
+  // siendo de cualquiera.
   bool get puedeAprobarQuitaDemasia =>
-      _tieneAlgunRol([RolProyecto.profesional, RolProyecto.constructor]);
+      _tieneAlgunRol([RolProyecto.profesional, RolProyecto.constructor]) && puedeEditarPresupuesto;
 
   // Regla de visibilidad 16: ¿puede aprobar/rechazar un Adicional? Mirroreada EXACTO contra
   // `puede_aprobar_adicional`/`puede_rechazar_adicional` (0116): cliente_principal sin tope, o
@@ -215,12 +258,20 @@ class UserContext {
       _delegacionVigenteSegunBase(m);
 
   // Regla de visibilidad 17: ¿puede enviar (o reenviar) para aprobación un adicional presupuestado
-  // con la app? En la base (`enviar_adicional_a_aprobacion`, 0116) es admin_maestro/profesional de
-  // la OBRA HIJA -- quienes cotizan. Desde la madre eso es: admin_maestro/profesional de acá (el
-  // equipo se copia a la hija, y se vuelve a copiar al enviar) o quien creó el adicional (el
-  // bootstrap de 0033 lo hace admin_maestro de la hija, tenga el rol que tenga en la madre).
+  // con la app? En la base (`enviar_adicional_a_aprobacion`, 0121) es el permiso de editar el
+  // presupuesto en la OBRA HIJA. Desde la madre eso es: tenerlo acá (el equipo, con sus permisos, se
+  // copia a la hija, y se vuelve a copiar al enviar) o haber creado el adicional (el bootstrap de
+  // 0033 lo hace admin_maestro de la hija aunque en la madre no edite -- §10.6-4, a propósito).
   bool puedeEnviarAdicional({required String solicitadoPor}) =>
-      puedeEditarComputo || solicitadoPor == userId;
+      puedeEditarPresupuesto || solicitadoPor == userId;
+
+  // Regla de visibilidad 18: ¿puede certificar avance de un adicional aprobado? Mirroreada contra
+  // `certificar_avance_adicional` (0120): admin_maestro, profesional o constructor -- "certificar
+  // avance no es emitir un certificado: es medir qué se hizo, y eso lo hace el que está en la obra"
+  // (Seba, docs/adicionales_quitas_demasias_diagnostico.md §14.5-B). Getter propio aunque hoy
+  // coincida con `puedeCargarAvance`: son circuitos distintos, pueden dejar de coincidir.
+  bool get puedeCertificarAvanceAdicional =>
+      _tieneAlgunRol([RolProyecto.adminMaestro, RolProyecto.profesional, RolProyecto.constructor]);
 
   // La regla de la BASE para la delegación (0004/0011/0116): sin fechas = permanente, vigente; con
   // las dos fechas, dentro del rango; con una sola, no. Distinta de `_delegacionVigente` a propósito:

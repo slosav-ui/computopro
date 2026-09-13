@@ -1064,8 +1064,8 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
                 // todos los datos que ya había.
                 //
                 // Gate de privacidad primero, antes de cualquiera de esos casos: sin
-                // puedeVerMontosYAPU (Constructor, Veedor, etc. — Caja Negra/Vista Operativa por
-                // matriz) siempre cantidad sola, sin importar tipoPrecioManual ni composición. Antes
+                // puedeVerMontosYAPU (Veedor, Cliente, etc. — Caja Negra por matriz; el Constructor
+                // ve montos desde el cambio de matriz de 2026-09-12) siempre cantidad sola, sin importar tipoPrecioManual ni composición. Antes
                 // de este chequeo, esos roles veían precio/subtotal igual, solo con el campo
                 // deshabilitado -- deshabilitado no es lo mismo que oculto.
                 Padding(

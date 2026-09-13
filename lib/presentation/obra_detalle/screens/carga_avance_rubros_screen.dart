@@ -198,7 +198,8 @@ class _CargaAvanceRubrosScreenState extends State<CargaAvanceRubrosScreen> {
 
   /// "Certificado y pagado a la fecha" (histórico de la obra, solo lectura acá — el detalle
   /// completo vive en Resumen) + el monto de ESTE certificado, actualizándose mientras se carga.
-  /// Ninguno de los dos aparece si el usuario no ve montos (Constructor/Veedor) — no hay versión
+  /// Ninguno de los dos aparece si el usuario no ve montos (Veedor; el Constructor los ve desde el
+  /// cambio de matriz de 2026-09-12) — no hay versión
   /// "sin plata" de un resumen que es, de punta a punta, sobre plata.
   Widget _buildResumenChico() {
     if (!_puedeVerMontos) {

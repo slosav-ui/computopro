@@ -1,9 +1,12 @@
 # Cotización congelada de los montos cerrados (Nivel 1)
 
-**Estado: Nivel 0 hecho. Migración `0122_cotizacion_congelada_montos_cerrados.sql` escrita, SIN
-aplicar. Dart hecho (`flutter analyze` limpio), sin verificar en el emulador — y sin efecto visible
-hasta que la migración se aplique: las dos columnas nuevas llegan en `null` y todo cae al
-comportamiento de hoy. La ambigüedad de §5 la cerró Seba: histórico puro.**
+**Estado: CERRADA de punta a punta el 2026-09-13.** Nivel 0 hecho, migración
+`0122_cotizacion_congelada_montos_cerrados.sql` **aplicada**, Dart hecho y **verificado en el
+emulador por Seba** (usuario `slosav`, obra *Galpón Mix* pasada a dólares): al cambiar la cotización
+proyectada del dashboard, **el pactado y el adicional aprobado no se mueven**, y el valor de hoy y el
+desfasaje sí — que es exactamente el comportamiento que esta pieza venía a conseguir. La ambigüedad
+de §5 la cerró Seba: histórico puro. El Nivel 2 (moneda de pacto propia) sigue pospuesto a propósito,
+ver `docs/adicionales_quitas_demasias_diagnostico.md` §15.2.
 
 Pedido de Seba, 2026-09-13, después del relevamiento de
 `docs/adicionales_quitas_demasias_diagnostico.md` §15:

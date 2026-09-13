@@ -1327,9 +1327,11 @@ dólar, ese monto no está cerrado"*.
   prefijo; en obra en dólares se aclara que el precio final de la previa es a la cotización de hoy y
   queda fijo al aprobar.
 - **Nivel 1**: diseño y decisiones en **`docs/cotizacion_congelada_montos_cerrados_diseno.md`**,
-  migración `0122` escrita sin aplicar, Dart hecho. La aritmética entre montos con cotizaciones
-  distintas se resolvió como **histórico puro** (cada monto a su cotización, el total es la suma de
-  esos números, nada se mueve).
+  migración `0122` **aplicada y verificada en el emulador** (2026-09-13, obra *Galpón Mix* en
+  dólares: el pactado y el adicional no se mueven al cambiar la cotización proyectada; el valor de
+  hoy y el desfasaje sí). La aritmética entre montos con cotizaciones distintas se resolvió como
+  **histórico puro** (cada monto a su cotización, el total es la suma de esos números, nada se
+  mueve).
 
 Lo que sigue del planteo original queda como estaba:
 

@@ -23,6 +23,11 @@ class PermisosEspeciales {
   // la caja blanca de quien los invitó (definición cerrada, §6.3).
   final bool puedeVerApuAjena;
 
+  // 0121 (docs/etapa3_roles_permisos_diseno_datos.md §10): el rol define qué ves, este permiso qué
+  // editás del presupuesto y qué actos formales firmás. Solo aplica a profesional/constructor (check
+  // en la base); admin_maestro edita siempre sin él. Default false; lo otorga solo admin_maestro.
+  final bool puedeEditarPresupuesto;
+
   const PermisosEspeciales({
     this.puedeAprobarCertificados = false,
     this.puedeAprobarAdicionales = false,
@@ -31,6 +36,7 @@ class PermisosEspeciales {
     this.delegacionTemporalFin,
     this.puedeInvitarTerceros = false,
     this.puedeVerApuAjena = false,
+    this.puedeEditarPresupuesto = false,
   });
 
   PermisosEspeciales copyWith({
@@ -41,6 +47,7 @@ class PermisosEspeciales {
     DateTime? delegacionTemporalFin,
     bool? puedeInvitarTerceros,
     bool? puedeVerApuAjena,
+    bool? puedeEditarPresupuesto,
   }) {
     return PermisosEspeciales(
       puedeAprobarCertificados: puedeAprobarCertificados ?? this.puedeAprobarCertificados,
@@ -50,6 +57,7 @@ class PermisosEspeciales {
       delegacionTemporalFin: delegacionTemporalFin ?? this.delegacionTemporalFin,
       puedeInvitarTerceros: puedeInvitarTerceros ?? this.puedeInvitarTerceros,
       puedeVerApuAjena: puedeVerApuAjena ?? this.puedeVerApuAjena,
+      puedeEditarPresupuesto: puedeEditarPresupuesto ?? this.puedeEditarPresupuesto,
     );
   }
 
@@ -62,6 +70,7 @@ class PermisosEspeciales {
       'delegacionTemporalFin': delegacionTemporalFin?.toIso8601String(),
       'puedeInvitarTerceros': puedeInvitarTerceros,
       'puedeVerApuAjena': puedeVerApuAjena,
+      'puedeEditarPresupuesto': puedeEditarPresupuesto,
     };
   }
 
@@ -78,6 +87,7 @@ class PermisosEspeciales {
           : null,
       puedeInvitarTerceros: map['puedeInvitarTerceros'] == true,
       puedeVerApuAjena: map['puedeVerApuAjena'] == true,
+      puedeEditarPresupuesto: map['puedeEditarPresupuesto'] == true,
     );
   }
 }

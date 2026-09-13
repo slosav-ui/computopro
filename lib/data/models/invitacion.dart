@@ -68,6 +68,7 @@ class Invitacion {
             : null,
         puedeInvitarTerceros: row['puede_invitar_terceros'] == true,
         puedeVerApuAjena: row['puede_ver_apu_ajena'] == true,
+        puedeEditarPresupuesto: row['puede_editar_presupuesto'] == true,
       ),
       codigo: row['codigo'].toString(),
       invitadoPorUsuarioId: row['invitado_por_usuario_id'].toString(),

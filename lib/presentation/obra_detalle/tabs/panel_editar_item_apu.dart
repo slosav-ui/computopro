@@ -24,11 +24,18 @@ class PanelEditarItemApu extends StatefulWidget {
   final String subitemId;
   final ApuComposicionItemDetalle item;
 
+  /// `UserContext.puedeEditarPreciosObra`. El rendimiento es de la receta PERSONAL de quien edita
+  /// (cualquiera la puede tener, APU por persona); el precio va a `obra_insumo_precios`, de la obra,
+  /// con RLS de admin_maestro/profesional -- sin este permiso el campo se ve pero no se edita (si no,
+  /// `personalizar_item_apu`, SECURITY INVOKER, fallaría entero, rendimiento incluido).
+  final bool puedeEditarPrecio;
+
   const PanelEditarItemApu({
     Key? key,
     required this.obraId,
     required this.subitemId,
     required this.item,
+    required this.puedeEditarPrecio,
   }) : super(key: key);
 
   @override
@@ -156,12 +163,16 @@ class _PanelEditarItemApuState extends State<PanelEditarItemApu> {
             const SizedBox(height: 14),
             TextField(
               controller: _precioController,
+              enabled: widget.puedeEditarPrecio,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: 'Precio unitario',
                 prefixText: '\$ ',
-                border: OutlineInputBorder(),
+                border: const OutlineInputBorder(),
                 isDense: true,
+                helperText: widget.puedeEditarPrecio
+                    ? null
+                    : 'El precio de la obra lo cargan el administrador o el profesional.',
               ),
             ),
             if (_precioCambio) ...[

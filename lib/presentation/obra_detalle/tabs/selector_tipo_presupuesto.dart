@@ -38,7 +38,13 @@ class SelectorTipoPresupuesto extends StatefulWidget {
   /// un aviso de "algo cambió, volvé a leer" — no manda el valor nuevo.
   final VoidCallback? onCambio;
 
-  const SelectorTipoPresupuesto({Key? key, required this.obraId, this.onCambio}) : super(key: key);
+  /// `UserContext.puedeEditarPreciosObra` -- sin él se ve la vista elegida pero no se cambia (la RLS
+  /// de `obra_presupuesto_config` es admin_maestro/profesional). Desde que el constructor ve la
+  /// Solapa APU (2026-09-12), ver ya no implica poder cambiarla.
+  final bool puedeEditar;
+
+  const SelectorTipoPresupuesto({Key? key, required this.obraId, this.onCambio, required this.puedeEditar})
+      : super(key: key);
 
   @override
   State<SelectorTipoPresupuesto> createState() => _SelectorTipoPresupuestoState();
@@ -155,7 +161,7 @@ class _SelectorTipoPresupuestoState extends State<SelectorTipoPresupuesto> {
               ),
             ],
             selected: {config.tipoPresupuesto},
-            onSelectionChanged: (nuevaSeleccion) => _onCambiarTipo(nuevaSeleccion.first),
+            onSelectionChanged: widget.puedeEditar ? (nuevaSeleccion) => _onCambiarTipo(nuevaSeleccion.first) : null,
           ),
           Row(
             mainAxisSize: MainAxisSize.min,
@@ -165,7 +171,7 @@ class _SelectorTipoPresupuestoState extends State<SelectorTipoPresupuesto> {
                 scale: 0.75,
                 child: Switch(
                   value: config.aplicaImpuestos,
-                  onChanged: _onCambiarImpuestos,
+                  onChanged: widget.puedeEditar ? _onCambiarImpuestos : null,
                 ),
               ),
             ],

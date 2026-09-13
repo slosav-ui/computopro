@@ -45,6 +45,7 @@ class _MiembrosObraScreenState extends State<MiembrosObraScreen> {
   bool get _puedeVerInvitaciones => widget.userContext?.puedeInvitarMiembros == true;
   bool get _puedeQuitar => widget.userContext?.puedeQuitarMiembros == true;
   bool get _puedeOtorgarAdmin => widget.userContext?.puedeOtorgarAdminMaestro == true;
+  bool get _puedeOtorgarEditarPresupuesto => widget.userContext?.puedeOtorgarEditarPresupuesto == true;
 
   // Quiénes ya tienen admin_maestro activo -- un mismo usuario puede aparecer en _miembros más de
   // una vez (una fila por rol combinado, 0001_obra_members.sql), así que "hacer administrador" no
@@ -98,7 +99,12 @@ class _MiembrosObraScreenState extends State<MiembrosObraScreen> {
 
   Future<void> _irAInvitar() async {
     await Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => InvitarMiembroScreen(obraId: widget.obraId)),
+      MaterialPageRoute(
+        builder: (_) => InvitarMiembroScreen(
+          obraId: widget.obraId,
+          puedeOtorgarEditarPresupuesto: _puedeOtorgarEditarPresupuesto,
+        ),
+      ),
     );
     await _cargar();
   }
@@ -197,6 +203,47 @@ class _MiembrosObraScreenState extends State<MiembrosObraScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('No se pudo nombrar administrador.')),
+      );
+    }
+  }
+
+  /// Otorga o saca `puede_editar_presupuesto` a un profesional/constructor ya miembro (0121) --
+  /// solo admin_maestro (la base lo exige igual: `obra_members_update`, y el repositorio trata "0
+  /// filas" como error, así que un intento sin permiso nunca se ve como "listo").
+  Future<void> _confirmarCambiarEditarPresupuesto(ObraMember miembro) async {
+    final tiene = miembro.permisosEspeciales.puedeEditarPresupuesto;
+    final nombre = _nombreMostrado(miembro.usuarioId);
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text(tiene ? 'Sacar permiso de edición' : 'Dar permiso de edición'),
+        content: Text(
+          tiene
+              ? '$nombre va a seguir viendo el presupuesto, pero ya no lo va a poder editar ni '
+                  'presentar, congelar o emitir certificados.'
+              : '$nombre va a poder editar el presupuesto (cómputo, precios, Factor K) y presentar, '
+                  'congelar y emitir certificados de esta obra.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: Text(tiene ? 'Sacar' : 'Dar')),
+        ],
+      ),
+    );
+    if (confirmar != true) return;
+
+    try {
+      await _obraMembersRepository.actualizarPuedeEditarPresupuesto(miembro.id, !tiene);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Listo.')));
+      await _cargar();
+    } on PostgrestException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No se pudo cambiar el permiso.')),
       );
     }
   }
@@ -337,6 +384,7 @@ class _MiembrosObraScreenState extends State<MiembrosObraScreen> {
     final perfil = _perfiles[miembro.usuarioId];
     final invitadoPorId = miembro.invitadoPorUsuarioId;
     final permisos = <String>[
+      if (miembro.permisosEspeciales.puedeEditarPresupuesto) 'edita presupuesto',
       if (miembro.permisosEspeciales.puedeInvitarTerceros) 'invita terceros',
       if (miembro.permisosEspeciales.puedeVerApuAjena) 've APU ajena',
       if (miembro.permisosEspeciales.puedeAprobarCertificados) 'aprueba certificados',
@@ -377,6 +425,21 @@ class _MiembrosObraScreenState extends State<MiembrosObraScreen> {
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            // Permiso de editar el presupuesto (0121) -- solo en filas de profesional/constructor
+            // (el único lugar donde existe) y solo para quien lo puede otorgar (admin_maestro).
+            if (_puedeOtorgarEditarPresupuesto &&
+                (miembro.rol == RolProyecto.profesional || miembro.rol == RolProyecto.constructor))
+              IconButton(
+                icon: Icon(
+                  miembro.permisosEspeciales.puedeEditarPresupuesto ? Icons.edit_note : Icons.edit_off_outlined,
+                  size: 20,
+                  color: miembro.permisosEspeciales.puedeEditarPresupuesto ? const Color(0xFF1B365D) : Colors.black38,
+                ),
+                tooltip: miembro.permisosEspeciales.puedeEditarPresupuesto
+                    ? 'Edita el presupuesto -- tocá para sacarle el permiso'
+                    : 'No edita el presupuesto -- tocá para darle el permiso',
+                onPressed: () => _confirmarCambiarEditarPresupuesto(miembro),
+              ),
             // "Hacer administrador" (0108) -- solo tiene sentido en la fila de alguien que
             // TODAVÍA no es admin_maestro (por esta fila o por otra combinada, ver _yaSonAdmin).
             if (_puedeOtorgarAdmin &&
@@ -412,7 +475,9 @@ class _MiembrosObraScreenState extends State<MiembrosObraScreen> {
           style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, letterSpacing: 1),
         ),
         subtitle: Text(
-          '${etiquetaRol(inv.rol)} · vence el ${_fmtFecha(inv.expiraEn)}',
+          '${etiquetaRol(inv.rol)}'
+          '${inv.permisosEspeciales.puedeEditarPresupuesto ? ' · edita presupuesto' : ''}'
+          ' · vence el ${_fmtFecha(inv.expiraEn)}',
           style: const TextStyle(fontSize: 11),
         ),
         trailing: Row(

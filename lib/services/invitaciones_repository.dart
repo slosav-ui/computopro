@@ -61,6 +61,8 @@ class InvitacionesRepository {
             'delegacion_fin': permisos.delegacionTemporalFin?.toIso8601String(),
             'puede_invitar_terceros': permisos.puedeInvitarTerceros,
             'puede_ver_apu_ajena': permisos.puedeVerApuAjena,
+            // 0121: solo lo acepta la base si quien invita es admin_maestro y el rol es técnico.
+            'puede_editar_presupuesto': permisos.puedeEditarPresupuesto,
             'invitado_por_usuario_id': invitadoPorUsuarioId,
           })
           .select()

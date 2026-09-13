@@ -13,7 +13,12 @@ import '../../../services/invitaciones_repository.dart';
 class InvitarMiembroScreen extends StatefulWidget {
   final String obraId;
 
-  const InvitarMiembroScreen({super.key, required this.obraId});
+  /// `UserContext.puedeOtorgarEditarPresupuesto` de quien invita (solo admin_maestro, 0121). Sin
+  /// él, la casilla "Puede editar el presupuesto" no aparece -- la base además rechaza la invitación
+  /// si viniera marcada. Fail-closed por default.
+  final bool puedeOtorgarEditarPresupuesto;
+
+  const InvitarMiembroScreen({super.key, required this.obraId, this.puedeOtorgarEditarPresupuesto = false});
 
   @override
   State<InvitarMiembroScreen> createState() => _InvitarMiembroScreenState();
@@ -39,6 +44,8 @@ class _InvitarMiembroScreenState extends State<InvitarMiembroScreen> {
   bool _puedeAprobarAdicionales = false;
   bool _puedeInvitarTerceros = false;
   bool _puedeVerApuAjena = false;
+  // 0121: apagado por defecto (Seba: "se otorga al invitar, apagado por defecto").
+  bool _puedeEditarPresupuesto = false;
   DateTime? _delegacionInicio;
   DateTime? _delegacionFin;
 
@@ -51,6 +58,12 @@ class _InvitarMiembroScreenState extends State<InvitarMiembroScreen> {
     _topeMontoCtrl.dispose();
     super.dispose();
   }
+
+  // El permiso solo existe para los roles que ven el presupuesto (check en la base, 0121).
+  bool get _rolAdmiteEditarPresupuesto =>
+      _rol == RolProyecto.profesional || _rol == RolProyecto.constructor;
+
+  bool get _ofreceEditarPresupuesto => widget.puedeOtorgarEditarPresupuesto && _rolAdmiteEditarPresupuesto;
 
   Future<void> _elegirFecha({required bool esInicio}) async {
     final ahora = DateTime.now();
@@ -97,6 +110,7 @@ class _InvitarMiembroScreenState extends State<InvitarMiembroScreen> {
           delegacionTemporalFin: _rol == RolProyecto.invitadoApoderado ? _delegacionFin : null,
           puedeInvitarTerceros: _puedeInvitarTerceros,
           puedeVerApuAjena: _puedeVerApuAjena,
+          puedeEditarPresupuesto: _ofreceEditarPresupuesto && _puedeEditarPresupuesto,
         ),
       );
       if (!mounted) return;
@@ -155,7 +169,10 @@ class _InvitarMiembroScreenState extends State<InvitarMiembroScreen> {
           items: [
             for (final rol in _rolesInvitables) DropdownMenuItem(value: rol, child: Text(etiquetaRol(rol))),
           ],
-          onChanged: (v) => setState(() => _rol = v ?? _rol),
+          onChanged: (v) => setState(() {
+            _rol = v ?? _rol;
+            if (!_rolAdmiteEditarPresupuesto) _puedeEditarPresupuesto = false;
+          }),
         ),
         const SizedBox(height: 20),
         const Text('Permisos', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
@@ -210,6 +227,22 @@ class _InvitarMiembroScreenState extends State<InvitarMiembroScreen> {
           ),
           const SizedBox(height: 8),
         ],
+        // 0121: "el rol define qué ve, el permiso qué edita". Sin la marca, un profesional o
+        // constructor ve todo el presupuesto pero no lo cambia ni firma los actos formales -- el caso
+        // del empleado que ejecuta la obra.
+        if (_ofreceEditarPresupuesto)
+          CheckboxListTile(
+            contentPadding: EdgeInsets.zero,
+            dense: true,
+            title: const Text('Puede editar el presupuesto', style: TextStyle(fontSize: 13)),
+            subtitle: const Text(
+              'Cómputo, precios, Factor K, y presentar, congelar y emitir certificados. Sin esto ve todo '
+              'pero no lo cambia.',
+              style: TextStyle(fontSize: 11),
+            ),
+            value: _puedeEditarPresupuesto,
+            onChanged: (v) => setState(() => _puedeEditarPresupuesto = v ?? false),
+          ),
         CheckboxListTile(
           contentPadding: EdgeInsets.zero,
           dense: true,
