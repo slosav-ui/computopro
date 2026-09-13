@@ -1,142 +1,113 @@
-# Gestión de Obra — estado real, verificado contra el código (2026-09-11)
+# Gestión de Obra — estado real, verificado contra el código
 
-Pedido explícito: verificar contra `lib/`/`supabase/migrations/`, no contra otros documentos —
-"ya nos pasó dos veces que un documento decía que algo faltaba y estaba hecho, o al revés". Todo
-lo de abajo sale de grep/lectura directa del código, con el archivo y la línea citados. Donde un
-doc anterior decía algo distinto, lo marco explícitamente.
+**Auditoría original 2026-09-11. Reauditada de cero el 2026-09-13**, después de construir el ciclo
+completo del certificado, los adicionales con su seguimiento, las quitas y demasías, el permiso de
+editar presupuesto, la periodicidad de certificación y el cartel de pendientes.
 
-## 1. Construido y funcionando de punta a punta
+Pedido explícito, las dos veces: **verificar contra `lib/` y `supabase/migrations/`, no contra otros
+documentos** — *"ya nos pasó dos veces que un documento decía que algo faltaba y estaba hecho, o al
+revés"*. Todo lo de abajo sale de lectura directa del código, con archivo y línea. Lo que la
+auditoría anterior decía y hoy es falso está en §6, marcado como corrección.
 
-**Modelo A (avance medido), hasta "Emitido"**: crear obra → tildar cómputo → Factor K → congelar
-presupuesto → cargar avance por partida (`CargaAvanceSubitemsScreen`) → vista previa
-(`VistaPreviaCertificadoScreen`, mismo cálculo que `emitir_certificado`) → emitir. El candado del
-100% acumulado, el bloqueo si hay excesos, y la anulación (proponer/resolver, con la dupla
-Profesional/Constructor) están conectados de punta a punta — `gestion_obra_tab.dart` llama
-`proponerAnulacion`/`resolverAnulacion`, verificado.
+**Cómo leer la columna de evidencia**: `archivo:línea` es donde se verificó, no donde "debería
+estar". Si un ítem dice "0 resultados", el grep está escrito para que se pueda repetir.
 
-**Firma física**: aviso persistente (`CartelFirmaPendiente`) + subir el link del PDF — funciona,
-no bloquea la emisión del siguiente certificado (decisión de Seba, `0055`).
+---
 
-**Congelamiento + CAC** (piezas de esta misma conversación): `PresupuestoEstadoPanel` conecta
-presentar/vencido/congelar y el ajuste por CAC, verificado en Galpón Mix.
+## 1. Construido y funcionando
 
-**Configuración de certificación**: `PanelConfigCertificacion` guarda plazo de pago, anticipo,
-fondo de reparo, y la carga inicial de `monto_total_contratado` (Modelo B) — esto sí escribe en
-Supabase y funciona.
+| Pieza | Estado | Verificado en |
+| --- | --- | --- |
+| **Ciclo del certificado, los 5 estados** Borrador → Emitido → Leído → Pagado → Impactado/Cerrado | Completo, con sus 3 transiciones envueltas en Dart y pantalla de detalle | `certificados_repository.dart:161/169/183`, `detalle_certificado_screen.dart`, `0011` |
+| **Anulación** de un certificado emitido (proponer / resolver, dupla profesional+constructor, reemplazo con `version`) | Completo y verificado con 2 usuarios reales | `certificados_repository.dart:126/143`, `gestion_obra_tab.dart:462/798`, `0056` |
+| **Carga de avance por partida**, con candado del 100% acumulado y bloqueo por excesos | Completo (rubros → subítems, dos pantallas anidadas) | `carga_avance_rubros_screen.dart:269`, `carga_avance_subitems_screen.dart`, `0052`/`0054` |
+| **Vista previa** del certificado antes de emitir, con el mismo cálculo que la emisión | Completo | `vista_previa_certificado_screen.dart:42`, `calcular_totales_certificado` (`0105:401`) |
+| **Certificación al precio final** (cascada de Factor K completa, no al costo) | **Corregido y verificado 2026-09-09** — ver §6.1 | `0094`, trigger vigente en `0105:360` |
+| **Presentar / validez / congelar** el presupuesto, y el ajuste por CAC | Completo | `presupuesto_estado_panel.dart`, `0103`/`0104`/`0105` |
+| **Cotización congelada** de los montos cerrados (pactado y adicional aprobado no se mueven en USD) | Completo y verificado en Galpón Mix | `0122`, `obras_list_screen.dart:_convertirMonto`, `presupuesto_estado_panel.dart:_fmtMonto` |
+| **Firma física**: aviso persistente + subir el PDF, sin bloquear la emisión siguiente | Completo | `cartel_firma_pendiente.dart`, `certificados_repository.dart:110`, `0055` |
+| **Configuración de certificación**: plazo de pago, anticipo, fondo de reparo, modelo, monto contratado, **periodicidad** | Completo | `panel_config_certificacion.dart`, `obra_config_certificacion_repository.dart:24` |
+| **Quitas y Demasías**: crear, aprobar, rechazar, observar, historial de observaciones — y corrigen de verdad la cantidad del cómputo y el congelado | Completo | `modificaciones_obra_repository.dart:21-120`, `quitas_demasias_screen.dart`, `0109` |
+| **Adicionales**: crear por monto fijo, presupuestar con la app (obra hija), enviar, aprobar/rechazar con monto congelado, seguimiento de avance | Completo salvo la tercera vía (ver §2.3) | `adicionales_repository.dart:74/111/186/199/218/228`, `adicionales_screen.dart`, `0112`-`0120` |
+| **Rol vs. permiso** (`puede_editar_presupuesto`): emitir, congelar, anular y aprobar quitas exigen el permiso; cargar avance sigue por rol | Completo, espejado en la app | `user_context.dart:77/91/153/163/236`, `0121` |
+| **Avisos de pendientes** (cartel del dashboard + contador por obra), 9 tipos incluido "ya se puede certificar" | Completo y verificado | `mis_pendientes()` (`0117`+`0123`), `pendiente.dart`, `cartel_pendientes.dart` |
+| **Periodicidad de certificación** y su aviso, con el período sugerido al crear el borrador | Completo y verificado 2026-09-13 | `0123`, `periodo_certificacion.dart`, `gestion_obra_tab.dart:_pedirPeriodo` |
+| **Barra de acciones** de la solapa, preparada para crecer a 6-8 acciones | Completo | `barra_acciones_obra.dart` |
 
-## 2. Construido con una brecha real entre el schema y la app — esto es lo que un doc no te iba a
-   decir
+## 2. Construido a medias — brechas medidas, no sospechas
 
-**El ciclo de 5 estados del certificado quedaba atascado en "Emitido" — CERRADO 2026-09-11.**
-`marcar_certificado_leido`/`marcar_certificado_pagado`/`marcar_certificado_impactado` existían y
-funcionaban en Supabase (`0011`) pero ningún repositorio Dart las envolvía y ninguna pantalla las
-llamaba. Construido: los 3 métodos en `CertificadosRepository`, pantalla nueva
-`DetalleCertificadoScreen` (abre con `onTap` desde la tarjeta del historial en
-`gestion_obra_tab.dart`, solo para certificados que ya dejaron de ser borrador), con el desglose
-pactado/ajuste CAC y la línea de tiempo de los 5 pasos. "Leído" se marca solo al abrir el detalle,
-sin botón, tal como lo pedía la spec fundacional. Autoridad verificada contra el código real de las
-3 funciones (`0011`), no asumida — 3 getters nuevos en `UserContext`
-(`puedeMarcarCertificadoLeido`/`Pagado`/`Impactado`), que **corrigen una discrepancia real
-encontrada al verificar**: el getter viejo `puedeAprobarCertificados` (nunca usado por ninguna
-pantalla, confirmado) incluye `admin_maestro`, pero `puede_gestionar_certificado` — la función real
-detrás de `marcar_certificado_pagado` — nunca lo incluye, solo `cliente_principal`/
-`invitado_apoderado`. El comentario de ese getter cita "la Matriz de permisos consolidada" de
-`CLAUDE.md` como fuente; lo que exige el servidor es distinto. Se dejó ese getter sin tocar (no lo
-usa nada hoy) y los 3 nuevos no lo reusan.
+Esto es lo que ningún documento iba a decir, y es el valor de auditar contra el código.
 
-**Obras en USD: el certificado seguía mostrando pesos — CERRADO 2026-09-11.** Encontrado al probar
-el ciclo completo: `certificados.monto` siempre está en ARS (igual que todo el sistema de
-precios), pero ninguna de las 3 pantallas (`DetalleCertificadoScreen`, el historial de
-`GestionObraTab`, `VistaPreviaCertificadoScreen`) convertía a la moneda de la obra — sí lo hacía el
-presupuesto vivo del dashboard (`ObrasListScreen._convertirMonto`), esto quedó afuera al
-construirse antes de que existiera ese patrón. Además, un certificado YA EMITIDO tiene que
-convertirse a la cotización del momento en que se emitió, no a la de hoy — el monto en pesos ya
-está congelado, mismo criterio de "no retroactivo" que el resto del ciclo. Como
-`cotizacion_dolar_bna` es una fila única sin historial, hizo falta un snapshot nuevo
-(`certificados.cotizacion_dolar_promedio_al_emitir`, `0107`) — `null` en certificados emitidos
-antes de esa migración, que caen a la cotización de hoy con un aviso visible de que es aproximado.
+### 2.1 · El avance físico de la obra se calcula y **no se muestra en ninguna pantalla**
 
-**El selector de Modelo de certificación bypaseaba la función dedicada — CERRADO 2026-09-11.**
-`ObraConfigCertificacionRepository.actualizarConfig` hacía un `.update()` directo sobre
-`obras.modelo_certificacion`, sin pasar por `cambiar_modelo_certificacion` (`0005`, motivo
-obligatorio + `audit_log`). Ahora el cambio de modelo es una llamada aparte
-(`cambiarModelo`), disparada solo cuando el modelo elegido difiere del guardado, con un diálogo que
-pide el motivo antes de guardar — mismo candado que ya exigía el servidor, ahora repetido también
-del lado del cliente para no gastar el viaje de red con algo que iba a rechazar seguro.
+`calcular_avance_ponderado_rubros` y `calcular_avance_ponderado_obra` existen (`0052:249/272`),
+**están envueltas en Dart** (`certificado_subitems_avance_repository.dart:117` y `:130`) y
+`grep -rn "getAvancePonderado" lib/presentation/` da **0 resultados**: ninguna pantalla las llama.
+La app sabe calcular "esta obra va al 42%" y no lo dice en ningún lado — ni en Gestión de Obra, ni
+en la card del dashboard (donde Seba ya pidió una barra de avance), ni en Resumen (que sigue siendo
+la maqueta de la demo, con 85.000.000 hardcodeado: `presupuestos_screen.dart:_buildTabResumenFinal`).
+**Es la brecha más barata de cerrar de toda la solapa**: los datos y el acceso ya están.
 
-**`modificaciones_obra` (Adicionales/Demasías/Quitas) tiene un desajuste de fondo, no solo falta
-de UI**: `subitem_id` referencia `subitems(id)` — el **catálogo** compartido (`0021`) — no
-`obra_subitems(id)`, que es la tabla real del cómputo de una obra (la que usa congelamiento,
-certificación, avance, todo). Tal como está el schema hoy, no hay forma de que un adicional
-apunte a "esta línea nueva en el cómputo de esta obra puntual" — apuntaría, como mucho, a un
-subítem del catálogo general. Además, de los 4 tipos (`adicional`/`demasia`/`quita`/
-`ajuste_contrato`), **solo `ajuste_contrato` tiene una función de aprobación** (`aprobar_ajuste_contrato`,
-`0008`, atómica: aprueba + aplica el delta a `obras` + `audit_log`). Los otros 3 solo tienen
-`INSERT`/`UPDATE` por RLS — sin ninguna función que "gradúe" un adicional aprobado a una fila real
-de `obra_subitems`, aunque el comentario del modelo Dart (`modificacion_obra.dart:13-14`) describe
-esa graduación como si ya existiera. Y del lado de Dart: `ModificacionObra`
-(`lib/data/models/modificacion_obra.dart`) es un modelo con `toMap()`/`fromMap()` en camelCase
-directo — el patrón de los modelos viejos pre-Supabase (`ObraModel`), no el patrón
-`_fromRow`/`_toRow` snake_case que usa el resto del proyecto — **no tiene ningún repositorio**, y
-no lo importa ninguna pantalla (`grep -rln "modificacion_obra.dart" lib/` → 0 resultados fuera del
-propio archivo). Confirmado también en el comentario de
-`lib/services/obra_config_certificacion_repository.dart:57-61`: "sin UI todavía, fuera de esta
-pieza".
+### 2.2 · Un apoderado con delegación permanente no puede marcar leído ni pagado
 
-## 3. Diseñado y con datos aplicados en producción — cero código Dart
+Divergencia real y todavía abierta entre la base y la app: para la base, delegación **sin fechas =
+permanente y vigente** (`0004`/`0011`/`0116`); en Dart hay **dos helpers** —
+`_delegacionVigenteSegunBase` (correcto, `user_context.dart:281`) que usan los getters de
+adicionales, y `_delegacionVigente` (`user_context.dart:290`) que trata "sin fechas" como **no
+vigente** y es el que usan `puedeMarcarCertificadoLeido` (`:203`) y
+`puedeMarcarCertificadoPagado` (`:211`). Efecto concreto: un apoderado con delegación permanente ve
+la pantalla sin los botones, aunque el servidor lo autorizaría. El propio código lo tiene anotado
+como pendiente. **Fix mecánico**: unificar en el helper correcto y borrar el otro.
 
-**Modelo B (Hitos de Precio Cerrado)**: `hitos_certificacion` (tabla, RLS, `0006`/`0007`/`0012`),
-`calcular_avance_hitos`, `calcular_saldo_pendiente_hitos` (con CAC ya conectado, `0102`) — todo
-aplicado y verificado en su momento. Pero:
+### 2.3 · La tercera vía de carga de un adicional es un cartel de "próximamente"
 
-```
-grep -rn "hitos_certificacion" lib/   →  0 resultados
-```
+El selector ofrece tres vías (monto fijo / presupuestar con la app / importar de Excel-PDF) y la
+tercera llama a `_mostrarImportarProximamente()` (`adicionales_screen.dart:183`, ofrecida en
+`:958`). No es un bug: está a la vista. Pero el menú promete algo que no existe.
 
-Cero. Ni un modelo Dart, ni un repositorio, ni una pantalla. `PanelConfigCertificacion` dejaba
-elegir "Hitos de Precio Cerrado" con un `RadioListTile` sin ningún aviso — **corregido
-2026-09-11**: al elegir esa opción aparece un cartel ámbar explícito ("Todavía no hay ninguna
-pantalla en la app para cargar o gestionar hitos") antes de guardar, no después de buscar y no
-encontrar.
+### 2.4 · Un adicional aprobado no se cobra por ningún documento
 
-**Registro de subcontratos**: usa la MISMA tabla (`hitos_certificacion.contratista_nombre`, ya
-diseñado con esa doble función desde `0006`) — mismo estado exacto, cero código Dart. No es una
-pieza aparte del punto anterior a nivel de datos, comparte la tabla entera.
+`certificar_avance_adicional` (`0120`) guarda porcentaje y monto certificado **en la fila del
+adicional**, y ahí termina: `calcular_saldo_pendiente_avance_medido` (`0105:245`) suma solo
+`presupuesto_subitems_congelado`, y `calcular_totales_certificado` nunca mira
+`modificaciones_obra`. O sea: **el avance de un adicional se registra pero no genera certificado, no
+entra en el saldo pendiente del contrato y no tiene comprobante de cobro**. La card del dashboard sí
+lo suma al total (`obras_list_screen.dart`, `0122`), así que el número que se le muestra al cliente y
+lo que el circuito de cobro sabe facturar **no coinciden**. Es una decisión de negocio pendiente, no
+un bug: ¿el adicional se certifica dentro del certificado del período, o emite el suyo?
 
-## 4. Ni diseñado — ni en código, ni en ningún doc de diseño cerrado
+### 2.5 · Modelo B elegible, sin ninguna pantalla
 
-**"Certificado externo" / "modo certificado externo"**: no encontré una definición operativa en
-ningún lado del proyecto, solo el nombre. Aparece como bullet de "Segunda ola" en
-`docs/diagnostico_general_producto.md` §5, sin desarrollo. La única otra mención
-(`docs/importador_capa1_diseno_datos.md:157/197`) lo usa como punto de comparación para el
-importador de Excel y dice explícitamente *"no tengo visibilidad de 'el importador de
-certificados externos'"* — ni siquiera esa pieza sabía qué era. **Antes de poder ordenarlo en la
-secuencia necesito que lo definas vos** — ¿es certificar el avance de un subcontratista externo
-(entonces es literalmente lo mismo que "registro de subcontratos" de arriba, con otro nombre)? ¿Es
-importar un certificado ya emitido por otro sistema/otra empresa? Son piezas muy distintas y hoy
-el nombre solo no alcanza para saber cuál.
+`grep -rn "hitos_certificacion\|HitoCertificacion" lib/` → **0 resultados** (igual que en la
+auditoría anterior). El dato está completo desde `0006`/`0007`/`0012`, con CAC conectado. El panel de
+configuración deja elegirlo y avisa con un cartel ámbar que no hay dónde gestionarlo
+(`panel_config_certificacion.dart:256`), que es lo mínimo honesto, pero la obra queda sin circuito:
+`certificados` tiene un guard de RLS que exige `avance_medido` (`0009`), así que en Modelo B no hay
+certificados **ni borrador ni nada**. **Registro de subcontratos** es la misma tabla
+(`hitos_certificacion.contratista_nombre`), mismo estado exacto.
 
-**Presunción de Claude Code (2026-09-11), no una definición — para que Seba la confirme o la
-corrija más adelante**: cargar en la app un certificado que se emitió por fuera de la app — en
-papel o en una planilla Excel — para que el historial de la obra quede completo sin tener que
-rehacerlo dentro del sistema. Sigue sin ubicación en el orden de la sección 5 hasta que se
-confirme.
+## 3. Diseñado, sin construir
 
-**Carga de fotos en obra**: ninguna tabla del proyecto está pensada para esto —
-`grep -rln "foto\|imagen\|adjunto" supabase/migrations/*.sql` da 5 archivos, ninguno es "fotos de
-obra": `libro_entradas` (adjuntos genéricos de texto libre), `certificados` (comprobante de pago,
-factura final, PDF firmado — todos administrativos), `importaciones` (el archivo Excel/PDF que se
-importa). El lugar donde conceptualmente encajaría — `libro_entradas`, el "Libro de Obra" — tiene
-tabla y RLS aplicadas (`0003`/`0004`) pero **cero repositorio y cero pantalla**
-(`grep -rln "libro_entrada\|LibroEntrada" lib/` → solo el propio modelo). Hoy no se puede ni
-escribir una línea de texto en el Libro de Obra desde la app, mucho menos adjuntar una foto.
+Todo esto tiene documento de diseño con decisiones cerradas y cero código.
 
-Dato a favor: el mecanismo técnico de subir un archivo real (no un link pegado a mano) **sí existe
-y funciona** — `lib/services/importaciones_repository.dart:31`,
-`_client.storage.from('importaciones').uploadBinary(...)`, Supabase Storage real. No es
-infraestructura nueva que haya que inventar; hoy solo se usa para el importador, nunca se conectó
-a nada de Gestión de Obra. El paquete `image_picker`/`camera` no está en `pubspec.yaml` — sacar una
-foto desde la app (vs. subir una ya sacada) necesitaría sumarlo.
+| Pieza | Diseño | Qué falta |
+| --- | --- | --- |
+| **Certificar como acuerdo entre partes** (propuesta y conformidad en el borrador, con la contraparte que corresponda) | `docs/certificacion_acuerdo_partes_diagnostico.md` §2, Tanda 2 | Columnas de propuesta/conformidad, guard en `emitir_certificado`, 1 pendiente, UI. **Es la única pieza que toca RLS**: el cliente deja de ver el borrador cuando hay profesional |
+| **Objeción del cliente que frena el pago** | mismo doc, §5, Tanda 3 | Eje `objecion_*` (como `anulacion_*`), una línea en `marcar_certificado_pagado`, 2 funciones, 1 pendiente, UI |
+| **Avance global** (un porcentaje de toda la obra o de un rubro, repartido por peso del monto congelado) | mismo doc, §6, Tanda 4 | Función de reparto + modo de carga. No toca el núcleo |
+| **Libro de Obra y los dos libros direccionales** | `docs/libro_obra_horizonte.md`, **4 decisiones cerradas 2026-09-13** | Migración de policy + columna `numero`, repositorio, pantalla tipo chat, Storage. El modelo Dart existe; `grep -rn "LibroEntrada" lib/` fuera del modelo → 0 |
+| **Pantallas de Modelo B / subcontratos** | datos aplicados, UI nunca diseñada en detalle | Ver §2.5 |
+
+## 4. Ni diseñado — no existe en código ni en ningún documento de diseño
+
+| Pieza | Evidencia de que no existe |
+| --- | --- |
+| **"Certificado externo"** | Sigue sin definición operativa, igual que en la auditoría anterior: solo el nombre, como bullet de "Segunda ola" en `docs/diagnostico_general_producto.md` §5. **Sigue bloqueado esperando que Seba diga qué es** — si es certificar a un subcontratista, es §2.5 con otro nombre |
+| **Fotos de obra** | Ninguna tabla es para esto; `pubspec.yaml` no tiene `image_picker` ni `camera` (sí `file_picker:23`). El lugar natural es `libro_entradas.adjuntos`, que no tiene ni repositorio |
+| **Audios** | Decidido el formato (audio + una línea de texto) pero **sin dependencia de grabación** en `pubspec.yaml` y sin bucket |
+| **Documentación administrativa tipada** (remitos, facturas de terceros) | Pieza 4 de la visión del libro, sin diseño de datos. No confundir con el importador de Excel/PDF |
+| **Gantt / curva de inversión** | Una línea en `docs/especificacion_funcional_completa.md:101` ("Calendario/Gantt de avance físico y financiero") y nada más en todo el repo |
+| **Lluvia / fuerza mayor / partes diarios de obra** | 0 resultados en código y en migraciones |
 
 ## 5-bis. Libro de Obra / Órdenes de Servicio / Notas de Pedido — qué dice la spec real (2026-09-11)
 
@@ -216,33 +187,84 @@ distintas que comparten la palabra "documentación".
 
 ## 5. Orden recomendado, con las dependencias reales
 
-**1 — Cerrar el ciclo del certificado Modelo A (Leído/Pagado/Impactado). CERRADO 2026-09-11**, ver
-§2 — `DetalleCertificadoScreen` + los 3 métodos de repositorio + 3 getters de autoridad nuevos en
-`UserContext`. Sin verificar todavía en el emulador con los 4 roles reales.
+Ordenado por dos criterios: **lo que desbloquea el uso real primero**, y **lo barato antes que lo
+caro cuando el valor es parecido**. Las dependencias están dichas explícitamente; lo que no aparece
+como dependencia no la tiene.
 
-**2 — Modelo B (pantallas de Hitos).** El dato ya está listo (tabla + las 2 funciones, con CAC
-conectado). Es pura construcción de UI: listar hitos, crear uno, marcar finalizado/pagado. No
-depende del punto 1 ni de nada nuevo.
+**1 · Mostrar el avance de la obra** (§2.1). *No depende de nada — los datos, las funciones y el
+repositorio ya existen.* Es la única pieza de esta lista que ya está construida por debajo y solo le
+falta pantalla: el % ponderado por rubro y el total de la obra. Alimenta de una vez tres cosas
+pedidas: la barra de avance de la card del dashboard, el "cómo van" de la portada, y el primer
+contenido real de la solapa Resumen (hoy maqueta). **Lo pongo primero porque es horas de trabajo con
+un efecto visible en tres pantallas.**
 
-**3 — Subcontratos, como extensión directa de la pantalla del punto 2**, no como pieza aparte
-meses después — comparten la misma tabla y casi toda la UI (lista + alta + marcar finalizado),
-solo cambia el filtro por `contratista_nombre` y el formulario de alta. Separarlos en el tiempo
-duplicaría trabajo de pantalla para el mismo dato.
+**2 · Unificar el helper de delegación** (§2.2). *No depende de nada.* Es un fix de una línea y
+borrar el helper viejo, con un escenario de prueba: apoderado con delegación sin fechas tiene que
+poder marcar leído y pagado. Va segundo porque es un permiso mal negado, o sea un usuario real
+bloqueado, y cuesta menos que leer este párrafo.
 
-**4 — Adicionales/Demasías/Quitas.** Antes de cualquier pantalla, hace falta una decisión de
-diseño de datos que no está resuelta: corregir a qué apunta `subitem_id` (hoy al catálogo, tiene
-que poder referenciar `obra_subitems` de la obra puntual) y decidir si hace falta una función de
-aprobación por tipo (como `aprobar_ajuste_contrato`) que gradúe un adicional aprobado a una fila
-real del cómputo, o si eso se resuelve de otra forma. Es la pieza con más trabajo de diseño previo
-de las cuatro — no depende de las anteriores, pero conviene ir después porque el diseño de datos
-que hace falta corregir es más parecido al de Rubros/APU (ya cerrado) que al de certificación.
+**3 · Certificar como acuerdo entre partes** (§3, Tanda 2). *Depende de la decisión de RLS ya
+cerrada (el cliente no ve el borrador cuando hay profesional).* Es el cambio de fondo que pidió
+Seba: hoy el que carga emite. Va antes que la objeción porque **si el acuerdo funciona, la objeción
+es la excepción**, y porque el acuerdo no toca el cobro.
 
-**5 — Certificado externo.** Sin poder ubicarlo hasta que se defina qué es (§4) — si termina
-siendo lo mismo que subcontratos con otro nombre, se resuelve en el punto 3 y desaparece como
-pieza aparte.
+**4 · Objeción del cliente** (§3, Tanda 3). *Depende del 3* — la objeción es la contracara del
+acuerdo, y comparte el patrón de sub-estado. Es la única que mete la mano en `marcar_certificado_
+pagado`, así que conviene que entre cuando el resto del circuito ya esté estable.
 
-**6 — Carga de fotos en obra.** Necesita su propio mini-diseño de datos primero (¿cuelga del Libro
-de Obra si se construye? ¿de una partida puntual? ¿del avance certificado, como evidencia?) — la
-parte técnica (Storage) no es el riesgo, ya está probada. Lo pondría último porque depende de una
-decisión de producto que todavía no existe en ningún lado, ni siquiera como bullet de roadmap con
-más detalle que el nombre.
+**5 · Cómo se cobra un adicional aprobado** (§2.4). *Depende de una decisión de negocio, no de
+código.* Hay que resolverlo antes de que haya obras con adicionales certificados a mano y un cliente
+preguntando por qué no le llega comprobante. Puede adelantarse a los puntos 3 y 4 si aparece una obra
+real con adicionales en ejecución — es el único ítem de esta lista cuyo orden lo decide el uso, no la
+técnica.
+
+**6 · Libro de Obra, los dos libros direccionales** (§3). *Depende de la migración de la tanda 0
+(policy sin el cliente + columna `numero`), ya decidida.* La barra de acciones ya está preparada para
+las dos entradas nuevas. Primero texto; audios y fotos después, que necesitan dependencia nueva en
+`pubspec.yaml`.
+
+**7 · Avance global** (§3, Tanda 4). *No depende de nada, pero no mezclar con el 3*: cambiar al mismo
+tiempo cómo se carga el avance y cómo se acuerda deja sin saber cuál de los dos rompió algo.
+
+**8 · Modelo B: pantallas de hitos, y subcontratos como extensión de esa misma pantalla** (§2.5).
+*No depende de nada.* Va acá abajo por una razón de negocio, no técnica: Seba trabaja en Modelo A, y
+todo lo de arriba mejora la obra que existe hoy. Cuando se haga, subcontratos sale casi gratis de la
+misma pantalla — separarlos en el tiempo duplicaría el trabajo de UI sobre la misma tabla.
+
+**9 · Fotos, documentación tipada, Gantt/curva de inversión** (§4). *Fotos y documentación dependen
+del punto 6* (el libro es donde cuelgan). Gantt y curva de inversión dependen de que exista un
+calendario de obra, que no existe ni como idea — es la única pieza de toda la lista que necesita
+diseño de negocio desde cero.
+
+**Sin ubicar, a propósito: "certificado externo"** (§4). No entra en ninguna posición hasta que se
+defina qué es; si termina siendo certificar a un subcontratista, se resuelve dentro del punto 8 y
+desaparece como pieza.
+
+---
+
+## 6. Correcciones a la auditoría anterior — lo que decía y hoy es falso
+
+**6.1 · "La certificación factura al costo puro, sin Factor K" → CERRADO el 2026-09-09.** La `0094`
+hizo que `calcular_monto_obra_subitems` use `calcular_precio_final_apu_subitems` (cascada completa),
+y el trigger vigente (`0105:360`) calcula `monto_periodo` sobre eso. Confirmado como aplicado y
+verificado en `docs/diagnostico_general_producto.md:37-43`. **La memoria de trabajo seguía
+marcándolo como pendiente** — corregida en esta misma pasada.
+
+**6.2 · "`modificaciones_obra` no tiene ningún repositorio y no lo importa ninguna pantalla" →
+falso hoy.** Tiene dos repositorios (`modificaciones_obra_repository.dart`,
+`adicionales_repository.dart`) y dos pantallas (`quitas_demasias_screen.dart`,
+`adicionales_screen.dart`), más el modelo migrado al patrón `fromRow` del resto del proyecto.
+
+**6.3 · "`subitem_id` apunta al catálogo, no hay forma de que una modificación apunte a una partida
+de esta obra" → resuelto por la `0109`**, que agregó `obra_subitem_id` y lo hizo obligatorio para
+quitas y demasías. `subitem_id` queda como columna histórica sin uso nuevo.
+
+**6.4 · "Hace falta una función que gradúe un adicional aprobado a una fila real del cómputo" → se
+resolvió de otra forma, a propósito.** Un adicional presupuestado con la app **no se grada a
+`obra_subitems`**: vive como **obra hija** con su propio cómputo congelado (`0113`), y uno de monto
+fijo no toca el cómputo en absoluto. La pregunta que quedó abierta no es la graduación sino el cobro
+(§2.4).
+
+**6.5 · Lo que la auditoría anterior listaba como "el ciclo se atasca en Emitido" está cerrado y
+verificado**, igual que el orden que proponía en sus puntos 1 a 3: el 1 se hizo, el 2 y el 3 (Modelo
+B y subcontratos) siguen intactos y pasaron a §2.5.
