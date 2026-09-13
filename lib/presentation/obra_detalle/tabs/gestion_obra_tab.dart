@@ -720,10 +720,16 @@ class _GestionObraTabState extends State<GestionObraTab> {
               obraId: widget.obraId,
               puedeGestionar: widget.userContext?.puedeEditarComputo == true,
             ),
-            // Solo quien tiene autoridad para subir el PDF (subir_pdf_firmado_certificado, 0011:
-            // admin_maestro/profesional) — mostrárselo al Constructor sería un botón que le falla
-            // siempre, no una información útil para él.
-            if (widget.userContext?.puedeEmitirCertificado == true)
+            // Gateado por `puedeEditarPresupuesto`, que es lo que `subir_pdf_firmado_certificado`
+            // exige de verdad (0121) -- mostrarle el cartel a quien no puede subir el PDF sería un
+            // botón que le falla siempre.
+            //
+            // Hasta la 0125 esto se apoyaba en `puedeEmitirCertificado`, que entonces era lo mismo.
+            // Al cambiar quién emite (ahora el profesional, o el cliente si no hay profesional) ese
+            // atajo dejó de coincidir: el cartel se le habría empezado a mostrar al cliente en obras
+            // sin profesional, con un botón que la base le rechaza. Emitir y subir el PDF firmado son
+            // dos autoridades distintas desde la 0125, aunque hayan nacido juntas.
+            if (widget.userContext?.puedeEditarPresupuesto == true)
               CartelFirmaPendiente(obraId: widget.obraId),
             // Arriba del historial y debajo del estado del presupuesto: es el resumen de la obra, lo
             // primero que alguien quiere saber al entrar ("¿cómo va?"), y el historial es el detalle

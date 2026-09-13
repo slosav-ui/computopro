@@ -67,7 +67,11 @@ class _VistaPreviaCertificadoScreenState extends State<VistaPreviaCertificadoScr
   late Certificado _cert;
   bool _hayContraparte = false;
 
-  bool get _puedeEmitir => widget.userContext?.puedeEmitirCertificado == true;
+  /// Quién emite sale de la base desde la 0125 (`puede_emitir_certificado`): el profesional, o el
+  /// cliente si no hay profesional, o el admin_maestro si no hay ninguno. `_quienEmite` guarda cuál
+  /// de los tres es, para poder explicarlo con las mismas palabras que el mensaje de la función.
+  bool _puedeEmitir = false;
+  String? _quienEmite;
 
   @override
   void initState() {
@@ -82,16 +86,26 @@ class _VistaPreviaCertificadoScreenState extends State<VistaPreviaCertificadoScr
   /// condiciones, en el mismo orden. No reemplaza al guard de la base -- lo adelanta, para que el
   /// botón explique en vez de fallar al tocarlo.
   String? get _motivoParaNoEmitir {
-    if (!_hayContraparte || _cert.estado != EstadoCertificado.borrador) return null;
-    if (_cert.acuerdoEstado != AcuerdoCertificado.conforme) {
+    if (_cert.estado != EstadoCertificado.borrador) return null;
+    if (_hayContraparte && _cert.acuerdoEstado != AcuerdoCertificado.conforme) {
       return 'Falta la conformidad de la otra parte. Proponelo para revisión desde la carga de '
           'avance y emitilo cuando lo conformen.';
     }
-    if (_cert.propuestoPor != null && _cert.propuestoPor == _authService.usuarioActual?.id) {
-      return 'Este avance lo propusiste vos: lo emite la otra parte. Si tiene que emitirlo este '
-          'usuario, que la otra parte lo devuelva y vuelva a proponerlo ella.';
-    }
     return null;
+  }
+
+  /// Quién emite acá, en castellano. La pantalla entera solo se le muestra a quien emite, así que
+  /// este texto es para el caso raro en que la autoridad cambió mientras la pantalla estaba abierta
+  /// (entró un profesional a la obra, venció una delegación).
+  String get _textoQuienEmite {
+    switch (_quienEmite) {
+      case 'profesional':
+        return 'el profesional';
+      case 'cliente':
+        return 'el cliente (o su apoderado)';
+      default:
+        return 'el administrador de la obra';
+    }
   }
 
   /// Siempre la cotización de HOY -- a diferencia de un certificado ya emitido
@@ -143,6 +157,7 @@ class _VistaPreviaCertificadoScreenState extends State<VistaPreviaCertificadoScr
       final excesos = await excesosFuture;
       final cert = await _certificadoFresco();
       final hayContraparte = await _hayContraparteSegura(cert);
+      final emision = await _autoridadDeEmision();
 
       final descripcionPorSubitemCatalogo = {
         for (final s in subitemsCatalogo) s.id: '${s.codigo} - ${s.descripcion}',
@@ -171,6 +186,8 @@ class _VistaPreviaCertificadoScreenState extends State<VistaPreviaCertificadoScr
         _excesos = excesos;
         _cert = cert;
         _hayContraparte = hayContraparte;
+        _puedeEmitir = emision.$1;
+        _quienEmite = emision.$2;
         _cargando = false;
       });
     } catch (e) {
@@ -199,6 +216,18 @@ class _VistaPreviaCertificadoScreenState extends State<VistaPreviaCertificadoScr
       return await _certificadosRepository.getPorId(_cert.id);
     } catch (_) {
       return _cert;
+    }
+  }
+
+  /// (¿puede emitir el que mira?, ¿quién emite en esta obra?). Ante un error, no puede: un botón
+  /// "Emitir" que falla es peor que no mostrarlo.
+  Future<(bool, String?)> _autoridadDeEmision() async {
+    try {
+      final puede = await _certificadosRepository.puedeEmitir(widget.obraId);
+      final quien = await _certificadosRepository.quienEmite(widget.obraId);
+      return (puede, quien);
+    } catch (_) {
+      return (false, null);
     }
   }
 
@@ -293,7 +322,9 @@ class _VistaPreviaCertificadoScreenState extends State<VistaPreviaCertificadoScr
         foregroundColor: Colors.white,
       ),
       body: _buildContenido(),
-      bottomNavigationBar: (_cargando || _error != null || !_puedeEmitir) ? null : _buildBarraEmitir(),
+      bottomNavigationBar: (_cargando || _error != null)
+          ? null
+          : (_puedeEmitir ? _buildBarraEmitir() : _buildAvisoNoEmite()),
     );
   }
 
@@ -434,6 +465,21 @@ class _VistaPreviaCertificadoScreenState extends State<VistaPreviaCertificadoScr
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// La pantalla se puede seguir mirando sin poder emitir (por ejemplo, el constructor revisando lo
+  /// que va a firmar el profesional). En vez de una barra vacía, dice quién emite acá.
+  Widget _buildAvisoNoEmite() {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Text(
+          'En esta obra el certificado lo emite $_textoQuienEmite.',
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 11.5, color: Colors.blueGrey.shade700),
+        ),
       ),
     );
   }

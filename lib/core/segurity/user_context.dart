@@ -146,11 +146,19 @@ class UserContext {
       ]) ||
       membresias.any((m) => m.rol == RolProyecto.invitadoApoderado && _delegacionVigente(m));
 
-  // Regla de visibilidad 8: ¿puede emitir un certificado (Borrador -> Emitido)? Espejo de
-  // `emitir_certificado` (0121): el permiso de editar el presupuesto -- "si cotiza y ejecuta la obra,
-  // es el que emite los certificados" (Seba). A propósito distinto de `puedeCargarAvance` (por rol:
-  // cargar el borrador es tarea de posta, lo hace también quien no tiene el permiso).
-  bool get puedeEmitirCertificado => puedeEditarPresupuesto;
+  // Regla de visibilidad 8: BORRADA a propósito el 2026-09-13 (0125). Acá vivía
+  // `puedeEmitirCertificado => puedeEditarPresupuesto`, espejo de la 0121 ("si cotiza y ejecuta la
+  // obra, es el que emite los certificados"). Esa matriz cambió: emite el profesional, o el cliente
+  // si no hay profesional, o el admin_maestro si no hay ninguno de los dos -- el motivo completo
+  // está en docs/etapa3_roles_permisos_diseno_datos.md §11 ("el certificado es lo que va al cliente
+  // a pagar, y quien lo cierra no puede ser el que cobra").
+  //
+  // No se reescribe acá porque **no se puede**: la regla nueva depende de si la obra tiene
+  // profesional activo, y `UserContext` solo conoce las membresías del usuario logueado. Se pregunta
+  // por RPC (`CertificadosRepository.puedeEmitir` / `quienEmite`), que es la misma función que
+  // ejecuta `emitir_certificado`. Se borra en vez de dejarla marcada como vieja: un getter que
+  // contesta distinto que la base es exactamente lo que ya nos mordió con los dos helpers de
+  // delegación (ver `_delegacionVigente`, más abajo).
 
   // Regla de visibilidad 9: ¿puede proponer o resolver (aprobar/rechazar) la anulación de un
   // certificado emitido? Espejo de proponer_anulacion_certificado/resolver_anulacion_certificado

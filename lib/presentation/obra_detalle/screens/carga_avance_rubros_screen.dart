@@ -65,6 +65,10 @@ class _CargaAvanceRubrosScreenState extends State<CargaAvanceRubrosScreen> {
   bool _puedeConformar = false;
   bool _accionando = false;
 
+  /// Quién emite en esta obra ya no se deduce del rol del que mira (0125): se pregunta a la base.
+  /// Arranca en false para no ofrecer "Vista previa" antes de saberlo.
+  bool _puedeEmitir = false;
+
   bool get _puedeVerMontos => widget.userContext?.puedeVerMontosGestionObra == true;
   bool get _puedeCargarAvance => widget.userContext?.puedeCargarAvance == true;
   bool get _esQuienPropuso =>
@@ -98,6 +102,7 @@ class _CargaAvanceRubrosScreenState extends State<CargaAvanceRubrosScreen> {
       final resumen = resumenFuture == null ? null : await resumenFuture;
       final cert = await _certificadoFresco();
       final acuerdo = await _estadoDelAcuerdo(cert);
+      final puedeEmitir = await _puedeEmitirSeguro();
 
       if (!mounted) return;
       setState(() {
@@ -107,6 +112,7 @@ class _CargaAvanceRubrosScreenState extends State<CargaAvanceRubrosScreen> {
         _cert = cert;
         _hayContraparte = acuerdo.$1;
         _puedeConformar = acuerdo.$2;
+        _puedeEmitir = puedeEmitir;
         _cargando = false;
       });
     } catch (e) {
@@ -125,6 +131,15 @@ class _CargaAvanceRubrosScreenState extends State<CargaAvanceRubrosScreen> {
       return await _certificadosRepository.getPorId(_cert.id);
     } catch (_) {
       return _cert;
+    }
+  }
+
+  /// Ante un error, false: mejor no ofrecer la vista previa que ofrecer un botón que falla.
+  Future<bool> _puedeEmitirSeguro() async {
+    try {
+      return await _certificadosRepository.puedeEmitir(widget.obraId);
+    } catch (_) {
+      return false;
     }
   }
 
@@ -175,11 +190,12 @@ class _CargaAvanceRubrosScreenState extends State<CargaAvanceRubrosScreen> {
         ),
         backgroundColor: const Color(0xFF1B365D),
         foregroundColor: Colors.white,
-        // Vista previa + Emitir viven en su propia pantalla — mismos 2 roles que exige
-        // emitir_certificado (admin_maestro/profesional), no los mismos que pueden cargar avance
-        // (que suma constructor): cargar es de posta entre los 3, emitir es autoridad propia.
+        // Vista previa + Emitir viven en su propia pantalla, y se ofrecen solo a quien emite en
+        // ESTA obra -- que desde la 0125 no es un rol fijo: el profesional, o el cliente si no hay
+        // profesional, o el admin_maestro si no hay ninguno. Cargar avance es de posta entre los
+        // tres roles técnicos; emitir es autoridad propia y sale de la base.
         actions: [
-          if (widget.userContext?.puedeEmitirCertificado == true)
+          if (_puedeEmitir)
             TextButton.icon(
               onPressed: _abrirVistaPrevia,
               icon: const Icon(Icons.visibility_outlined, size: 18, color: Colors.white),

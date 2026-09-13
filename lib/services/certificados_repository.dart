@@ -245,6 +245,27 @@ class CertificadosRepository {
     return data == true;
   }
 
+  // ===========================================================================
+  // Quién emite (0125)
+  // ===========================================================================
+  //
+  // La autoridad de emisión dejó de ser calculable en Dart: depende de si la obra tiene profesional
+  // activo, y `UserContext` solo conoce las membresías del usuario logueado. Las dos salen de la
+  // base, que es la misma que aplica `emitir_certificado`.
+
+  /// ¿El usuario logueado es quien emite en esta obra?
+  Future<bool> puedeEmitir(String obraId) async {
+    final data = await _client.rpc('puede_emitir_certificado', params: {'p_obra_id': obraId});
+    return data == true;
+  }
+
+  /// Quién emite en esta obra: `profesional` | `cliente` | `admin_maestro`. Para explicarlo en
+  /// pantalla con las mismas palabras que usa el mensaje de error de la función.
+  Future<String?> quienEmite(String obraId) async {
+    final data = await _client.rpc('quien_emite_certificado', params: {'p_obra_id': obraId});
+    return data?.toString();
+  }
+
   Certificado _fromRow(Map<String, dynamic> row) {
     return Certificado(
       id: row['id'].toString(),
