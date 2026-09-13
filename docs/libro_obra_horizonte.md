@@ -1,8 +1,8 @@
-# Libro de Obra — horizonte (anotado, sin diseñar)
+# Libro de Obra — horizonte y diagnóstico
 
-**Solo para no perderlo — salió de una conversación del 2026-09-11, todavía no está en ningún
-otro lado del proyecto. No es un diseño cerrado, no hay ninguna migración ni pantalla planeada
-todavía.** Cuando se decida encarar esta pieza, retomar desde acá.
+**Origen: conversación del 2026-09-11 (la visión). Diagnóstico técnico y precisión de alcance:
+2026-09-13 — §A en adelante.** Sigue sin haber migración escrita ni pantalla: esto mide y decide,
+no construye.
 
 ## La visión completa, en palabras de Seba
 
@@ -58,6 +58,168 @@ escuchar cada nota. Transcribir necesita un servicio externo con costo por minut
 arrancar guardando solo el audio (ya funciona la infraestructura real de subida de archivos,
 Supabase Storage, probada en el importador de Excel/PDF) y sumar la transcripción como mejora
 posterior, sin que eso bloquee la primera versión.
+
+---
+
+# §A · Precisión de alcance (Seba, 2026-09-13)
+
+**Son dos libros, y la comunicación es entre el constructor y el profesional. El cliente solo lee,
+no escribe.** Textual:
+
+> *"Entre ellos dos sí pueden ir comunicándose las cosas de obra, lo diario — que el arquitecto le
+> diga 'ya podés arrancar tal tarea' o 'suspendé tal tarea', y el constructor ahí el porqué. Que
+> quede registrado como respaldo."*
+
+Los dos libros son los **direccionales**: Órdenes de Servicio (profesional → constructor) y Notas de
+Pedido (constructor → profesional). Es exactamente la matriz que la RLS ya aplica.
+
+**El motivo de fondo es legal, y ordena el resto de las decisiones:** la app **no reemplaza al libro
+rubricado** (eso ya estaba claro y anotado), pero **sí sirve como respaldo** si algo termina en una
+discusión formal. De ahí se siguen dos cosas que ya estaban en el diseño y ahora tienen razón
+explícita: las entradas **no se editan ni se borran**, y **queda registrado quién escribió qué y
+cuándo**.
+
+# §B · Qué tiene hoy la tabla, exactamente
+
+`libro_entradas` (`0003`, RLS en `0004`):
+
+| Columna | Para qué sirve en esta pieza |
+| --- | --- |
+| `libro` | `'obra'` / `'orden_servicio'` / `'nota_pedido'` — los tres libros ya discriminados |
+| `autor_usuario_id` + `autor_rol` | **quién escribió, y con qué rol** — el "quién" del respaldo legal |
+| `contenido` | el texto de la entrada |
+| `adjuntos jsonb` | **ya alcanza para los audios y los archivos, sin tocar el schema** |
+| `entrada_padre_id` (FK a sí misma) | **la respuesta/acuse ya está modelada**: una entrada raíz y sus hijas |
+| `created_at` | el "cuándo", puesto por la base (`default now()`), no por el cliente |
+
+**Hallazgo que cambia el tamaño de la pieza para bien: el hilo ya existe.** `entrada_padre_id` es
+justamente lo que diferencia una Orden de Servicio con su acuse de un chat plano — no hay que
+agregarlo.
+
+**La RLS aplicada ya tiene la matriz de escritura por libro**: una Orden de Servicio la abre solo el
+`profesional` y la responde solo el `constructor`; una Nota de Pedido al revés. `invitado_veedor` no
+aparece en ninguna rama, así que no escribe. Sin `UPDATE` ni `DELETE` para nadie: append-only real, en
+la base, no por convención de la UI.
+
+**Lo que falta para que los dos libros funcionen:**
+
+1. **Repositorio** (no existe): insertar una entrada, listar por libro, y traer un hilo con sus
+   respuestas. Es el trabajo más mecánico de la pieza.
+2. **Pantalla** (no existe): ver §C.
+3. **Punto de entrada**: dos acciones en la barra de Gestión de Obra. Esa barra se rehízo el
+   2026-09-13 como grilla justamente para que estas dos entren sin rediseñarla
+   (`BarraAccionesObra`).
+4. **Storage para audios/adjuntos** si se hacen: el mecanismo ya está probado (Supabase Storage, el
+   importador de Excel/PDF lo usa), falta el bucket y su política.
+5. Lo que salga de las decisiones de §D (numeración, aviso legal, audios).
+
+**Conflicto real que hay que resolver antes de escribir la pantalla — la RLS aplicada NO coincide con
+"el cliente solo lee"**: hoy el `cliente_principal` (y el `invitado_apoderado`) **pueden escribir en el
+Libro de Obra** (`libro = 'obra'`) y el `cliente_principal` **puede responder una Nota de Pedido**. Las
+dos ramas están aplicadas en producción desde la `0004`. Alinear la base con la precisión de §A es una
+migración de una policy (drop + create), sin datos que migrar — no hay ninguna entrada cargada
+todavía. Ver la decisión 0 de §D.
+
+# §C · Cómo se ve: un chat, con una diferencia
+
+Es una conversación entre dos partes, así que la forma es de chat y no de formulario: **burbujas**
+alineadas por autor (el profesional de un lado, el constructor del otro), con **nombre, rol, fecha y
+hora** visibles en cada una — el "quién y cuándo" es el valor de la pieza, no un detalle que se
+esconde en un tooltip. Agrupadas por día, orden cronológico, el último abajo, y el scroll arranca al
+final. Sin editar ni borrar: el menú de una burbuja no tiene esas opciones, porque la base tampoco.
+
+**La diferencia con un chat común son los libros direccionales.** En Órdenes de Servicio y Notas de
+Pedido, cada **hilo es una orden y su acuse**, no dos mensajes sueltos: la entrada raíz se ve como una
+tarjeta con su estado ("sin acuse" / "acusada el 12/09 por Fulano") y la respuesta anidada abajo. Así
+se lee en una discusión formal, que es para lo que existe. El Libro de Obra (`'obra'`) sí es el diario
+plano: entradas sueltas, sin hilo obligatorio.
+
+**Tres pantallas o una con selector**: recomiendo **una pantalla con tres solapas** (Libro de Obra /
+Órdenes de Servicio / Notas de Pedido) y dos entradas desde la barra de acciones (Órdenes y Notas),
+porque son dos flujos distintos que la gente busca por nombre; el diario queda como tercera solapa.
+
+**El cliente**: ve los tres libros completos y **sin campo de escritura** (según la decisión 0). No es
+un modo "deshabilitado" con el campo en gris: directamente no está.
+
+**El compositor, pensado para obra**: el micrófono primero y el teclado después — *"nadie en obra, con
+el casco puesto, va a tipear un texto largo parado"*. Adjuntar archivo al lado.
+
+**Pendientes**: una Orden de Servicio sin acuse es un candidato natural a `mis_pendientes()` (una rama
+más, el mecanismo ya está). No entra en la primera tanda, pero el diseño no lo estorba.
+
+# §D · Las decisiones abiertas, con opciones
+
+### 0 · ¿El cliente escribe en algún libro? (nueva, sale del conflicto de §B)
+
+- **A — No escribe en ninguno** (fiel a lo textual de §A): se saca `cliente_principal` e
+  `invitado_apoderado` de la rama `'obra'` y `cliente_principal` de la respuesta a Notas de Pedido.
+  Una migración de policy. **Recomendada**: es lo que Seba dijo, y deja la app coherente con el
+  criterio de que el respaldo documenta la comunicación técnica.
+- **B — No escribe en los dos direccionales, pero sí comenta en el Libro de Obra**: la comunicación
+  formal queda entre las partes técnicas y el cliente puede dejar constancia de algo que vio.
+- **C — Como está hoy** (escribe en el Libro de Obra y responde Notas de Pedido): cero trabajo, pero
+  contradice §A.
+
+### 1 · Numeración y secuencia de las Órdenes de Servicio
+
+- **A — Sin número** (como hoy): cero trabajo. En obra real las órdenes se citan por número ("la OS
+  N° 7"), así que probablemente falte.
+- **B — Número correlativo por obra y por libro, sin candado** (`numero` + `unique(obra_id, libro,
+  numero)`, asignado al insertar, mismo criterio que `certificados.numero`): se puede emitir la 8
+  aunque la 7 no tenga acuse, y la que no tiene acuse se marca en pantalla y puede avisar por
+  pendientes. **Recomendada.**
+- **C — Número + candado de secuencia**: no se emite la siguiente hasta que la anterior esté acusada.
+  **Ojo con el precedente**: este proyecto ya construyó un candado así (el bloqueo de emisión hasta
+  subir el PDF firmado) y **lo sacó a propósito** en la `0055` porque bloqueaba de más; se reemplazó
+  por un aviso no bloqueante (`docs/certificados_ciclo_vida_diseno_datos.md` §11). Repetirlo acá es
+  repetir un error ya medido.
+
+### 2 · El texto del aviso legal
+
+Tres redacciones posibles (la decisión es el tono, no el contenido):
+
+- **A — Directa**: *"Este registro es un respaldo interno de la obra. No reemplaza al Libro de Obra
+  rubricado ante el colegio profesional o el municipio, que es el que tiene validez legal."*
+  **Recomendada**: dice las dos cosas (sirve como respaldo / no reemplaza al rubricado) sin
+  asustar.
+- **B — Corta**: *"Respaldo interno. No reemplaza al Libro de Obra rubricado."*
+- **C — Formal**: *"Las entradas de este libro se registran con autor, rol y fecha, y no pueden
+  editarse ni eliminarse. Constituyen un respaldo documental interno y no sustituyen al Libro de Obra
+  rubricado exigido por el colegio profesional o la autoridad municipal."*
+
+**Dónde**: descartable la primera vez, con el ícono para volver a verlo — el mecanismo ya se usa tres
+veces en la app (cartel UOCRA, aviso de desfasaje, aviso de presupuesto congelado) — **y fijo al pie
+de cualquier exportación a PDF**, cuando exista. Un cartel permanente en pantalla se vuelve
+invisible en dos días.
+
+### 3 · Los audios
+
+- **A — Solo audio, sin texto**: lo más rápido de construir (Storage ya probado). Contra: no se puede
+  buscar nada, y con cincuenta notas el libro se vuelve inútil como respaldo — hay que escuchar una
+  por una para encontrar algo.
+- **B — Audio + transcripción automática**: la mejor experiencia y el mejor respaldo (se busca por
+  palabra), pero suma un servicio externo con costo por minuto y una dependencia nueva. Encaja como
+  función PRO.
+- **C — Audio + una línea de texto opcional que escribe el autor** ("suspensión de hormigonado"):
+  costo cero, búsqueda razonable, y el que graba decide cuánto escribir. **Recomendada para la
+  primera versión**, con **B como mejora PRO después** — y sin retrabajo: la línea de texto va en
+  `contenido`, que ya existe y ya es `not null`.
+
+En los tres casos: el audio se guarda **siempre** (es la prueba de lo que realmente se dijo), y el
+texto es para leer y buscar. Faltaría definir tope de duración y formato al construirlo, no ahora.
+
+# §E · Tamaño y orden sugerido
+
+| Tanda | Qué | Tamaño |
+| --- | --- | --- |
+| **1** | Repositorio + pantalla de los dos libros direccionales, solo texto, con el aviso legal y el "quién y cuándo" | Media |
+| **2** | El Libro de Obra (diario plano) en la tercera solapa | Chica |
+| **3** | Audios (según la decisión 3) + adjuntos | Media |
+| **4** | Numeración/acuse (según la decisión 1) y, si se quiere, la rama de pendientes | Chica |
+
+La migración de la decisión 0 va **antes de la tanda 1** (es una policy, y conviene que la pantalla
+nazca contra la matriz definitiva). La pieza 4 de la visión original (archivo de documentación
+administrativa) queda afuera de este orden: es un gestor de archivos, no una conversación.
 
 ## Fuera de esto, sin tocar
 

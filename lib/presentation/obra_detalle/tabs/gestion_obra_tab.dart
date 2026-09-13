@@ -14,6 +14,7 @@ import '../screens/adicionales_screen.dart';
 import '../screens/carga_avance_rubros_screen.dart';
 import '../screens/detalle_certificado_screen.dart';
 import '../screens/quitas_demasias_screen.dart';
+import 'barra_acciones_obra.dart';
 import 'cartel_firma_pendiente.dart';
 import 'panel_config_certificacion.dart';
 import 'presupuesto_estado_panel.dart';
@@ -537,74 +538,55 @@ class _GestionObraTabState extends State<GestionObraTab> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Un solo Wrap con los 4 -- antes "Nuevo certificado" estaba en el Wrap exterior y
-            // los otros 3 metidos en un Row interno de ancho fijo, que no podía reflowar entre
-            // ellos: con fuente del sistema grande o pantalla angosta, los 3 juntos desbordaban
-            // (69px, encontrado por Seba, 2026-09-13) porque un Row nunca baja de línea solo, a
-            // diferencia de un Wrap. Achatado a un solo nivel para que cualquiera de los 4 baje de
-            // línea según lo que entre, nunca recorte texto ni desplace lateral.
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
+            // Grilla de ícono + etiqueta en un solo bloque, no botones sueltos -- ver
+            // BarraAccionesObra para el por qué de la forma y de las que se descartaron. Acá solo
+            // vive QUÉ acciones hay y quién las ve.
+            //
+            // Historial de lo que ya se corrigió en esta barra, para no repetirlo: los 4 botones
+            // vivían en un Wrap plano porque antes 3 de ellos estaban en un Row de ancho fijo que
+            // no podía reflowar y desbordaba 69px con fuente grande (Seba, 2026-09-13). La grilla
+            // hereda esa lección: ninguna altura fija, columnas calculadas del ancho real.
+            BarraAccionesObra(
+              acciones: [
                 // Visible para admin_maestro/profesional/constructor — los 3 mismos roles que
                 // certificados_insert/certificados_update (0009/0010) ya autorizan a crear o
                 // seguir cargando un Borrador. Nadie más lo ve: un Cliente/Apoderado/Veedor no
                 // puede iniciar esto, mostrarlo deshabilitado no aportaría nada.
                 if (widget.userContext?.puedeCargarAvance == true)
-                  OutlinedButton.icon(
-                    onPressed: _onNuevoCertificado,
-                    icon: const Icon(Icons.add, size: 16),
-                    label: const Text(
-                      'Nuevo certificado',
-                      style: TextStyle(fontSize: 11),
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFF1B365D),
-                    ),
+                  AccionObra(
+                    icono: Icons.note_add_outlined,
+                    label: 'Nuevo certificado',
+                    onTap: _onNuevoCertificado,
+                    // La acción principal de la solapa: mismo tamaño que el resto, ícono en fondo
+                    // lleno. Jerarquía sin romper la grilla.
+                    destacada: true,
                   ),
                 // Visible para cualquiera -- es informativo para todos (el propietario se
                 // entera de una demasía/quita comentando ahí, no aprobándola, docs/
                 // adicionales_quitas_demasias_diagnostico.md §6). Aprobar/rechazar/crear se
                 // gatean adentro de la pantalla, no acá.
-                OutlinedButton.icon(
-                  onPressed: () => _abrirQuitasDemasias(),
-                  icon: const Icon(Icons.rule_outlined, size: 16),
-                  label: const Text(
-                    'Quitas y Demasías',
-                    style: TextStyle(fontSize: 11),
-                  ),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: const Color(0xFF1B365D),
-                  ),
+                AccionObra(
+                  icono: Icons.rule_outlined,
+                  label: 'Quitas y Demasías',
+                  onTap: _abrirQuitasDemasias,
                 ),
                 // Visible para cualquiera, mismo criterio que "Quitas y Demasías" -- cualquier
                 // miembro puede solicitar un adicional (ambigüedad E,
                 // docs/adicionales_quitas_demasias_diagnostico.md §11.3), la barrera real es
-                // la aprobación, gateada adentro de la pantalla (Tanda 2, todavía sin construir
-                // -- por ahora esta pantalla solo permite crear y ver el historial).
-                OutlinedButton.icon(
-                  onPressed: () => _abrirAdicionales(),
-                  icon: const Icon(Icons.add_business_outlined, size: 16),
-                  label: const Text(
-                    'Adicionales',
-                    style: TextStyle(fontSize: 11),
-                  ),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: const Color(0xFF1B365D),
-                  ),
+                // la aprobación, gateada adentro de la pantalla.
+                AccionObra(
+                  icono: Icons.add_business_outlined,
+                  label: 'Adicionales',
+                  onTap: _abrirAdicionales,
                 ),
-                OutlinedButton.icon(
-                  onPressed: _abrirConfigCertificacion,
-                  icon: const Icon(Icons.settings_outlined, size: 16),
-                  label: const Text(
-                    'Configuración',
-                    style: TextStyle(fontSize: 11),
-                  ),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: const Color(0xFF1B365D),
-                  ),
+                AccionObra(
+                  icono: Icons.settings_outlined,
+                  label: 'Configuración',
+                  onTap: _abrirConfigCertificacion,
                 ),
+                // Acá entran las del Libro de Obra cuando se construya (Órdenes de Servicio y
+                // Notas de Pedido, docs/libro_obra_horizonte.md): son dos AccionObra más, sin
+                // tocar el layout.
               ],
             ),
             const SizedBox(height: 8),
