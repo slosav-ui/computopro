@@ -154,10 +154,34 @@ certificación). `entidad_id` en `null` — no es una fila de ninguna entidad �
 `Pendiente.desdeRow` devuelve `null` para un `tipo` que la app no conoce y esa fila se saltea (0117).
 Así que la `0123` se puede aplicar y verificar por SQL sin que la app vigente se entere.
 
-**Decisión de alcance, anotada**: el período corre **por intervalo desde el ancla**, no por corte de
-calendario (fin de mes). Si el uso real pide "siempre los días 30", es una columna más
-(`certificacion_dia_corte`) y un `case` en el helper — no se hace ahora porque el aviso es un
-recordatorio, no una regla contable.
+**Decisión de alcance, confirmada por Seba (2026-09-13)**: el período corre **por intervalo desde el
+ancla**, no por corte de calendario (fin de mes) — *"es un recordatorio, no una regla contable"*. Si
+el uso real pide "siempre los días 30", es una columna más (`certificacion_dia_corte`) y un `case` en
+el helper.
+
+### 3.2 Período sugerido al crear el borrador — dentro de la Tanda 1
+
+Confirmado por Seba: entra en esta tanda, *"evita que el usuario tipee el mismo texto cada vez"*.
+Hoy `certificados.periodo` es texto libre que se tipea a mano en el diálogo de "nuevo borrador".
+
+**Queda como sugerencia editable, nunca fijo** — es un default en el campo, no un valor calculado que
+la base imponga: hay obras que van a querer escribir otra cosa ("Certificado de cierre", "Quincena de
+lluvia"), y `periodo` es libre a propósito.
+
+**Qué texto, según la periodicidad pactada** (todos derivados del fin del período que se está
+certificando, o sea el valor de `proximo_periodo_certificacion`):
+
+| Periodicidad | Sugerencia |
+| --- | --- |
+| `mensual` | el mes y el año del cierre del período — "Septiembre 2026" |
+| `quincenal` | "1ª quincena de Septiembre 2026" si el cierre cae hasta el 15, "2ª quincena…" si no |
+| `semanal` | "Semana del 08/09 al 14/09" (los 7 días que cierran en esa fecha) |
+| sin pactar (`null`) | vacío, como hoy: lo tipea la persona |
+
+**Dónde vive el cálculo**: en Dart, con las etiquetas (mismo criterio que el resto del proyecto), pero
+**el ancla no se recalcula en Dart** — se pide por RPC a `proximo_periodo_certificacion(obra_id)`, que
+ya sabe las tres reglas de ancla. Así no hay dos implementaciones de "cuándo cierra el período" que
+puedan divergir.
 
 ---
 
