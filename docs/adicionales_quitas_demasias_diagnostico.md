@@ -271,14 +271,37 @@ situación de la obra) o al entrar a la obra, nunca en la card de `ObrasListScre
 primera versión de esta sección, que proponía mostrar una aclaración de "condiciones distintas" en
 el propio dashboard — eso ya es más dato del que la card tiene que cargar.
 
-**La card, con esto aplicado:**
+**La card, con esto aplicado — corregido por Seba el 2026-09-13, ver el bloque siguiente:**
 - **Pactado** sigue siendo el número grande (§8/§10 de la otra pieza, sin cambios) — el contrato
   original, tal cual se firmó.
-- Debajo, una sola línea: **"Total con adicionales: $T (N aprobados)"** — la suma de Pactado + el
+- Debajo, una sola línea: ~~**"Total con adicionales: $T (N aprobados)"**~~ — la suma de Pactado + el
   monto congelado de cada adicional aprobado. Nada más — sin desglose, sin aclaración de
   condiciones mezcladas, sin etiquetas.
 - Esa línea es tappable y lleva a la obra — nunca abre el detalle ahí mismo.
 - Sin adicionales aprobados (caso de hoy, 100% de las obras): la card no cambia en nada.
+
+**Corrección (Seba, 2026-09-13): el adicional aprobado va con el MISMO peso visual que el pactado,
+no escondido dentro de la suma.** La implementación de arriba dejaba el pactado como número cerrado
+y el adicional solo sumado en el total — pero **los dos son montos congelados y firmados**, ninguno
+es una estimación, así que tratarlos distinto los hacía leer como "el precio de la obra" vs. "un
+detalle de la suma". La card, corregida, muestra **tres renglones con el mismo tratamiento** (rótulo
+chico a la izquierda + cifra 17px a la derecha, candado en los dos firmados):
+
+    🔒 Presupuesto Pactado            $ 12.345.678
+    🔒 Adicionales Aprobados (2)       $ 1.234.567
+    ───────────────────────────────────────────────
+       Total                          $ 13.580.245
+
+- **Solo esos tres renglones.** El desglose de lo certificado y lo que falta **no** va en la
+  portada — eso vive al entrar a la obra. El criterio de dashboard escueto de esta sección no
+  cambia: lo que cambia es que "escueto" no puede significar esconder un monto firmado.
+- Toda la card sigue siendo tappable y lleva a la obra, como antes.
+- **Obra congelada sin adicionales aprobados**: un solo número, la card no cambia en nada.
+- **Obra sin congelar con adicionales aprobados**: tampoco cambia — no hay total, porque no se
+  suman a un estimado que se sigue moviendo (el pactado todavía no existe). Se siguen mostrando
+  solos, en la línea de referencia de siempre.
+- Implementado en `_buildMontoCerrado` (`lib/presentation/dashboard/obras_list_screen.dart`) — un
+  solo helper para los tres renglones, así el "mismo peso" no puede desincronizarse al editar uno.
 
 **Todo lo demás — cada adicional con su monto, su etiqueta de configuración (§10.1), la aclaración
 de condiciones mezcladas cuando corresponda, la entrada para ver/aprobar/observar uno — vive en la
@@ -1023,6 +1046,13 @@ debajo del número grande de la card: "Total con adicionales: $T (N aprobados)" 
 moviendo — se muestra "Adicionales aprobados: $X (N)". Sin aprobados, la card no cambia. Tocar la
 card ya lleva a la obra, no hizo falta un toque propio para la línea.
 
+**Reemplazada el 2026-09-13 por los tres renglones de peso igual (§10.2, bloque de corrección):**
+Pactado / Adicionales Aprobados / Total, los tres con el mismo rótulo chico + cifra de 17px vía
+`_buildMontoCerrado`. El repositorio y los datos no cambiaron — solo el tratamiento visual, porque
+el adicional aprobado es tan firmado y tan cerrado como el pactado y no puede leerse como un detalle
+de la suma. Los dos casos de borde siguen igual: sin aprobados, un solo número; obra sin congelar,
+los aprobados solos y sin total.
+
 Avisos de pendientes (pedido aparte, vale para todos los circuitos): `docs/avisos_pendientes_diseno.md`.
 
 **Bug real encontrado por Seba probando esa línea (2026-09-12)**: un adicional aprobado con
@@ -1147,6 +1177,18 @@ sigue sin enterarse de los adicionales, decisión de §4), `mis_pendientes()`, d
   cuando en Gestión de Obra no los ve es una inconsistencia, y con la tarjeta nueva se agrava."
 - Decisiones menores de §14.2: aceptadas.
 
-**Migración escrita, sin aplicar**: `0120_adicionales_seguimiento_avance.sql`. Dart (lista de §14.4,
-con B corregida: `puedeCertificarAvanceAdicional` = admin_maestro/profesional/constructor, getter
-propio aunque hoy coincida con `puedeCargarAvance`) después de aplicarla.
+**`0120` aplicada y verificada por Seba (2026-09-12), commit `7e89368`.**
+
+**Dart, hecho — `flutter analyze` limpio, sin verificar en el emulador:** `ModificacionObra`
+(`porcentajeAvance`, `montoCertificado`), `AdicionalesRepository.certificarAvance`,
+`UserContext.puedeCertificarAvanceAdicional` (regla 18), y en `AdicionalesScreen`: barra + "Certificado
+$ X · Saldo $ Y" en la tarjeta del aprobado, botón "Certificar avance" hasta el 100%, diálogo con el
+mismo gesto que la carga de avance de la obra (% del período, acumulado/disponible, "excede lo
+disponible", confirmación "queda firme"). Gate de montos del hallazgo: pesos solo para
+`puedeVerMontosGestionObra` o quien puede aprobar/rechazar adicionales — incluye el precio final del
+diálogo de monto fijo (con la cascada de Factor K, al constructor le dejaba deducir los márgenes).
+
+**Queda afuera, a propósito**: el dashboard (`ObrasListScreen`) sigue mostrando montos a cualquier
+miembro — el pactado, el estimado y ahora el renglón de adicionales aprobados con su total. No es
+de adicionales: el
+dashboard no tiene un `UserContext` por obra y nunca filtró montos por rol. Pieza aparte si se decide.
