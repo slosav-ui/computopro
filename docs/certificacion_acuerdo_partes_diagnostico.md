@@ -135,6 +135,16 @@ andando.
    ese certificado no se emite hasta que se invierten los roles de la propuesta. El mensaje de error
    de la función dice exactamente eso.
 
+   > **REVERTIDO a las pocas horas por la `0125` (Seba, 2026-09-13).** Este guard partía de que
+   > emitir era de quien tenía `puede_editar_presupuesto`, y eso mismo cambió: ahora emite el
+   > profesional, o el cliente si no hay profesional. Con esa regla, "no emite el mismo que propuso"
+   > estaba mal — si proponía el profesional, emitía el constructor, que es exactamente lo que la
+   > matriz nueva prohíbe. El profesional puede proponer y emitir su propia propuesta una vez que el
+   > constructor la conformó, y de paso desaparece el caso de bloqueo que se había aceptado acá.
+   > **Motivo completo en `docs/etapa3_roles_permisos_diseno_datos.md` §11.** Lo que la 0124 dejó
+   > intacto y sigue vigente: la conformidad obligatoria cuando hay contraparte, y que la den dos
+   > personas distintas (check de la tabla).
+
 3. **El `invitado_veedor` tampoco ve el borrador** mientras haya profesional. La regla escrita es
    "quien no carga avance no ve el borrador si hay profesional", y el veedor cae ahí. *"Es coherente
    con la regla y el borrador es la discusión técnica entre las partes. Al que mira desde afuera le

@@ -506,7 +506,8 @@ totales y certificados, no APU ni precios unitarios: eso lo define su rol, no ca
 |---|---|---|
 | Editar cómputo (tildar, cantidades, precio manual), precios de insumos, Factor K e impuestos, vista del presupuesto, valor hora y cargas sociales, orden de rubros, importar | admin/profesional por rol | **permiso** |
 | Presentar y congelar el presupuesto | admin/profesional | **permiso** |
-| Emitir certificado, subir el PDF firmado | admin/profesional | **permiso** |
+| Emitir certificado | admin/profesional | **REVERTIDO por §11 (0125)**: ya no es el permiso — emite el profesional, o el cliente si no hay profesional, o el admin si no hay ninguno |
+| Subir el PDF firmado | admin/profesional | **permiso** (sin cambios: la 0125 no lo toca) |
 | Proponer/resolver la anulación de un certificado | profesional/constructor | **permiso** (§10.6-1) |
 | Cerrar un certificado cobrado | admin/constructor | **permiso** (con §9-C, el profesional entra) |
 | Aprobar quita/demasía (cambia cantidades del cómputo y del congelado) | profesional/constructor | **permiso** (§10.6-1) |
@@ -613,3 +614,77 @@ es `puede_aprobar_monto` (ajustes de contrato, §9.5-B) — verificado con el mi
   `revisar_importacion_screen.dart`, quitas/demasías, Solapa APU y Mat y MO) no cambian de código:
   toman el permiso nuevo a través de los getters. Se revisan uno por uno en la prueba.
 - `CLAUDE.md` — la matriz, con "rol = qué ves, permiso = qué editás".
+
+---
+
+## 11. Cambio de matriz: quién EMITE un certificado (2026-09-13) — revierte lo de §10.3
+
+**Esta es la segunda vez que se mueve la autoridad de emisión. El motivo está escrito acá entero
+justamente para que nadie lo "corrija" de vuelta mirando la 0121.**
+
+### Lo que decía la 0121
+
+Emitir = `puede_editar_presupuesto`. Argumento textual de Seba en su momento: *"si cotiza y ejecuta
+la obra, es el que emite los certificados"*. O sea que el constructor con el permiso emitía.
+
+### Por qué cambia
+
+**El certificado es lo que va al cliente a pagar, y quien lo cierra no puede ser el que cobra.**
+
+Emitir no es un paso administrativo más del que ejecuta: es el acto por el que la medición acordada
+se convierte en un **documento de cobro dirigido a la otra parte**. Si el que va a cobrar ese
+documento es también el que lo emite, no queda ningún acto de control entre "yo digo que hice esto"
+y "cobrame esto". No es desconfianza: es que sin esa separación el circuito no tiene un cierre real.
+
+Textual de Seba (2026-09-13): *"el profesional es siempre el que cierra el certificado para que vaya
+al cliente a pagarlo. El constructor nunca tiene la potestad de cierre. Y si no hay profesional en la
+obra, el que cierra es el cliente, que es el mismo que paga."*
+
+### La regla, y por qué tiene tres peldaños y no dos
+
+`quien_emite_certificado(obra)` (0125), cada peldaño solo cuando el de arriba no existe en la obra:
+
+1. **profesional** — si hay profesional activo, emite el profesional. Siempre.
+2. **cliente_principal**, o su **apoderado con delegación vigente** — si no hay profesional.
+3. **admin_maestro** — si no hay ni profesional ni cliente.
+
+El tercer peldaño no es comodidad: sin él **se rompe el caso más común al arrancar**, la obra de un
+solo usuario. El bootstrap de la 0033 le da al creador `admin_maestro` y nada más, así que con la
+regla literal de dos peldaños esa obra se queda sin nadie que pueda emitir.
+
+La escalera **nunca le da la emisión al `constructor` como rol**, en ninguna configuración. Un
+usuario que sea admin_maestro *y* constructor a la vez sí emite, pero por su fila de admin_maestro:
+en una obra donde esa persona es las dos cosas no hay dos partes que proteger (Seba, al cerrarlo).
+
+Consecuencia deliberada: en una obra con admin_maestro y cliente pero **sin** profesional, el
+administrador no emite — emite el cliente.
+
+### Independiente de quién propuso — se cae el guard de la 0124
+
+El profesional **puede proponer el avance y emitir su propia propuesta**, una vez que el constructor
+le dio la conformidad. Lo que protege la emisión no es que propuesta y emisión sean dos personas
+distintas — eso ya lo garantiza la conformidad, que exige dos y lo sostiene un check de la tabla —
+sino que **el que emite no sea el que cobra**.
+
+Esto confirma, de paso, que la contraparte elegida al escribir la 0124 era la correcta: "el otro lado
+técnico, constructor incluido", y no el "conforma el profesional" que decía el diagnóstico original.
+Con la otra lectura, el caso "profesional propone → constructor conforma → profesional emite" no
+existía.
+
+### "Cerrar" significa dos cosas distintas — no confundirlas
+
+| Acto | Función | Quién | Por qué |
+| --- | --- | --- | --- |
+| Cerrar el certificado para que vaya a cobrarse | `emitir_certificado` | profesional → cliente → admin | el que emite no puede ser el que cobra |
+| Registrar que **ya** se cobró ("Impactado y Cerrado") | `marcar_certificado_impactado` | `puede_editar_presupuesto` (admin/constructor/profesional) | **el que cobra cierra su propio cobro** |
+
+Confirmado por Seba: `marcar_certificado_impactado` **no se toca**. Tampoco la anulación — proponerla
+y resolverla sigue siendo de las dos partes técnicas, porque *"anular es reconocer que la medición
+estuvo mal, y eso es de los dos, no una potestad de cierre"*.
+
+### Qué le queda a `puede_editar_presupuesto`
+
+No desaparece: sigue gobernando la edición del presupuesto, `marcar_certificado_impactado`,
+`subir_pdf_firmado_certificado`, la anulación y los adicionales. Lo que cambia es su significado, que
+pasa a ser más chico y más honesto: de "firma todos los actos formales del certificado" a **"edita el
+presupuesto y cierra el cobro"**.
