@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "949679004458",
+    "project_id": "computopro-31a44",
+    "storage_bucket": "computopro-31a44.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:949679004458:android:ca6be93d963700e7811c53",
+        "android_client_info": {
+          "package_name": "com.computopro.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA87GO5CrAwRDv5EELmJd698iRsJSlN6vE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

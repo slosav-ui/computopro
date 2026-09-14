@@ -1,4 +1,4 @@
-package com.example.mi_primera_app
+package com.computopro.app
 
 import io.flutter.embedding.android.FlutterFragmentActivity;
 

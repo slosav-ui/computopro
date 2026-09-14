@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'config/app_theme.dart';
 import 'core/network/timeout_http_client.dart';
+import 'services/push_service.dart';
 import 'presentation/auth/auth_gate.dart';
 import 'presentation/obra_detalle/screens/presupuestos_screen.dart';
 
@@ -19,6 +20,10 @@ Future<void> main() async {
     publishableKey: _supabaseAnonKey,
     httpClient: TimeoutHttpClient(http.Client()),
   );
+  // Firebase, solo para el push (Tanda 1b). Silencioso: si falla, la app arranca igual sin
+  // notificaciones -- no es una función de la que dependa nada todavía.
+  await PushService.inicializar();
+
   runApp(const MiAppApu());
 }
 

@@ -2,10 +2,21 @@ plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+    // Firebase Cloud Messaging (Tanda 1b). Va DESPUES del plugin de Flutter: necesita que el
+    // modulo de Android ya este configurado para inyectarle los recursos de google-services.json.
+    id("com.google.gms.google-services")
 }
 
 android {
-    namespace = "com.example.mi_primera_app"
+    // Cambiado el 2026-09-14, antes de crear el proyecto de Firebase: el applicationId es la
+    // identidad definitiva de la app y NO se puede cambiar una vez publicada sin perderla -- los
+    // usuarios ya instalados se quedan en la vieja. Y el prefijo de ejemplo que traia Flutter
+    // ademas esta prohibido en Google Play.
+    //
+    // namespace es el paquete del codigo generado (build-time) y applicationId es la identidad
+    // publicada: son cosas distintas y podrian diferir, pero mantenerlos iguales evita tener que
+    // explicar cual es cual cada vez.
+    namespace = "com.computopro.app"
     // Fijo en 36, no flutter.compileSdkVersion (que hoy resuelve a 34 con el Flutter SDK
     // instalado) -- file_picker (vía flutter_plugin_android_lifecycle) exige compilar contra 36.
     // Solo compileSdk: compilación únicamente, sin efecto en runtime ni en qué dispositivos
@@ -21,7 +32,7 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.mi_primera_app"
+        applicationId = "com.computopro.app"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         // `record` (nota de voz del libro, tanda 3) pide API 23 como piso. `maxOf` y no un 23

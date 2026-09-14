@@ -18,6 +18,7 @@ import '../../services/obras_repository.dart';
 import '../../services/adicionales_repository.dart';
 import '../../services/certificados_repository.dart';
 import '../../services/pendientes_repository.dart';
+import '../../services/push_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/certificado_subitems_avance_repository.dart';
 import '../../services/indices_economicos_repository.dart';
@@ -81,6 +82,7 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
   final CertificadoSubitemsAvanceRepository _avanceRepository =
       CertificadoSubitemsAvanceRepository();
   final PendientesRepository _pendientesRepository = PendientesRepository();
+  final PushService _push = PushService();
   final CertificadosRepository _certificadosRepository = CertificadosRepository();
 
   // Lo que espera la acción del usuario, en todas sus obras (0117) -- cartel arriba de la lista y
@@ -378,6 +380,15 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
     } catch (_) {
       return {};
     }
+  }
+
+  /// El borrado del dispositivo va **antes** del signOut, no después: con la sesión ya cerrada
+  /// `auth.uid()` es null del lado de la base y el `delete` no matchea nada -- el teléfono se
+  /// quedaría recibiendo los avisos de quien se acaba de ir. Es el punto más fácil de romper de
+  /// toda la pieza del push.
+  Future<void> _cerrarSesion() async {
+    await _push.olvidarEsteDispositivo();
+    await _authService.cerrarSesion();
   }
 
   Future<List<Pendiente>> _pendientesSeguro() async {
@@ -2364,7 +2375,7 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
           IconButton(
             icon: const Icon(Icons.logout, color: Colors.white),
             tooltip: 'Cerrar sesión',
-            onPressed: () => _authService.cerrarSesion(),
+            onPressed: _cerrarSesion,
           ),
         ],
       ),
