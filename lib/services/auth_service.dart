@@ -1,3 +1,4 @@
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Excepción con mensaje ya traducido a español, lista para mostrar en la UI.
@@ -75,5 +76,37 @@ class AuthService {
       return 'Confirmá tu email antes de iniciar sesión.';
     }
     return e.message;
+  }
+}
+
+/// El último mail con el que se entró en este dispositivo, para dejarlo precargado la próxima vez
+/// (pedido de Seba, 2026-09-14: *"alguien en obra con el teléfono en la mano no va a querer tipear
+/// la dirección completa cada vez"*). Mismo mecanismo que `InvitacionPendiente`:
+/// `SharedPreferences`, una clave, tres métodos.
+///
+/// **Solo el mail, nunca la contraseña.** Guardar una contraseña acá sería guardarla en claro en el
+/// dispositivo; la contraseña la recuerda el llavero del sistema o el navegador, que es para lo que
+/// están los `autofillHints` y el `AutofillGroup` de la pantalla de login.
+///
+/// No se borra al cerrar sesión: cerrar sesión es irse por un rato, y volver a entrar con el mail
+/// ya puesto es justamente el caso que esto resuelve. Se pisa solo cuando alguien entra con otro
+/// mail -- en un teléfono compartido, el último que entró es el que queda.
+class UltimoEmail {
+  static const _clave = 'auth_ultimo_email';
+
+  static Future<void> guardar(String email) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_clave, email.trim());
+  }
+
+  static Future<String?> leer() async {
+    final prefs = await SharedPreferences.getInstance();
+    final valor = prefs.getString(_clave)?.trim();
+    return (valor == null || valor.isEmpty) ? null : valor;
+  }
+
+  static Future<void> borrar() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_clave);
   }
 }
