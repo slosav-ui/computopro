@@ -1119,6 +1119,36 @@ sin enviar y descongela su obra hija, con una fila en audit_log que lo explica.
 adicionales" del dashboard y el cartel de pendientes: circuito completo con roles separados
 (profesional envía, cliente aprueba), total visible en la card con 2 decimales.
 
+## 14-bis. REVERTIDO (2026-09-14): el adicional certifica como una obra
+
+**Lo que sigue en §14 describe una decisión que se revirtió, y conviene leerla sabiéndolo.** Se deja
+entera porque el razonamiento importa y porque el argumento central sigue siendo válido.
+
+§14 cerró el seguimiento del adicional como *"un porcentaje y un monto certificado por adicional
+aprobado, **sin ciclo de vida propio**"*, con este argumento: *"construir un segundo circuito de
+certificación reducido para adicionales sería duplicar lo que ya existe"*.
+
+**El argumento era bueno. Lo que faltaba era un dato.** Con el PDF real de Galpón Mix a la vista
+(2026-09-14), `CERTIFICADO 1 ADICIONAL.pdf` tiene número, fecha, porcentaje por partida, fondo de
+reparo del 5% y neto a pagar. Seba: *"el camino chico me deja a mitad de camino y hay que rehacerlo
+igual"*.
+
+Y el argumento de §14, bien mirado, apuntaba para el otro lado: **el adicional no necesita un
+circuito reducido, necesita el mismo.** Un adicional presupuestado ya ES una obra (`0113`), con sus
+partidas, sus miembros, sus retenciones y numeración propia de certificados. No había nada que
+duplicar — el circuito duplicado era justamente el porcentaje suelto.
+
+`0148` lo revierte: `modificaciones_obra.porcentaje_avance` y `monto_certificado` pasan a ser el
+**resumen derivado** de los certificados de la obra hija, `certificar_avance_adicional` queda
+obsoleta con un mensaje que indica el camino nuevo, y con eso se cierra el hallazgo 3 de
+`docs/certificado_base_de_calculo_hallazgos.md`.
+
+La ambigüedad A de §14.2 (cómo se cobra) queda respondida de hecho por la Opción 1 ampliada: el
+certificado del adicional recorre los mismos estados que cualquier otro, aparte del certificado de
+la obra.
+
+---
+
 ## 14. Seguimiento de avance del adicional — diagnóstico (2026-09-12)
 
 Lo último que queda de la Tanda 2. Ya cerrado (§4, §7-C): un porcentaje y un monto certificado por

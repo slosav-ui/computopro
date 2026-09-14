@@ -102,7 +102,7 @@ certificado.)
 
 ---
 
-## Hallazgo 3 — el certificado de un adicional no es representable (2026-09-14)
+## Hallazgo 3 — el certificado de un adicional no es representable — **CERRADO por la 0148**
 
 Salió de la misma carga, cuando Seba vio en el teléfono que el adicional decía **0% certificado**
 aunque su certificado estaba emitido.
@@ -126,7 +126,11 @@ Así que hoy la app puede decir *"se certificó el 26,77% del adicional, USD 979
 el papel que el comitente recibe. Para una obra con adicionales certificados —que es el caso normal—
 es una asimetría notoria: el contrato tiene certificados de verdad y sus adicionales no.
 
-**No es urgente para la demostración** (el adicional se ve con su avance y su monto), pero conviene
-que esté escrito antes de que alguien lo pida en una obra real. Es una pieza propia, no un arreglo:
-implica decidir si un adicional emite certificados propios, si se certifica junto con el certificado
-de la obra madre en un mismo documento, o si sigue siendo solo un porcentaje.
+**CERRADO el mismo día por la `0148`**, con la primera de las tres opciones: el adicional emite sus
+propios certificados. Seba: *"el camino chico me deja a mitad de camino y hay que rehacerlo igual"*.
+
+Y resultó ser la opción más chica de las tres, no la más grande: **un adicional ya ES una obra**
+(`0113`), con partidas, miembros, retenciones propias y numeración de certificados por obra. La
+maquinaria ya funcionaba sobre la hija; lo único que faltaba era usarla y que la madre se entere. La
+`0148` no construye un segundo circuito — **borra el segundo circuito** (el porcentaje suelto) y deja
+el que ya existía.
