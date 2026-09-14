@@ -1,33 +1,63 @@
 import 'obra_member.dart';
 
-/// Los 3 "libros" opcionales de Gestión de Obra — ver
-/// docs/etapa3_roles_permisos_diseno_datos.md, sección 5.
+/// Los libros de `libro_entradas.libro` (0003). **La app usa uno solo: `obra`**, el libro de
+/// comunicaciones de obra (cambio de alcance de Seba, 2026-09-14).
+///
+/// `ordenServicio` y `notaPedido` siguen existiendo en el check de la columna porque hay filas de
+/// prueba con esos valores, pero **ninguna pantalla los escribe ni los muestra**. En obra la empresa
+/// no responde adentro de la orden: contesta con una nota de pedido, que es otro libro — reproducir
+/// ese ida y vuelta complicaba sin aportar, y el respaldo legal sigue siendo el libro rubricado en
+/// papel. Ver docs/libro_obra_horizonte.md.
 enum TipoLibro { obra, ordenServicio, notaPedido }
 
-/// Una entrada en cualquiera de los 3 libros. `entradaPadreId` modela acuse
-/// de recibo / respuesta como entrada hija de la original — no hace falta
-/// una tabla de "acuses" aparte.
+extension TipoLibroColumna on TipoLibro {
+  /// El valor de la columna. **`name` no sirve**: da `ordenServicio` y la columna dice
+  /// `orden_servicio` — el check constraint de la 0003 rechaza cualquier otra cosa.
+  String get columna => switch (this) {
+        TipoLibro.obra => 'obra',
+        TipoLibro.ordenServicio => 'orden_servicio',
+        TipoLibro.notaPedido => 'nota_pedido',
+      };
+
+  String get titulo => switch (this) {
+        TipoLibro.obra => 'Libro de obra',
+        TipoLibro.ordenServicio => 'Órdenes de Servicio',
+        TipoLibro.notaPedido => 'Notas de Pedido',
+      };
+}
+
+TipoLibro tipoLibroDesdeColumna(String? valor) => switch (valor) {
+      'orden_servicio' => TipoLibro.ordenServicio,
+      'nota_pedido' => TipoLibro.notaPedido,
+      _ => TipoLibro.obra,
+    };
+
+/// Una entrada del libro de comunicaciones de obra.
 ///
-/// Reglas de escritura por libro (definición cerrada, ver doc §5 y §6.7):
-/// - `obra`: escriben admin_maestro, profesional, constructor, cliente_principal.
-///   invitado_veedor es siempre de solo lectura; invitado_apoderado solo con
-///   delegación activa.
-/// - `ordenServicio`: solo profesional genera entradas raíz; constructor
-///   solo responde con una entrada hija (acuse de recibo).
-/// - `notaPedido`: solo constructor genera entradas raíz; profesional y
-///   cliente_principal responden con una entrada hija.
+/// **Append-only, y no por convención de la UI**: la RLS de la `0004` no tiene políticas de UPDATE
+/// ni de DELETE, así que una entrada cargada no se edita ni se borra desde ningún lado.
+///
+/// Quién escribe (matriz de la `0004` corregida por la `0134`): admin_maestro, profesional y
+/// constructor. **El cliente no escribe** — lee todo.
+///
+/// `entradaPadreId` existe en la tabla y **la app no lo usa**: la conversación es plana. Se conserva
+/// por si algún día se agrega "responder citando"; el trigger de la `0137` ya protege ese caso.
 class LibroEntrada {
   final String id;
   final String obraId;
   final TipoLibro libro;
   final String autorUsuarioId;
-  final RolProyecto autorRol; // con qué rol firmó, relevante si tiene varios roles en la obra
+
+  /// Con qué rol firmó, que no es lo mismo que quién es: alguien con dos roles en la obra elige con
+  /// cuál escribe, y eso queda registrado.
+  final RolProyecto autorRol;
+
   final String contenido;
   final List<String> adjuntos;
   final String? entradaPadreId;
   final DateTime fechaCreacion;
 
-  LibroEntrada({
+  const LibroEntrada({
     required this.id,
     required this.obraId,
     required this.libro,
@@ -39,65 +69,24 @@ class LibroEntrada {
     required this.fechaCreacion,
   });
 
-  LibroEntrada copyWith({
-    String? id,
-    String? obraId,
-    TipoLibro? libro,
-    String? autorUsuarioId,
-    RolProyecto? autorRol,
-    String? contenido,
-    List<String>? adjuntos,
-    String? entradaPadreId,
-    DateTime? fechaCreacion,
-  }) {
+  /// Una fila de `libro_entradas` tal como la devuelve Supabase.
+  ///
+  /// Sin `numero`: la `0137` sacó la columna. *"Numerar cada mensaje de una conversación no aporta:
+  /// la fecha y la firma ya dan el orden"* (Seba).
+  factory LibroEntrada.desdeRow(Map<String, dynamic> row) {
     return LibroEntrada(
-      id: id ?? this.id,
-      obraId: obraId ?? this.obraId,
-      libro: libro ?? this.libro,
-      autorUsuarioId: autorUsuarioId ?? this.autorUsuarioId,
-      autorRol: autorRol ?? this.autorRol,
-      contenido: contenido ?? this.contenido,
-      adjuntos: adjuntos ?? this.adjuntos,
-      entradaPadreId: entradaPadreId ?? this.entradaPadreId,
-      fechaCreacion: fechaCreacion ?? this.fechaCreacion,
-    );
-  }
-
-  Map<String, dynamic> toMap() {
-    return {
-      'id': id,
-      'obraId': obraId,
-      'libro': libro.name,
-      'autorUsuarioId': autorUsuarioId,
-      'autorRol': autorRol.name,
-      'contenido': contenido,
-      'adjuntos': adjuntos,
-      'entradaPadreId': entradaPadreId,
-      'fechaCreacion': fechaCreacion.toIso8601String(),
-    };
-  }
-
-  factory LibroEntrada.fromMap(Map<String, dynamic> map) {
-    return LibroEntrada(
-      id: map['id']?.toString() ?? '',
-      obraId: map['obraId']?.toString() ?? '',
-      libro: TipoLibro.values.firstWhere(
-        (e) => e.name == map['libro'],
-        orElse: () => TipoLibro.obra,
-      ),
-      autorUsuarioId: map['autorUsuarioId']?.toString() ?? '',
-      autorRol: RolProyecto.values.firstWhere(
-        (e) => e.name == map['autorRol'],
-        // Mismo criterio conservador que ObraMember.fromMap: ante un rol
-        // corrupto/desconocido, nunca asumir uno con más acceso del real.
-        orElse: () => RolProyecto.invitadoVeedor,
-      ),
-      contenido: map['contenido']?.toString() ?? '',
-      adjuntos: map['adjuntos'] != null ? List<String>.from(map['adjuntos']) : const [],
-      entradaPadreId: map['entradaPadreId']?.toString(),
-      fechaCreacion: map['fechaCreacion'] != null
-          ? DateTime.tryParse(map['fechaCreacion'].toString()) ?? DateTime.now()
-          : DateTime.now(),
+      id: row['id'].toString(),
+      obraId: row['obra_id'].toString(),
+      libro: tipoLibroDesdeColumna(row['libro']?.toString()),
+      autorUsuarioId: row['autor_usuario_id'].toString(),
+      autorRol: rolProyectoDesdeColumna(row['autor_rol']?.toString()),
+      contenido: row['contenido']?.toString() ?? '',
+      adjuntos: row['adjuntos'] == null
+          ? const []
+          : List<String>.from((row['adjuntos'] as List).map((a) => a.toString())),
+      entradaPadreId: row['entrada_padre_id']?.toString(),
+      fechaCreacion:
+          DateTime.tryParse(row['created_at']?.toString() ?? '')?.toLocal() ?? DateTime.now(),
     );
   }
 }

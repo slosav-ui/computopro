@@ -2,6 +2,15 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- Libro de obra, tanda 3. iOS EXIGE estos textos: sin ellos la app no pide el permiso,
+	     se cierra sola la primera vez que se toca el microfono o la camara. Se muestran tal cual
+	     al usuario, asi que dicen para que se usa, no "la app necesita acceso". -->
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Para grabar notas de voz en el libro de obra.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Para sacar fotos y adjuntarlas al libro de obra.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Para adjuntar fotos de la galeria al libro de obra.</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>

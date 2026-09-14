@@ -100,7 +100,7 @@ class ObraMembersRepository {
       id: row['id'].toString(),
       obraId: row['obra_id'].toString(),
       usuarioId: row['usuario_id'].toString(),
-      rol: _rolDesdeColumna(row['rol']?.toString()),
+      rol: rolProyectoDesdeColumna(row['rol']?.toString()),
       invitadoPorUsuarioId: row['invitado_por_usuario_id']?.toString(),
       activo: row['activo'] == true,
       fechaAlta: DateTime.tryParse(row['created_at']?.toString() ?? '') ?? DateTime.now(),
@@ -121,24 +121,4 @@ class ObraMembersRepository {
     );
   }
 
-  RolProyecto _rolDesdeColumna(String? valor) {
-    switch (valor) {
-      case 'admin_maestro':
-        return RolProyecto.adminMaestro;
-      case 'profesional':
-        return RolProyecto.profesional;
-      case 'constructor':
-        return RolProyecto.constructor;
-      case 'cliente_principal':
-        return RolProyecto.clientePrincipal;
-      case 'invitado_veedor':
-        return RolProyecto.invitadoVeedor;
-      case 'invitado_apoderado':
-        return RolProyecto.invitadoApoderado;
-      default:
-        // Fallback más restrictivo posible ante un valor corrupto o desconocido:
-        // nunca asumir un rol con más acceso del que corresponde.
-        return RolProyecto.invitadoVeedor;
-    }
-  }
 }

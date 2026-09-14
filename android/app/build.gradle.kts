@@ -24,7 +24,9 @@ android {
         applicationId = "com.example.mi_primera_app"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        // `record` (nota de voz del libro, tanda 3) pide API 23 como piso. `maxOf` y no un 23
+        // fijo: si el Flutter SDK sube su minimo, este numero no lo tiene que frenar.
+        minSdk = maxOf(flutter.minSdkVersion, 23)
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName

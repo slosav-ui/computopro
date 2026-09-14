@@ -1,5 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.USE_BIOMETRIC"/>
+    <!-- Libro de obra, tanda 3: la nota de voz. `record` lo exige; sin esto la grabacion falla
+         en runtime, no al compilar. NO se declara CAMERA a proposito: image_picker abre la app
+         de camara del sistema, y declarar el permiso lo volveria OBLIGATORIO para instalar sin
+         necesitarlo. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <application
         android:label="computoPRO"
         android:name="${applicationName}"

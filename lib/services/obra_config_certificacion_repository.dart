@@ -23,7 +23,7 @@ class ObraConfigCertificacionRepository {
 
   static const _columnas = 'id, modelo_certificacion, dias_plazo_pago_certificados, '
       'anticipo_pct, fondo_reparo_pct, monto_total_contratado, periodicidad_certificacion, '
-      'modo_carga_avance';
+      'modo_carga_avance, libros_habilitados';
 
   Future<ObraConfigCertificacion> getConfig(String obraId) async {
     final row = await _client.from('obras').select(_columnas).eq('id', obraId).single();
@@ -48,6 +48,7 @@ class ObraConfigCertificacionRepository {
     required double anticipoPct,
     required double fondoReparoPct,
     PeriodicidadCertificacion? periodicidadCertificacion,
+    required bool librosHabilitados,
   }) async {
     final updated = await _client
         .from('obras')
@@ -56,6 +57,7 @@ class ObraConfigCertificacionRepository {
           'anticipo_pct': anticipoPct,
           'fondo_reparo_pct': fondoReparoPct,
           'periodicidad_certificacion': periodicidadCertificacion?.columna,
+          'libros_habilitados': librosHabilitados,
         })
         .eq('id', obraId)
         .select(_columnas)
@@ -157,6 +159,7 @@ class ObraConfigCertificacionRepository {
       montoTotalContratado: (row['monto_total_contratado'] as num?)?.toDouble(),
       periodicidadCertificacion: periodicidadDesdeColumna(row['periodicidad_certificacion']?.toString()),
       modoCargaAvance: modoCargaAvanceDesdeColumna(row['modo_carga_avance']?.toString()),
+      librosHabilitados: row['libros_habilitados'] != false,
     );
   }
 

@@ -26,6 +26,17 @@ dependencies:
   # sin límite de Free que aplicar, un solo desarrollador sosteniendo el proyecto).
   excel: ^4.0.6
 
+  # Libro de obra, tanda 3 (docs/libro_obra_horizonte.md §D decisión 3): adjuntar una foto y una
+  # nota de voz a una entrada. Los tres son plugins NATIVOS -- piden permisos en el manifest de
+  # Android y en el Info.plist de iOS, a diferencia de todo lo que el proyecto usaba hasta ahora.
+  #
+  # image_picker y no solo file_picker (que ya estaba): file_picker elige un archivo que YA existe;
+  # en obra la foto se saca en el momento, con el casco puesto y la partida adelante.
+  image_picker: ^1.1.2
+  # Grabar la nota de voz, y reproducirla. Son dos paquetes porque `record` solo graba.
+  record: ^7.1.1
+  audioplayers: ^6.1.0
+
   cupertino_icons: ^1.0.8
   supabase_flutter: ^2.17.2
   http: ^1.6.0

@@ -17,6 +17,8 @@ import '../../../services/obras_repository.dart';
 import '../screens/adicionales_screen.dart';
 import '../screens/carga_avance_rubros_screen.dart';
 import '../screens/detalle_certificado_screen.dart';
+import '../screens/libro_obra_screen.dart';
+import '../../../services/libro_repository.dart';
 import '../screens/quitas_demasias_screen.dart';
 import 'barra_acciones_obra.dart';
 import 'panel_avance_obra.dart';
@@ -74,6 +76,17 @@ class _GestionObraTabState extends State<GestionObraTab> {
   // Avance certificado (auditoría §2.1: se calculaba desde la 0052 y no se mostraba en ninguna
   // pantalla). null = todavía no cargó o falló -> el panel no se dibuja, no afirma un 0% que no
   // sabe. El catálogo de rubros es solo para ponerle nombre a cada `rubro_id` que devuelve la RPC.
+  /// Si esta obra usa los libros (`0135`). Arranca en `false` para no dibujar el ícono antes de
+  /// saberlo: una puerta que aparece y desaparece se ve peor que una que tarda medio segundo.
+  bool _librosHabilitados = false;
+
+  /// Cuántos mensajes sin leer tiene esta persona en el libro (`0140`). Se muestra como un globito
+  /// sobre el ícono, y en ningún otro lado: *"la pantalla principal es para lo que requiere acción,
+  /// no para conversaciones"* y *"los mensajes del libro nunca van a la pantalla principal, ni
+  /// prendida ni apagada"* (Seba, 2026-09-14). Acá el usuario ya está mirando esta obra, así que el
+  /// número alcanza -- quién escribió se ve entrando.
+  NovedadesLibro? _novedadesLibro;
+
   double? _avancePct;
   List<AvancePonderadoRubro> _avancePorRubro = [];
   List<RubroCatalogo> _catalogoRubros = [];
@@ -84,11 +97,31 @@ class _GestionObraTabState extends State<GestionObraTab> {
     _cargarCertificados();
     _cargarMoneda();
     _cargarAvance();
+    _cargarLibros();
   }
 
   /// Silencioso ante error, mismo criterio que el resto de los datos secundarios de esta solapa
   /// (`PresupuestoEstadoPanel`, `CartelFirmaPendiente`): si falla, los montos siguen mostrándose
   /// en ARS (moneda nace en 'ARS'), nunca rompe la lista de certificados por esto.
+  /// Silencioso ante error, como el resto de los datos secundarios de esta solapa: si la
+  /// config no llega, el ícono no se dibuja. Peor sería ofrecer una puerta que no abre.
+  Future<void> _cargarLibros() async {
+    try {
+      final config = await _configRepository.getConfig(widget.obraId);
+      if (!mounted) return;
+      final novedades = config.librosHabilitados
+          ? await LibroRepository().getNovedades(widget.obraId)
+          : null;
+      if (!mounted) return;
+      setState(() {
+        _librosHabilitados = config.librosHabilitados;
+        _novedadesLibro = novedades;
+      });
+    } catch (_) {
+      // Ver el comentario de arriba.
+    }
+  }
+
   Future<void> _cargarMoneda() async {
     try {
       final monedaFuture = _obrasRepository.getMoneda(widget.obraId);
@@ -157,6 +190,24 @@ class _GestionObraTabState extends State<GestionObraTab> {
       });
     }
   }
+
+  /// El libro de comunicaciones de obra. Sin recarga al volver: esta solapa no muestra nada del
+  /// libro todavía (cuando exista el aviso de mensajes nuevos, sí va a hacer falta).
+  Future<void> _abrirLibro() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => LibroObraScreen(
+          obraId: widget.obraId,
+          userContext: widget.userContext,
+        ),
+      ),
+    );
+    // Abrir el libro lo marca leído, así que al volver el aviso de acá tiene que estar al día.
+    await _cargarLibros();
+  }
+
+
 
   Future<void> _abrirQuitasDemasias() async {
     await Navigator.push(
@@ -830,9 +881,33 @@ class _GestionObraTabState extends State<GestionObraTab> {
                   label: 'Configuración',
                   onTap: _abrirConfigCertificacion,
                 ),
-                // Acá entran las del Libro de Obra cuando se construya (Órdenes de Servicio y
-                // Notas de Pedido, docs/libro_obra_horizonte.md): son dos AccionObra más, sin
-                // tocar el layout.
+                // Los dos libros direccionales (0134 + tanda 1 de docs/libro_obra_horizonte.md).
+                // Dos entradas y no una, aunque abran la misma pantalla en distinta solapa: son dos
+                // flujos que la gente busca por nombre ("mandale una orden de servicio"), no dos
+                // vistas de una misma cosa. La barra se rehízo como grilla justamente para que
+                // estas dos entraran sin rediseñarla.
+                //
+                // Visibles para CUALQUIER miembro, igual que Quitas y Adicionales: el cliente y el
+                // veedor leen los dos libros completos. Quién escribe se gatea adentro, con la
+                // misma matriz que la policy de INSERT -- esconderle la entrada al cliente le
+                // sacaría lo único que sí hace acá, que es leer.
+                // Un solo ícono, y un solo libro desde el cambio de alcance del 2026-09-14.
+                // Esta barra va a sumar por lo menos dos íconos más (avance fotográfico y archivo
+                // de documentación), así que el lugar hace falta.
+                //
+                // Solo si la obra usa el libro (0137). Y visible para CUALQUIER miembro: el cliente
+                // y el veedor lo leen completo, y esconderles la entrada les sacaría lo único que
+                // hacen acá.
+                if (_librosHabilitados)
+                  AccionObra(
+                    icono: Icons.menu_book_outlined,
+                    label: 'Libro de obra',
+                    onTap: _abrirLibro,
+                    // El globito, y nada más: entrar a la obra y ver que hay tres sin leer alcanza.
+                    // Un cartel aparte diciendo lo mismo, en la misma pantalla, es el ruido que este
+                    // ajuste vino a sacar.
+                    pendientes: _novedadesLibro?.cuantos,
+                  ),
               ],
             ),
             const SizedBox(height: 8),

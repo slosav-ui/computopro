@@ -281,6 +281,33 @@ class UserContext {
   bool get puedeCertificarAvanceAdicional =>
       _tieneAlgunRol([RolProyecto.adminMaestro, RolProyecto.profesional, RolProyecto.constructor]);
 
+  // Regla de visibilidad 19: el libro de comunicaciones de obra. Espejo de la rama `'obra'` de la
+  // policy `libro_entradas_insert` como quedó en la 0134.
+  //
+  // El cliente y su apoderado no aparecen, y eso es la decisión 0 de la pieza (Seba, 2026-09-13):
+  // "la comunicación es entre el constructor y el profesional, el cliente solo lee". Hasta la 0134
+  // la base sí lo dejaba escribir -- la app nunca llegó a mostrarlo.
+  //
+  // Con esto la pantalla decide si dibuja el compositor. **No decide si la escritura entra**: eso
+  // lo resuelve la policy, del lado del servidor, con la misma matriz. Los cuatro getters
+  // direccionales (abrir/acusar órdenes y notas) se fueron con el cambio de alcance del 2026-09-14:
+  // ya no hay dos libros ni acuse de recibo.
+  bool get puedeEscribirLibroObra =>
+      _tieneAlgunRol([RolProyecto.adminMaestro, RolProyecto.profesional, RolProyecto.constructor]);
+
+  /// Con qué rol firma esta persona en el libro, o `null` si no escribe. El rol queda registrado en
+  /// la entrada y es parte del registro, así que no se elige por comodidad: sale de la misma matriz
+  /// que autoriza la escritura.
+  ///
+  /// Si alguien tiene varios roles técnicos en la obra firma con el más específico: profesional o
+  /// constructor antes que administrador, porque es el que describe qué está haciendo ahí.
+  RolProyecto? rolParaEscribirLibro() {
+    for (final r in [RolProyecto.profesional, RolProyecto.constructor, RolProyecto.adminMaestro]) {
+      if (_tieneAlgunRol([r])) return r;
+    }
+    return null;
+  }
+
   // ÚNICO helper de delegación de la app, espejo EXACTO de la regla de la BASE (0004/0011/0116):
   // sin ninguna de las dos fechas = delegación permanente, vigente; con las dos, tiene que caer
   // dentro del rango; con una sola cargada, no vigente (en SQL `now() between inicio and fin` da

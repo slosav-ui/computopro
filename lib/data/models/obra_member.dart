@@ -9,6 +9,57 @@ enum RolProyecto {
   invitadoApoderado,
 }
 
+/// El valor de la columna `rol` en la base (`obra_members.rol`, `libro_entradas.autor_rol`).
+/// `RolProyecto.name` NO sirve: da `adminMaestro`, y la columna dice `admin_maestro`.
+///
+/// **No confundir con el par de `invitacion.dart`** (`columnaDesdeRol` / `rolDesdeColumna`), que es
+/// el subconjunto INVITABLE: ese excluye `admin_maestro` a propósito —no es un rol que se invite, y
+/// su check constraint tampoco lo acepta— y por eso mapea un `admin_maestro` inesperado a veedor.
+/// Acá hace falta el mapeo completo: el administrador **sí** escribe en el Libro de Obra.
+String rolProyectoAColumna(RolProyecto rol) => switch (rol) {
+      RolProyecto.adminMaestro => 'admin_maestro',
+      RolProyecto.profesional => 'profesional',
+      RolProyecto.constructor => 'constructor',
+      RolProyecto.clientePrincipal => 'cliente_principal',
+      RolProyecto.invitadoVeedor => 'invitado_veedor',
+      RolProyecto.invitadoApoderado => 'invitado_apoderado',
+    };
+
+/// La vuelta. **Fallback al rol con menos acceso** ante un valor corrupto o desconocido: nunca
+/// asumir uno con más del que corresponde.
+///
+/// Vive acá y no adentro de un repositorio porque ya la necesitan dos (`ObraMembersRepository` y
+/// `LibroRepository`), y una tercera copia de este `switch` es exactamente la clase de duplicación
+/// que ya divergió una vez en este proyecto con la delegación.
+RolProyecto rolProyectoDesdeColumna(String? valor) {
+  switch (valor) {
+    case 'admin_maestro':
+      return RolProyecto.adminMaestro;
+    case 'profesional':
+      return RolProyecto.profesional;
+    case 'constructor':
+      return RolProyecto.constructor;
+    case 'cliente_principal':
+      return RolProyecto.clientePrincipal;
+    case 'invitado_veedor':
+      return RolProyecto.invitadoVeedor;
+    case 'invitado_apoderado':
+      return RolProyecto.invitadoApoderado;
+    default:
+      return RolProyecto.invitadoVeedor;
+  }
+}
+
+/// Cómo se nombra el rol en pantalla.
+String rolEtiqueta(RolProyecto rol) => switch (rol) {
+      RolProyecto.adminMaestro => 'Administrador',
+      RolProyecto.profesional => 'Profesional',
+      RolProyecto.constructor => 'Constructor',
+      RolProyecto.clientePrincipal => 'Cliente',
+      RolProyecto.invitadoVeedor => 'Veedor',
+      RolProyecto.invitadoApoderado => 'Apoderado',
+    };
+
 /// Permisos y delegaciones específicos de una fila de ObraMember (un rol puntual
 /// de una persona en una obra), no de la persona en general.
 class PermisosEspeciales {

@@ -57,6 +57,8 @@ enum TipoPendiente {
   /// (`0131`). Va solo a quien propuso: un borrador que te devolvieron no es trabajo que elegiste
   /// tener abierto, es una respuesta que te esperan.
   certificadoDevuelto,
+
+
 }
 
 class Pendiente {

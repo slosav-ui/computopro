@@ -44,6 +44,10 @@ class _PanelConfigCertificacionState extends State<PanelConfigCertificacion> {
   /// emitido, así que en una obra que ya emitió esto se ve pero no se puede cambiar -- y el
   /// aviso de abajo lo dice antes de que alguien lo intente.
   ModoCargaAvance _modoCargaAvance = ModoCargaAvance.porPartida;
+
+  /// Si la obra usa los libros (`0135`). Apagarlos saca la puerta y los avisos; lo ya escrito
+  /// queda, y el texto de abajo lo dice -- si no, apagar da miedo.
+  bool _librosHabilitados = true;
   TextEditingController? _diasPlazoPagoController;
   TextEditingController? _anticipoController;
   TextEditingController? _fondoReparoController;
@@ -66,6 +70,7 @@ class _PanelConfigCertificacionState extends State<PanelConfigCertificacion> {
       _modeloSeleccionado = config.modeloCertificacion;
       _periodicidadSeleccionada = config.periodicidadCertificacion;
       _modoCargaAvance = config.modoCargaAvance;
+      _librosHabilitados = config.librosHabilitados;
       _diasPlazoPagoController =
           TextEditingController(text: config.diasPlazoPagoCertificados?.toString() ?? '');
       _anticipoController = TextEditingController(text: _fmtEntrada(config.anticipoPct));
@@ -162,6 +167,7 @@ class _PanelConfigCertificacionState extends State<PanelConfigCertificacion> {
         anticipoPct: validado['anticipo'] as double,
         fondoReparoPct: validado['fondoReparo'] as double,
         periodicidadCertificacion: _periodicidadSeleccionada,
+        librosHabilitados: _librosHabilitados,
       );
       final montoTotalContratado = validado['montoTotalContratado'] as double?;
       if (montoTotalContratado != null) {
@@ -377,6 +383,20 @@ class _PanelConfigCertificacionState extends State<PanelConfigCertificacion> {
                         'emitido, el modo queda fijo para toda la obra.',
                 style: const TextStyle(fontSize: 10, color: Colors.black45),
               ),
+            ),
+            SwitchListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              visualDensity: VisualDensity.compact,
+              title: const Text('Libros de obra', style: TextStyle(fontSize: 11)),
+              subtitle: Text(
+                _librosHabilitados
+                    ? 'Órdenes de Servicio y Notas de Pedido, entre el profesional y el constructor.'
+                    : 'Apagados: no aparecen en Gestión de Obra ni avisan. Lo ya escrito no se borra.',
+                style: const TextStyle(fontSize: 10, color: Colors.black45),
+              ),
+              value: _librosHabilitados,
+              onChanged: soloLectura ? null : (v) => setState(() => _librosHabilitados = v),
             ),
             _buildCampo(label: 'Plazo de pago (días)', controller: diasController, habilitado: !soloLectura),
             _buildCampo(label: 'Anticipo (%)', controller: anticipoController, habilitado: !soloLectura),

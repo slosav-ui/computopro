@@ -9,11 +9,19 @@ class AccionObra {
   final VoidCallback onTap;
   final bool destacada;
 
+  /// El globito con el número, arriba a la derecha del ícono -- como el de WhatsApp. `0` o `null`
+  /// no dibuja nada: un globito en cero no informa, ocupa.
+  ///
+  /// Es para cosas que se leen, no para cosas que se resuelven: lo que requiere acción va al cartel
+  /// del dashboard (ver `mis_pendientes`), no acá.
+  final int? pendientes;
+
   const AccionObra({
     required this.icono,
     required this.label,
     required this.onTap,
     this.destacada = false,
+    this.pendientes,
   });
 }
 
@@ -97,18 +105,50 @@ class _Accion extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              padding: const EdgeInsets.all(9),
-              decoration: BoxDecoration(
-                color: accion.destacada ? _azul : Colors.white,
-                shape: BoxShape.circle,
-                border: Border.all(color: accion.destacada ? _azul : Colors.black12),
-              ),
-              child: Icon(
-                accion.icono,
-                size: 19,
-                color: accion.destacada ? Colors.white : _azul,
-              ),
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(9),
+                  decoration: BoxDecoration(
+                    color: accion.destacada ? _azul : Colors.white,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: accion.destacada ? _azul : Colors.black12),
+                  ),
+                  child: Icon(
+                    accion.icono,
+                    size: 19,
+                    color: accion.destacada ? Colors.white : _azul,
+                  ),
+                ),
+                if ((accion.pendientes ?? 0) > 0)
+                  Positioned(
+                    top: -3,
+                    right: -3,
+                    // `clipBehavior: none` arriba es lo que deja que el globito se salga del círculo
+                    // sin recortarse. Y "99+" en vez de un número de tres cifras: el globito crece y
+                    // rompe la grilla de la barra, que se calcula por ancho.
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                      constraints: const BoxConstraints(minWidth: 18),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade600,
+                        borderRadius: BorderRadius.circular(9),
+                        border: Border.all(color: Colors.white, width: 1.5),
+                      ),
+                      child: Text(
+                        accion.pendientes! > 99 ? '99+' : '${accion.pendientes}',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 9.5,
+                          height: 1.1,
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
             const SizedBox(height: 5),
             Text(

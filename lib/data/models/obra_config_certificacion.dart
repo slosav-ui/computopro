@@ -105,6 +105,11 @@ class ObraConfigCertificacion {
   /// Ver `ModoCargaAvance`. Nunca null: la columna es `not null default 'por_partida'`.
   final ModoCargaAvance modoCargaAvance;
 
+  /// Si esta obra usa los libros (`0135`). Apagarlos saca la puerta y los avisos, **no lo ya
+  /// escrito**: las entradas siguen existiendo y siguen siendo legibles. Un respaldo legal no
+  /// se hace desaparecer con un switch de configuración.
+  final bool librosHabilitados;
+
   const ObraConfigCertificacion({
     required this.obraId,
     required this.modeloCertificacion,
@@ -114,5 +119,6 @@ class ObraConfigCertificacion {
     this.montoTotalContratado,
     this.periodicidadCertificacion,
     this.modoCargaAvance = ModoCargaAvance.porPartida,
+    this.librosHabilitados = true,
   });
 }
