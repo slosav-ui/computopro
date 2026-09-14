@@ -94,3 +94,34 @@ aplica) y tiene **anticipo 0%**, con lo cual las dos bases del hallazgo 1 coinci
 
 O sea que la maquinaria de certificación está bien; lo que está mal son esas dos cuentas. Es un dato
 útil: acota el arreglo a `calcular_totales_certificado` y descarta que haya algo roto aguas arriba.
+
+---
+
+## Hallazgo 3 — el certificado de un adicional no es representable (2026-09-14)
+
+Salió de la misma carga, cuando Seba vio en el teléfono que el adicional decía **0% certificado**
+aunque su certificado estaba emitido.
+
+**La causa era un error de la carga, y destapó una pieza que falta.** El script había emitido un
+certificado sobre la obra hija, igual que en la madre. Está mal: **un adicional nunca certifica por
+su cuenta** — `PresupuestosScreen` le esconde la solapa Gestión de Obra a una obra hija justamente
+por eso. Ese certificado era un documento que ninguna pantalla de la app puede crear: existía en la
+base y no lo veía nadie.
+
+Lo que la app sí tiene es `certificar_avance_adicional` (`0120`), que acumula en
+`modificaciones_obra.porcentaje_avance` y `monto_certificado`. Eso es lo que lee la lista de
+adicionales, y por eso marcaba cero.
+
+**Lo que falta:** `CERTIFICADO 1 ADICIONAL.pdf` es un documento con sus retenciones — descuenta 5% de
+fondo de reparo y llega a USD 930,06 a pagar. La app **solo guarda el porcentaje y el monto bruto**:
+no hay número de certificado, ni fecha de emisión, ni retenciones, ni plazo de pago para el avance de
+un adicional.
+
+Así que hoy la app puede decir *"se certificó el 26,77% del adicional, USD 979,01"* y no puede emitir
+el papel que el comitente recibe. Para una obra con adicionales certificados —que es el caso normal—
+es una asimetría notoria: el contrato tiene certificados de verdad y sus adicionales no.
+
+**No es urgente para la demostración** (el adicional se ve con su avance y su monto), pero conviene
+que esté escrito antes de que alguien lo pida en una obra real. Es una pieza propia, no un arreglo:
+implica decidir si un adicional emite certificados propios, si se certifica junto con el certificado
+de la obra madre en un mismo documento, o si sigue siendo solo un porcentaje.
