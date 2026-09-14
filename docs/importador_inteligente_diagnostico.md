@@ -435,3 +435,57 @@ centavo porque los redondeos por partida se acumulan.
 Y un punto de atención para el paso 2: si el PDF de Galpón Mix está cotizado en USD 78.759,38 pero el
 contrato dice 75.609,01, **el importador carga el precio cotizado**, que es lo correcto. El 4% es
 otra pieza y entra por otro lado (ver `docs/descuento_pactado_horizonte.md`).
+
+
+---
+
+## 10. El proveedor queda abierto: la próxima prueba es con Gemini (2026-09-14)
+
+**La Edge Function queda escrita y sin desplegar.** Decisión de Seba al cerrar la jornada: por ahora
+no paga la API de Anthropic, así que **la próxima decisión es probar el importador con Gemini, que
+tiene capa gratuita.**
+
+### Por qué esto no invalida nada de lo construido
+
+Vale decirlo porque es el riesgo obvio de leer esta sección sola. §2 ya había concluido que **a uno a
+tres centavos por documento, la elección de proveedor no es una decisión de costo**: lo que decide es
+que lea PDF y foto sin paso previo, que garantice el esquema de salida, y que haya una sola clave que
+proteger. Gemini cumple las tres.
+
+Y el cambio toca **un solo archivo**: `supabase/functions/leer-documento/index.ts`, y dentro de él
+solo la llamada HTTP y la forma de la respuesta. No se mueven las migraciones, ni el cupo, ni la
+pantalla de importación, ni la de revisión. **La consigna —que es la pieza real, no el código— se usa
+tal cual**, porque no dice nada específico de un proveedor: dice qué es una partida, cómo se leen los
+números en Argentina y que no invente.
+
+O sea: lo construido esta semana **no es trabajo tirado si el proveedor cambia**, y ese era el punto
+de que el extractor fuera un solo archivo detrás de una interfaz chica.
+
+### La restricción que NO se puede relajar
+
+> *"Usando mis propios presupuestos para validar que el importador sirve — no documentos de
+> clientes, porque la capa gratuita de Google entrena con lo que recibe."*
+
+**Esto es una condición de uso, no una precaución.** La capa gratuita de Gemini usa el contenido
+enviado para mejorar los modelos; la paga no. Mandar el presupuesto de un cliente por ahí sería
+entregar información comercial ajena a un tercero sin que el cliente lo sepa — y el presupuesto de
+una obra es exactamente el tipo de documento que nadie quiere que circule.
+
+**Consecuencia práctica que hay que tener presente antes de que esto salga de la etapa de prueba:**
+
+- **Para validar contra los PDF de Galpón Mix, la capa gratuita alcanza y está bien**: son documentos
+  de Seba.
+- **En el momento en que un usuario que no es Seba suba un documento, la capa gratuita deja de ser
+  una opción.** No es un umbral de volumen ni de costo: es que el documento deja de ser propio.
+
+Conviene que eso quede escrito acá y no solo en la cabeza, porque el salto de "estoy probando" a
+"hay alguien más usándolo" no avisa. **El cupo de la `0145` sigue siendo el mismo mecanismo y no
+cambia** — si el proveedor pasa a tener costo, el tope ya está puesto, que era el punto de ponerlo
+desde el principio.
+
+### Qué hay que mirar en la prueba, más allá de si anda
+
+Lo mismo que §9 paso 2, y con más razón cuando se compara un proveedor contra otro: no cuántas
+partidas sacó, sino **si las filas que marcó para revisar eran efectivamente las dudosas**. Un
+extractor que saca las 97 partidas pero marca todo "alta" es peor que uno que saca 90 y señala bien
+las 7 que falló.
