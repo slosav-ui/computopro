@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/segurity/user_context.dart';
 import '../../../core/utils/conversion_dolar.dart';
 import '../../../data/models/certificado.dart';
+import '../../../data/models/certificado_avance_global.dart';
 import '../../../data/models/certificado_subitem_avance.dart';
 import '../../../services/auth_service.dart';
 import '../../../services/certificado_subitems_avance_repository.dart';
@@ -54,6 +55,11 @@ class _VistaPreviaCertificadoScreenState extends State<VistaPreviaCertificadoScr
   String? _error;
 
   List<CertificadoSubitemAvance> _avances = [];
+
+  /// Si este certificado se cargó como avance global (`0132`), con qué alcance y qué
+  /// porcentaje. Vacío en una obra que carga partida por partida, que es el caso normal.
+  List<CertificadoAvanceGlobal> _globales = [];
+
   final Map<String, String> _descripcionPorObraSubitem = {};
   final Map<String, String> _rubroNombrePorObraSubitem = {};
   TotalesCertificado? _totales;
@@ -158,6 +164,7 @@ class _VistaPreviaCertificadoScreenState extends State<VistaPreviaCertificadoScr
       final cert = await _certificadoFresco();
       final hayContraparte = await _hayContraparteSegura(cert);
       final emision = await _autoridadDeEmision();
+      final globales = await _avanceRepository.getResumenGlobal(widget.certificado.id);
 
       final descripcionPorSubitemCatalogo = {
         for (final s in subitemsCatalogo) s.id: '${s.codigo} - ${s.descripcion}',
@@ -168,6 +175,7 @@ class _VistaPreviaCertificadoScreenState extends State<VistaPreviaCertificadoScr
       if (!mounted) return;
       setState(() {
         _avances = avances;
+        _globales = globales;
         _descripcionPorObraSubitem
           ..clear()
           ..addEntries(obraSubitemPorId.entries.map((entry) {
@@ -348,6 +356,7 @@ class _VistaPreviaCertificadoScreenState extends State<VistaPreviaCertificadoScr
             style: const TextStyle(fontSize: 13, color: Colors.black54)),
         const SizedBox(height: 12),
         if (_excesos.isNotEmpty) _buildAvisoExcesos(),
+        if (_globales.isNotEmpty) _buildBloqueGlobal(),
         if (_avances.isEmpty)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 24),
@@ -378,6 +387,49 @@ class _VistaPreviaCertificadoScreenState extends State<VistaPreviaCertificadoScr
         _buildFilaTotal('Neto a pagar', totales.montoNeto, destacado: true),
         const SizedBox(height: 80), // espacio para no quedar tapado por la barra de Emitir
       ],
+    );
+  }
+
+  /// Cómo se cargó este certificado, arriba del detalle por partida (`0132`). Sin esto, el
+  /// desglose de abajo se lee como una medición partida por partida que nadie hizo: esos
+  /// porcentajes son el reparto de un número global, y el que emite tiene que saberlo antes de
+  /// firmar. Si además el reparto se corrigió a mano, van los dos números.
+  Widget _buildBloqueGlobal() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEEF2F7),
+        border: Border.all(color: const Color(0xFFC8D4E3)),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Cargado como avance global',
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF1B365D)),
+          ),
+          const SizedBox(height: 2),
+          const Text(
+            'Los porcentajes por partida de abajo son el reparto de estos números, ponderado por '
+            'monto — no una medición partida por partida.',
+            style: TextStyle(fontSize: 11, color: Colors.black54),
+          ),
+          const SizedBox(height: 6),
+          for (final g in _globales)
+            Padding(
+              padding: const EdgeInsets.only(top: 3),
+              child: Text(
+                g.ajustado
+                    ? '${g.etiquetaAlcance}: ${g.porcentajeCargado.toStringAsFixed(2)}% cargado, '
+                        'reparto corregido a mano — queda en ${g.porcentajeEfectivo.toStringAsFixed(2)}%.'
+                    : '${g.etiquetaAlcance}: ${g.porcentajeCargado.toStringAsFixed(2)}%.',
+                style: const TextStyle(fontSize: 11.5, color: Colors.black87),
+              ),
+            ),
+        ],
+      ),
     );
   }
 

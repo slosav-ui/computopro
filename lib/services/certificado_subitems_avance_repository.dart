@@ -1,4 +1,5 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../data/models/certificado_avance_global.dart';
 import '../data/models/certificado_subitem_avance.dart';
 
 /// Acceso a `certificado_subitems_avance` + las funciones de la
@@ -209,6 +210,63 @@ class CertificadoSubitemsAvanceRepository {
         'p_requiere_firma_fisica': requiereFirmaFisica,
       },
     );
+  }
+
+  // ===========================================================================
+  // Avance global (0132)
+  // ===========================================================================
+
+  /// Carga un avance global sobre un rubro (`rubroId`) o sobre toda la obra (`rubroId` null) --
+  /// RPC a `cargar_avance_global`.
+  ///
+  /// **El porcentaje es el ACUMULADO del alcance, no el del período**: "el rubro está al 40%", no
+  /// "sumale 40". La base deriva el incremento de cada partida como `40 − su propio acumulado`, y
+  /// escribe las mismas filas de `certificado_subitems_avance` que se habrían cargado a mano. Acá
+  /// no se reparte nada: la plata sale ponderada por monto sola, porque el trigger de la 0052 hace
+  /// `monto × porcentaje / 100` partida por partida.
+  ///
+  /// Los errores vienen con mensaje escrito de la base y hay que mostrarlos tal cual: son las
+  /// reglas del modo (la obra no está en global, se mezclaron alcances, no hay nada que certificar
+  /// con ese porcentaje).
+  Future<void> cargarAvanceGlobal({
+    required String certificadoId,
+    required String? rubroId,
+    required double porcentajeAcumulado,
+  }) async {
+    await _client.rpc('cargar_avance_global', params: {
+      'p_certificado_id': certificadoId,
+      'p_rubro_id': rubroId,
+      'p_porcentaje_acumulado': porcentajeAcumulado,
+    });
+  }
+
+  /// Qué se cargó como global en este certificado y qué quedó de verdad -- RPC a
+  /// `certificado_avance_global_resumen`. Ver `CertificadoAvanceGlobal`: devuelve el porcentaje
+  /// declarado y el efectivo por separado, porque el reparto se puede corregir a mano.
+  Future<List<CertificadoAvanceGlobal>> getResumenGlobal(String certificadoId) async {
+    final data = await _client.rpc(
+      'certificado_avance_global_resumen',
+      params: {'p_certificado_id': certificadoId},
+    );
+    return [
+      for (final row in (data as List? ?? []))
+        CertificadoAvanceGlobal.desdeRow(row as Map<String, dynamic>),
+    ];
+  }
+
+  /// Borra la declaración de un alcance cargado por error. **No borra las filas por partida que
+  /// sembró** -- quedan a la vista en la carga, que es donde se editan: la función no puede saber
+  /// cuáles de esas filas siguen siendo las que sembró y cuáles se corrigieron después.
+  Future<void> borrarAvanceGlobal({
+    required String certificadoId,
+    required String? rubroId,
+  }) async {
+    final query = _client.from('certificado_avance_global').delete().eq('certificado_id', certificadoId);
+    if (rubroId == null) {
+      await query.isFilter('rubro_id', null);
+    } else {
+      await query.eq('rubro_id', rubroId);
+    }
   }
 
   CertificadoSubitemAvance _fromRow(Map<String, dynamic> row) {

@@ -61,6 +61,36 @@ extension ModeloCertificacionLabel on ModeloCertificacion {
   }
 }
 
+/// Cómo se carga el avance en esta obra (`0132`). **No es por certificado a propósito**: con el modo
+/// suelto, alguien carga global los rubros que van bien y detallado los que van mal, y el avance de
+/// la obra deja de significar algo (decisión de Seba, 2026-09-14). Se elige al configurar la obra y
+/// la base lo congela con el primer certificado emitido.
+enum ModoCargaAvance {
+  /// Una partida por vez, lo de siempre.
+  porPartida,
+
+  /// Un porcentaje **acumulado** por rubro (o de toda la obra) que siembra las filas por partida,
+  /// repartido por monto. El reparto sembrado se puede corregir a mano antes de proponer.
+  global,
+}
+
+extension ModoCargaAvanceColumna on ModoCargaAvance {
+  String get columna => switch (this) {
+        ModoCargaAvance.porPartida => 'por_partida',
+        ModoCargaAvance.global => 'global',
+      };
+
+  String get label => switch (this) {
+        ModoCargaAvance.porPartida => 'Partida por partida',
+        ModoCargaAvance.global => 'Porcentaje global por rubro',
+      };
+}
+
+/// Ante un valor que esta versión de la app no conoce, `por_partida`: es el modo que no inventa
+/// nada: muestra las partidas como están y no siembra ningún reparto.
+ModoCargaAvance modoCargaAvanceDesdeColumna(String? valor) =>
+    valor == 'global' ? ModoCargaAvance.global : ModoCargaAvance.porPartida;
+
 class ObraConfigCertificacion {
   final String obraId;
   final ModeloCertificacion modeloCertificacion;
@@ -72,6 +102,9 @@ class ObraConfigCertificacion {
   /// `null` = sin pactar (y sin aviso). Ver `PeriodicidadCertificacion`.
   final PeriodicidadCertificacion? periodicidadCertificacion;
 
+  /// Ver `ModoCargaAvance`. Nunca null: la columna es `not null default 'por_partida'`.
+  final ModoCargaAvance modoCargaAvance;
+
   const ObraConfigCertificacion({
     required this.obraId,
     required this.modeloCertificacion,
@@ -80,5 +113,6 @@ class ObraConfigCertificacion {
     this.fondoReparoPct,
     this.montoTotalContratado,
     this.periodicidadCertificacion,
+    this.modoCargaAvance = ModoCargaAvance.porPartida,
   });
 }

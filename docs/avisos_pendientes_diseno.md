@@ -205,3 +205,55 @@ Y para saber cuál de las dos explicaciones de §6.3 es la buena, **antes** de c
 select prosrc like '%certificado_objetado%' as tiene_la_rama_0129
 from pg_proc where proname = 'mis_pendientes';
 ```
+
+---
+
+## 7. El aviso que sale de la app — notificaciones al teléfono (anotado 2026-09-14, sin construir)
+
+Pedido de Seba después de la verificación de la tanda 3: **cuando seba2135 pagó, a slosav no le llegó
+nada**. Todo lo de este documento vive adentro de la app y hay que abrirla para enterarse. Textual:
+*"en obra la app se usa salteado, así que si alguien tiene que abrirla para saber que lo esperan, las
+cosas se enfrían"*.
+
+Es el techo natural de `mis_pendientes()`: la función ya sabe **qué le falta a quién** y esa parte no
+hay que rehacerla. Lo que falta es el transporte.
+
+**Supabase no tiene nada nativo**, y conviene saberlo antes de presupuestar la pieza: no hay servicio
+de push propio. El camino que la propia documentación de Supabase recomienda es
+**Database Webhook → Edge Function → FCM** (Firebase Cloud Messaging), con APNs por debajo para iOS.
+O sea que la pieza suma **un proveedor externo (Firebase) al stack**, que hoy es solo Supabase.
+
+**Lo que implica, en orden de esfuerzo:**
+
+1. **Guardar el token del dispositivo** por usuario (tabla nueva, o columna en `perfiles`), y
+   registrarlo/desregistrarlo en el login y el logout. Un usuario tiene varios dispositivos: es una
+   tabla, no una columna. Y hay que borrar los tokens muertos, que FCM devuelve como inválidos.
+2. **Decidir qué dispara el aviso.** Un webhook por cambio de tabla es lo fácil y lo equivocado: los
+   avisos no son "cambió una fila", son "esto ahora te espera a vos", y eso lo sabe `mis_pendientes()`
+   con la autoridad de cada transición. Sin ese cuidado, el push le llega a quien no puede resolver
+   nada — el mismo error que el diseño de §2 evitó del lado de la app.
+3. **La Edge Function** que arma y manda el mensaje. Es la segunda del proyecto (hoy solo existe
+   `importar-excel`).
+4. **Flutter**: `firebase_messaging`, permisos de notificación (iOS los pide explícitamente, Android
+   13+ también), y qué pasa al tocar la notificación (abrir la pantalla donde se resuelve, que ya
+   está resuelto en `_abrirPendiente`).
+
+**Costo**, que era la pregunta concreta:
+
+- **FCM/APNs: el envío no se paga.** No hay costo por mensaje ni por usuario.
+- **Apple Developer Program: USD 99 por año**, y no es evitable si se quiere iOS — sin eso no hay
+  APNs ni App Store.
+- **Google Play: USD 25 por única vez.**
+- **Supabase**: las Edge Functions y los webhooks entran en el plan que ya se usa.
+- Alternativa gestionada (OneSignal y parecidos): tienen plan gratis para este tamaño y ahorran el
+  paso 3, a cambio de meter un segundo proveedor con los datos de los usuarios adentro. Para una app
+  con tres usuarios de prueba no se justifica todavía.
+
+**Lo que hay que decidir cuando se retome:** si el push repite todo lo de `mis_pendientes()` o solo
+lo que tiene plata o plazo de por medio (un pago registrado, una objeción, un certificado emitido);
+si se puede silenciar por obra; y si hay un resumen diario en vez de un aviso por hecho. Un push por
+cada cosa que pasa en una obra activa es la forma más rápida de que lo apaguen todo.
+
+**Antes de esto, lo barato:** hoy el cartel de pendientes solo se recarga al volver al dashboard. Que
+se refresque al volver a foco de la app es unas líneas y tapa una parte del agujero sin proveedor
+nuevo, sin tokens y sin permisos.

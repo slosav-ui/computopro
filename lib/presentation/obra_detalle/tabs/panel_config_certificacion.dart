@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/utils/parser_numero_ar.dart';
 import '../../../data/models/obra_config_certificacion.dart';
 import '../../../services/obra_config_certificacion_repository.dart';
@@ -38,6 +39,11 @@ class _PanelConfigCertificacionState extends State<PanelConfigCertificacion> {
   /// cargó": una obra puede no tener periodicidad y entonces no recibe el aviso de "ya se puede
   /// certificar" (0123, docs/certificacion_acuerdo_partes_diagnostico.md §3.1).
   PeriodicidadCertificacion? _periodicidadSeleccionada;
+
+  /// El modo de carga de avance (`0132`). La base lo congela con el primer certificado
+  /// emitido, así que en una obra que ya emitió esto se ve pero no se puede cambiar -- y el
+  /// aviso de abajo lo dice antes de que alguien lo intente.
+  ModoCargaAvance _modoCargaAvance = ModoCargaAvance.porPartida;
   TextEditingController? _diasPlazoPagoController;
   TextEditingController? _anticipoController;
   TextEditingController? _fondoReparoController;
@@ -59,6 +65,7 @@ class _PanelConfigCertificacionState extends State<PanelConfigCertificacion> {
       _config = config;
       _modeloSeleccionado = config.modeloCertificacion;
       _periodicidadSeleccionada = config.periodicidadCertificacion;
+      _modoCargaAvance = config.modoCargaAvance;
       _diasPlazoPagoController =
           TextEditingController(text: config.diasPlazoPagoCertificados?.toString() ?? '');
       _anticipoController = TextEditingController(text: _fmtEntrada(config.anticipoPct));
@@ -163,6 +170,23 @@ class _PanelConfigCertificacionState extends State<PanelConfigCertificacion> {
           montoTotalContratado: montoTotalContratado,
         );
       }
+      // El modo de carga va ÚLTIMO y con su propio catch: es el único de esta pantalla que la base
+      // puede rechazar por una regla de negocio (el trigger lo congela con el primer certificado
+      // emitido). Yendo último, un rechazo no se lleva puesto el guardado del plazo de pago o del
+      // anticipo, y el mensaje que se muestra es el de la base, que explica el porqué.
+      if (_modoCargaAvance != _config!.modoCargaAvance) {
+        try {
+          await _repository.actualizarModoCargaAvance(obraId: widget.obraId, modo: _modoCargaAvance);
+        } catch (e) {
+          if (!mounted) return;
+          setState(() {
+            _guardando = false;
+            _modoCargaAvance = _config!.modoCargaAvance;
+            _error = 'El resto de la configuración se guardó. ${_mensajeDeError(e)}';
+          });
+          return;
+        }
+      }
       if (!mounted) return;
       Navigator.pop(context, true);
     } catch (e) {
@@ -172,6 +196,14 @@ class _PanelConfigCertificacionState extends State<PanelConfigCertificacion> {
         _error = 'No se pudo guardar.';
       });
     }
+  }
+
+  /// El mensaje que escribió la base, si lo hay. Las reglas del modo de carga están redactadas del
+  /// lado del servidor y explican el porqué ("esta obra ya tiene certificados emitidos, y
+  /// cambiarlo ahora..."); reemplazarlas por un "no se pudo guardar" perdería justamente eso.
+  String _mensajeDeError(Object e) {
+    if (e is PostgrestException && e.message.trim().isNotEmpty) return e.message;
+    return 'No se pudo cambiar el modo de carga de avance.';
   }
 
   /// Motivo obligatorio -- mismo candado que ya aplica `cambiar_modelo_certificacion` del lado del
@@ -314,6 +346,35 @@ class _PanelConfigCertificacionState extends State<PanelConfigCertificacion> {
                 _periodicidadSeleccionada == null
                     ? 'Sin pactar: no se avisa cuándo certificar.'
                     : 'Cada cuánto se certifica. Cuando vence el período, aparece en "Esperándote".',
+                style: const TextStyle(fontSize: 10, color: Colors.black45),
+              ),
+            ),
+            // Cómo se carga el avance (0132). Va acá y no en la pantalla de carga a propósito: es
+            // config de la obra, se elige una vez, y la base lo congela con el primer certificado
+            // emitido.
+            const Text('Carga de avance', style: TextStyle(fontSize: 11, color: Colors.black87)),
+            DropdownButtonFormField<ModoCargaAvance>(
+              initialValue: _modoCargaAvance,
+              isDense: true,
+              style: const TextStyle(fontSize: 12, color: Colors.black87),
+              decoration: const InputDecoration(isDense: true),
+              items: [
+                for (final m in ModoCargaAvance.values)
+                  DropdownMenuItem<ModoCargaAvance>(
+                    value: m,
+                    child: Text(m.label, style: const TextStyle(fontSize: 12)),
+                  ),
+              ],
+              onChanged: soloLectura ? null : (v) => setState(() => _modoCargaAvance = v!),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(top: 4, bottom: 8),
+              child: Text(
+                _modoCargaAvance == ModoCargaAvance.global
+                    ? 'Se carga un porcentaje acumulado por rubro y el sistema lo reparte entre las '
+                        'partidas, ponderado por monto. El reparto se puede corregir antes de proponer.'
+                    : 'Se carga partida por partida. Se elige una vez: con el primer certificado '
+                        'emitido, el modo queda fijo para toda la obra.',
                 style: const TextStyle(fontSize: 10, color: Colors.black45),
               ),
             ),

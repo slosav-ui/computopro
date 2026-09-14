@@ -3,6 +3,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/segurity/user_context.dart';
 import '../../../core/utils/conversion_dolar.dart';
 import '../../../data/models/certificado.dart';
+import '../../../data/models/certificado_avance_global.dart';
+import '../../../services/certificado_subitems_avance_repository.dart';
 import '../../../services/certificados_repository.dart';
 import '../../../services/indices_economicos_repository.dart';
 import '../../../services/obras_repository.dart';
@@ -38,6 +40,7 @@ class DetalleCertificadoScreen extends StatefulWidget {
 
 class _DetalleCertificadoScreenState extends State<DetalleCertificadoScreen> {
   final CertificadosRepository _certificadosRepository = CertificadosRepository();
+  final CertificadoSubitemsAvanceRepository _avanceRepository = CertificadoSubitemsAvanceRepository();
   final ObrasRepository _obrasRepository = ObrasRepository();
   final IndicesEconomicosRepository _indicesRepository = IndicesEconomicosRepository();
 
@@ -58,6 +61,10 @@ class _DetalleCertificadoScreenState extends State<DetalleCertificadoScreen> {
   /// plazo corriendo (sin objeción, o con una que todavía nadie respondió: esa no vence). La fecha
   /// la calcula la base -- los 5 días no se copian a Dart.
   DateTime? _objecionVence;
+
+  /// Si este certificado se cargó como avance global (`0132`), con qué alcance y qué
+  /// porcentaje. Vacío en una obra que carga partida por partida, que es el caso normal.
+  List<CertificadoAvanceGlobal> _globales = [];
   String _moneda = 'ARS';
   double _cotizacionHoy = 0;
 
@@ -121,6 +128,7 @@ class _DetalleCertificadoScreenState extends State<DetalleCertificadoScreen> {
       final vence = fresco.tieneObjecionAbierta && fresco.objecionRespondidaFecha != null
           ? await _certificadosRepository.objecionVenceEl(fresco.objecionRespondidaFecha!)
           : null;
+      final globales = await _avanceRepository.getResumenGlobal(fresco.id);
       final falta = fresco.estado == EstadoCertificado.anulado &&
           await _certificadosRepository.faltaReemplazo(fresco.id);
       final posteriores = falta ? await _certificadosRepository.contarPosteriores(fresco.id) : 0;
@@ -130,6 +138,7 @@ class _DetalleCertificadoScreenState extends State<DetalleCertificadoScreen> {
         _faltaReemplazo = falta;
         _posteriores = posteriores;
         _objecionVence = vence;
+        _globales = globales;
       });
       return fresco.estado != estadoAnterior;
     } catch (_) {
@@ -659,6 +668,8 @@ class _DetalleCertificadoScreenState extends State<DetalleCertificadoScreen> {
           Text('Período: ${_cert.periodo}', style: const TextStyle(fontSize: 13, color: Colors.black54)),
           const SizedBox(height: 16),
           if (_puedeVerMontos) _buildMontos(),
+          // Cómo se midió, pegado al monto y no al final: califica el número de arriba.
+          if (_globales.isNotEmpty) ...[const SizedBox(height: 12), _buildBloqueGlobal()],
           const SizedBox(height: 16),
           _buildLineaTiempo(),
           const SizedBox(height: 24),
@@ -781,6 +792,50 @@ class _DetalleCertificadoScreenState extends State<DetalleCertificadoScreen> {
                 'de cargarlo, porque esos certificados pueden haber cubierto parte de lo que este '
                 'medía.',
         style: TextStyle(fontSize: 12, color: Colors.orange.shade900),
+      ),
+    );
+  }
+
+  /// Cómo se midió este certificado, cuando se cargó como avance global (`0132`). Va en el
+  /// documento emitido y no solo en la vista previa por decisión de Seba (2026-09-14): *"el
+  /// certificado emitido es el documento que él aprueba y paga: si se midió global, tiene que
+  /// saberlo. Si no, firma un detalle que parece medido partida por partida y no lo es."*
+  ///
+  /// Se muestra a todos, no solo a quien ve montos: es cómo se midió, no cuánto se midió.
+  Widget _buildBloqueGlobal() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEEF2F7),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFC8D4E3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Medido como avance global',
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF1B365D)),
+          ),
+          const SizedBox(height: 2),
+          const Text(
+            'El avance se cargó por rubro y se repartió entre sus partidas, ponderado por monto. '
+            'No es una medición partida por partida.',
+            style: TextStyle(fontSize: 11, color: Colors.black54),
+          ),
+          const SizedBox(height: 6),
+          for (final g in _globales)
+            Padding(
+              padding: const EdgeInsets.only(top: 3),
+              child: Text(
+                g.ajustado
+                    ? '${g.etiquetaAlcance}: ${g.porcentajeCargado.toStringAsFixed(2)}% cargado, '
+                        'reparto corregido a mano — quedó en ${g.porcentajeEfectivo.toStringAsFixed(2)}%.'
+                    : '${g.etiquetaAlcance}: ${g.porcentajeCargado.toStringAsFixed(2)}%.',
+                style: const TextStyle(fontSize: 11.5, color: Colors.black87),
+              ),
+            ),
+        ],
       ),
     );
   }

@@ -529,6 +529,146 @@ obra certifica global, que no muestre porcentajes por partida como si fueran med
 
 ---
 
+### 6.1 Tanda 4 — el avance global, migración `0132` (escrita 2026-09-14, sin aplicar)
+
+Verificado partida por partida contra las funciones que hoy sostienen el ciclo. Tres hallazgos que
+cambian el tamaño de la pieza, y después las ambigüedades.
+
+#### Hallazgo 1 — el reparto ponderado **no necesita ninguna cuenta de reparto**
+
+Esta es la buena noticia y conviene entenderla antes de diseñar nada. `monto_periodo` lo calcula el
+trigger `calcular_monto_periodo_avance` (0052/0105) como `monto_del_subítem × porcentaje / 100`.
+Entonces, si todas las partidas del alcance reciben **el mismo porcentaje**, la plata que le toca a
+cada una ya sale proporcional a su monto congelado: el ponderado ocurre solo, por aritmética, sin una
+función de reparto que lo distribuya.
+
+Lo que hay que escribir no es un repartidor de plata. Es una función que **escriba las filas** de
+`certificado_subitems_avance` que el usuario hubiera cargado a mano, y nada más. Todo lo de abajo
+—el candado del 100% (`calcular_excesos_certificado`), el CAC, `monto_periodo_pactado`, la anulación,
+el avance ponderado por rubro, la vista previa, los totales— sigue funcionando sin tocarse, porque
+recibe exactamente el mismo tipo de filas que hoy.
+
+#### Hallazgo 2 — conviene que el número global sea **acumulado**, no del período
+
+`certificado_subitems_avance.porcentaje_periodo` es un **incremento**. La traducción literal del
+pedido sería "sumale 15 puntos a cada partida del alcance", y funciona mientras todas estén parejas.
+Deja de funcionar en cuanto no lo están, y hay tres formas normales de que se despareje: una partida
+que se tilda (`es_aplicable`) después de arrancar y nace en 0 mientras las demás van por 90; una
+partida que ya llegó a 100 y no puede recibir el incremento (el check
+`porcentaje_periodo <= 100` y el candado de excesos la frenan); o una obra que certificó por partida
+antes de pasarse a global. En cualquiera de esos casos el incremento se aplica disparejo, el total
+certificado deja de ser el 15% del alcance, y **el número global pasa a mentir** — que es justo lo que
+esta forma de cargar viene a evitar.
+
+Si en cambio el usuario carga **el acumulado** ("la obra está al 45%"), la función deriva el
+incremento de cada partida como `45 − su propio acumulado`. Consecuencias, todas buenas:
+
+- **se autocorrige**: las partidas desparejas convergen solas al mismo acumulado;
+- **el candado del 100% no se puede violar** por construcción: nunca se pide más de 100;
+- **es el gesto real**: un avance global se *lee* como estado total de la obra ("vamos por el 45%"),
+  no como una suma de incrementos que hay que ir llevando de memoria;
+- la plata del período sale exacta: `45% del alcance − lo ya certificado del alcance`.
+
+Y trae un guard obvio y necesario: **no se puede cargar un global menor al avance ponderado actual**.
+Una partida no puede retroceder (no existe el porcentaje negativo, y el acumulado nunca baja), así
+que un global más bajo que el real no se podría cumplir y quedaría escrito un número que la obra no
+tiene.
+
+#### Hallazgo 3 — los adicionales quedan afuera, y está bien
+
+`certificar_avance_adicional` (0120) es un circuito aparte: el avance de un adicional se registra en
+`modificaciones_obra.porcentaje_avance` y **no entra a ningún certificado** (decisión A de §14.5 del
+diagnóstico de adicionales). Y un adicional que se armó como obra hija (0113) tiene sus propias
+`obra_subitems`, en otra `obra_id`. O sea que el alcance de un global es siempre y solo las
+`obra_subitems` de la obra madre: no hay que decidir nada sobre adicionales en esta tanda.
+
+Lo que sí toca el alcance son las **quitas y demasías** (0109), que modifican
+`presupuesto_subitems_congelado.monto_total` en el medio de la obra. No es un problema nuevo de esta
+pieza —los porcentajes ya certificados pasan a valer otra plata también en el modo por partida— pero
+en global se nota más, porque el usuario ve un solo número. Vale decirlo en la UI, no cambiar la
+cuenta.
+
+#### Las 6 ambigüedades, y cómo se cerraron (respuestas más abajo)
+
+**A. ¿El número que se carga es el acumulado o el del período?** Recomiendo **acumulado**, por el
+hallazgo 2. Es la decisión que más cambia el resto: si es del período, hay que decidir además qué
+hacer cuando una partida no puede absorber su parte (¿se pierde?, ¿se redistribuye en las otras y
+entonces el reparto deja de ser proporcional al monto?).
+
+**B. ¿Cuántos alcances por certificado?** "Toda la obra o una parte" — si la parte es un rubro, un
+mismo certificado podría llevar rubro 2 al 60% y rubro 5 al 30%. Con dos columnas en `certificados`
+(`porcentaje_global`, `alcance_global`) entra **uno solo**; con una tabla chica
+`certificado_avance_global (certificado_id, rubro_id nullable, porcentaje)` entran varios.
+Recomiendo **la tabla**, porque certificar rubro por rubro es el caso más frecuente de "una parte" y
+descubrir después que solo entra uno obliga a migrar datos ya emitidos.
+
+**C. ¿El modo se puede cambiar en el medio de la obra?** Ya está decidido que el modo es **por obra**
+(no mezclar). Falta: ¿se puede pasar de por partida a global con certificados ya emitidos?
+Recomiendo **permitirlo solo mientras no haya ningún certificado emitido**, y después bloquearlo: el
+cambio no rompe datos, pero pasar a global una obra con partidas desparejas hace que el primer global
+las empareje de un saque, y ese salto es imposible de explicar seis meses después.
+
+**D. ¿Qué ve el que mira un certificado global?** Las filas por partida existen igual (son las que
+llevan la plata). Recomiendo que la pantalla las muestre **marcadas como reparto, no como medición**,
+con el número global arriba — es literalmente tu criterio: *"si una obra certifica global, que no
+muestre porcentajes por partida como si fueran medidos"*. Lo que falta decidir es si en la carga se
+ocultan del todo o se muestran en gris.
+
+**E. ¿Quién carga el global?** Recomiendo **los mismos tres roles que hoy cargan avance**
+(admin_maestro, profesional, constructor: la RLS de `certificado_subitems_avance`), sin inventar
+autoridad nueva. Cargar global no es un acto distinto de cargar avance, es el mismo acto con otra
+granularidad.
+
+**F. ¿Y las partidas sin precio?** Una partida con monto 0 (sin precio cargado) recibiría su
+porcentaje y aportaría $0. No rompe nada y mantiene coherente el avance ponderado, pero conviene
+saber que un global del 45% en una obra con partidas sin precio certifica menos plata de la que el
+número sugiere. ¿Se avisa en la carga, o se deja pasar?
+
+#### Cerradas por Seba (2026-09-14) — y escritas en la `0132`
+
+| | Respuesta | Dónde quedó |
+|---|---|---|
+| **A** — ¿acumulado o del período? | **Acumulado** | `cargar_avance_global` deriva el incremento de cada partida |
+| **B** — ¿cuántos alcances? | **Cinco a ocho rubros por certificado**, no uno solo por obra | tabla `certificado_avance_global` |
+| **C** — ¿el modo cambia en el medio? | Se elige **una sola vez, al configurar la obra** | `obras.modo_carga_avance` + trigger del paso 2 |
+| **D** — ¿qué ve el que mira? | El reparto **se corrige a mano antes de proponer** | la RLS de la `0052` ya lo permite + `certificado_avance_global_resumen` |
+| **E** — ¿quién carga? | Los tres roles que ya cargan avance | guard de `cargar_avance_global` |
+| **F** — partidas sin precio | Cubierto por el alcance: sale de `calcular_monto_obra_subitems` | paso 4 |
+
+**A, con las palabras de Seba:** *"poder elegir por certificado abre la puerta a certificar global lo
+que conviene y detallado lo que conviene, y eso deja el acumulado sin sentido"*. Es exactamente el
+riesgo del modo suelto: alguien carga global los rubros que van bien y detallado los que van mal, y
+el número de la obra deja de significar algo. El modo se congela con el primer certificado emitido,
+no antes — mientras la obra no emitió nada, cambiar de opinión es gratis y no hay razón para
+castigarlo.
+
+**B fija el alcance real:** *"cinco a ocho rubros, no uno solo por obra: es lo que un constructor
+maneja sin volverse loco, y ya evita el reparto parejo sobre toda la obra"*. Toda la obra de una
+sigue siendo posible (`rubro_id` null) pero es el caso chico. Los dos alcances **no se mezclan** en
+un mismo certificado: se pisarían.
+
+**D era la ambigüedad que más cambió la pieza**, y la respuesta la mejoró: *"si no, el número es
+cómodo pero mentiroso: la obra empieza por fundaciones, no por un poco de todo. Y el que firma sabe
+qué se hizo de verdad"*. Corregir el reparto **no necesitó código nuevo** — la RLS de la `0052` ya
+deja editar las filas en borrador. Lo que sí hizo falta es que el certificado no siga diciendo a
+secas "global del 40%" cuando ese 40% describe un reparto que ya no tiene adentro: de ahí
+`certificado_avance_global_resumen`, que devuelve **cargado** y **efectivo** por separado y un
+`ajustado` que dice si difieren. Los dos números son ciertos y los dos hacen falta.
+
+**Lo que va a sorprender y está escrito en la migración:** la corrección a mano **no se arrastra al
+período siguiente**. Si en marzo se le cargó todo a fundaciones, en abril el global vuelve a sembrar
+desde la realidad de cada partida y tiende a emparejarlas. Es a propósito: la corrección dice qué se
+hizo *ese mes*, no una regla de reparto nueva.
+
+**El documento emitido también lo dice (Seba, 2026-09-14):** *"el certificado emitido es el documento que él aprueba y paga: si se midió global, tiene que saberlo. Si no, firma un detalle que parece medido partida por partida y no lo es."* Así que el bloque "medido como avance global" va en `DetalleCertificadoScreen` y no solo en la vista previa, y se muestra a todos, no solo a quien ve montos: es **cómo** se midió, no cuánto. De ahí salió la `0133`, que le agrega `rubro_nombre` a `certificado_avance_global_resumen` — sin eso, el detalle tendría que traerse el catálogo de rubros entero en cada apertura para no mostrar un UUID, y la vista previa seguía buscando el nombre al revés entre las partidas del certificado.
+
+**Lo que la `0132` NO toca, que es casi todo:** el candado del 100%, el CAC, `monto_periodo_pactado`,
+la anulación, `calcular_avance_ponderado_rubros`, la vista previa, los totales y `emitir_certificado`
+— reciben las mismas filas que siempre, sembradas por otra puerta. Y una obra en `por_partida` (todas
+las que existen hoy) certifica exactamente igual que antes.
+
+---
+
 ## 7. Radio de impacto medido
 
 - **SQL**: 2 funciones a recrear (`emitir_certificado`, `marcar_certificado_pagado`) + 2 funciones
@@ -596,3 +736,52 @@ con las otras tres: es la granularidad de la carga, no el circuito.
 
 **Lo que NO conviene**: mezclar la 4 con la 2. Cambiar al mismo tiempo *cómo se carga* y *cómo se
 acuerda* deja sin saber cuál de los dos cambios rompió algo si algo se rompe.
+
+---
+
+## 10. Verificación acumulada — lo que falta probar antes de dar la pieza por cerrada
+
+Anotado el 2026-09-14 a pedido de Seba: *"conviene hacerlas todas juntas antes de dar la pieza por
+cerrada, no de a una"*. Y tiene una razón que no es sólo comodidad: **casi todo lo que falta necesita
+una obra armada de otra forma** (sin profesional, de un solo usuario, con apoderado), no un usuario
+más en la obra de siempre. Probarlas de a una obliga a rearmar el escenario cada vez, y es
+exactamente por eso que se fueron quedando.
+
+Las listas detalladas ya están escritas al pie de cada migración; esto es el índice de lo que quedó
+sin tildar.
+
+**1. La matriz de emisión (`0125`), que es lo más importante que falta.** Son tres escenarios, y
+ninguno es la obra de prueba habitual:
+
+- *** **Obra de un solo usuario** (admin_maestro, sin profesional, sin cliente, sin constructor):
+  emitir tiene que seguir funcionando **exactamente como antes de la `0125`**. Es el tercer peldaño
+  de la escalera y **el caso más común al arrancar una obra** — si esto falla, la migración rompió lo
+  que más se usa, y hoy nadie lo probó. Empezar por acá.
+- **Sin profesional, con constructor y cliente**: el constructor no emite ("lo emite el cliente"), el
+  cliente sí, y el cliente ve el borrador y la vista previa (la RLS de la `0124` se lo muestra
+  justamente cuando no hay profesional).
+- **Con apoderado**: con delegación vigente emite; con la delegación vencida y sin
+  `cliente_principal`, la escalera baja a `admin_maestro`.
+
+**2. El lado del cliente de la `0124`**, que quedó dicho como pendiente el mismo día que se cerró la
+tanda: en una obra **con** profesional el cliente **no** tiene que ver el borrador (ni el
+`invitado_veedor`), y en una **sin** profesional lo ve y es quien da la conformidad.
+
+**3. El Dart de la `0124` en el emulador**: la tarjeta de `GestionObraTab` que muestra en qué punto
+del acuerdo está el borrador (y que **no** muestra nada en un borrador recién creado ni en una obra
+sin contraparte), y que `DetalleCertificadoScreen._copiarComoLeido` no pierda ninguno de los 6 campos
+del acuerdo — ese constructor a mano es el único lugar del proyecto donde un campo nuevo del modelo
+se pierde en silencio.
+
+**4. Dos cosas de afuera de esta pieza que esperan el mismo tipo de obra**, y por eso conviene
+engancharlas al mismo rato:
+
+- la **delegación permanente** unificada en un solo `_delegacionVigente` (sin fechas = permanente,
+  como la base): arreglada en el código, sin verificar en el emulador. Necesita justamente un
+  apoderado, que es el escenario del punto 1;
+- el **selector de tipo de presupuesto**: guarda la elección sin recalcular, falta confirmar el
+  ajuste visual.
+
+**5. Lo que NO está en esta lista, y por qué:** las tandas 1, 2 y 3 están verificadas de punta a
+punta en el escenario "obra con profesional y cliente", que es el que se probó con los tres usuarios.
+Lo que falta no es repetir eso — es el resto de las formas que puede tener una obra.

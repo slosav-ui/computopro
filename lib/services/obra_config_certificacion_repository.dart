@@ -22,7 +22,8 @@ class ObraConfigCertificacionRepository {
   final SupabaseClient _client = Supabase.instance.client;
 
   static const _columnas = 'id, modelo_certificacion, dias_plazo_pago_certificados, '
-      'anticipo_pct, fondo_reparo_pct, monto_total_contratado, periodicidad_certificacion';
+      'anticipo_pct, fondo_reparo_pct, monto_total_contratado, periodicidad_certificacion, '
+      'modo_carga_avance';
 
   Future<ObraConfigCertificacion> getConfig(String obraId) async {
     final row = await _client.from('obras').select(_columnas).eq('id', obraId).single();
@@ -125,6 +126,27 @@ class ObraConfigCertificacionRepository {
     return _fromRow(updated);
   }
 
+  /// El modo de carga de avance, aparte del resto de la config (`0132`). Separado por la misma
+  /// razón que `cambiarModelo`: la base lo **congela con el primer certificado emitido** (trigger
+  /// `obras_modo_carga_avance_congelado`), así que este `update` puede fallar cuando los otros no,
+  /// y con un mensaje que hay que mostrar tal cual viene. Mandarlo dentro de `actualizarConfig`
+  /// haría que un cambio de modo rechazado tirara abajo el guardado del plazo de pago.
+  ///
+  /// Se llama solo si el modo realmente cambió: el trigger no se queja de un `update` que deja el
+  /// mismo valor, pero pedirle a la base algo que no hace falta es ruido.
+  Future<ObraConfigCertificacion> actualizarModoCargaAvance({
+    required String obraId,
+    required ModoCargaAvance modo,
+  }) async {
+    final updated = await _client
+        .from('obras')
+        .update({'modo_carga_avance': modo.columna})
+        .eq('id', obraId)
+        .select(_columnas)
+        .single();
+    return _fromRow(updated);
+  }
+
   ObraConfigCertificacion _fromRow(Map<String, dynamic> row) {
     return ObraConfigCertificacion(
       obraId: row['id'].toString(),
@@ -134,6 +156,7 @@ class ObraConfigCertificacionRepository {
       fondoReparoPct: (row['fondo_reparo_pct'] as num?)?.toDouble(),
       montoTotalContratado: (row['monto_total_contratado'] as num?)?.toDouble(),
       periodicidadCertificacion: periodicidadDesdeColumna(row['periodicidad_certificacion']?.toString()),
+      modoCargaAvance: modoCargaAvanceDesdeColumna(row['modo_carga_avance']?.toString()),
     );
   }
 

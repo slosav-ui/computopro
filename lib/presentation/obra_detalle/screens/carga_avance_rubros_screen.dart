@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/segurity/user_context.dart';
+import '../../../core/utils/parser_numero_ar.dart';
 import '../../../data/models/certificado.dart';
+import '../../../data/models/certificado_avance_global.dart';
 import '../../../data/models/certificado_subitem_avance.dart';
+import '../../../data/models/obra_config_certificacion.dart';
 import '../../../data/models/rubro_catalogo.dart';
 import '../../../services/auth_service.dart';
+import '../../../services/obra_config_certificacion_repository.dart';
 import '../../../services/certificado_subitems_avance_repository.dart';
 import '../../../services/certificados_repository.dart';
 import '../../../services/obra_subitems_repository.dart';
@@ -45,6 +49,7 @@ class _CargaAvanceRubrosScreenState extends State<CargaAvanceRubrosScreen> {
   final RubrosRepository _rubrosRepository = RubrosRepository();
   final CertificadoSubitemsAvanceRepository _avanceRepository = CertificadoSubitemsAvanceRepository();
   final CertificadosRepository _certificadosRepository = CertificadosRepository();
+  final ObraConfigCertificacionRepository _configRepository = ObraConfigCertificacionRepository();
   final AuthService _authService = AuthService();
 
   bool _cargando = true;
@@ -65,6 +70,18 @@ class _CargaAvanceRubrosScreenState extends State<CargaAvanceRubrosScreen> {
   bool _puedeConformar = false;
   bool _accionando = false;
 
+  /// Cómo carga el avance esta obra (`0132`). Arranca en `porPartida`, que es el modo que no
+  /// inventa nada: si la config no llega, la pantalla se comporta como siempre.
+  ModoCargaAvance _modoCarga = ModoCargaAvance.porPartida;
+
+  /// Los alcances ya cargados como globales en este borrador, con lo declarado y lo efectivo.
+  List<CertificadoAvanceGlobal> _globales = [];
+
+  /// `null` = toda la obra. Es un valor válido del selector, no "sin elegir".
+  String? _rubroGlobalSeleccionado;
+  final TextEditingController _pctGlobalController = TextEditingController();
+  bool _cargandoGlobal = false;
+
   /// Quién emite en esta obra ya no se deduce del rol del que mira (0125): se pregunta a la base.
   /// Arranca en false para no ofrecer "Vista previa" antes de saberlo.
   bool _puedeEmitir = false;
@@ -79,6 +96,12 @@ class _CargaAvanceRubrosScreenState extends State<CargaAvanceRubrosScreen> {
     super.initState();
     _cert = widget.certificado;
     _cargarDatos();
+  }
+
+  @override
+  void dispose() {
+    _pctGlobalController.dispose();
+    super.dispose();
   }
 
   Future<void> _cargarDatos() async {
@@ -103,6 +126,12 @@ class _CargaAvanceRubrosScreenState extends State<CargaAvanceRubrosScreen> {
       final cert = await _certificadoFresco();
       final acuerdo = await _estadoDelAcuerdo(cert);
       final puedeEmitir = await _puedeEmitirSeguro();
+      final modo = (await _configRepository.getConfig(widget.obraId)).modoCargaAvance;
+      // El resumen global solo se pide si la obra carga global -- en una obra por partida la tabla
+      // está siempre vacía y sería un viaje de red para no mostrar nada.
+      final globales = modo == ModoCargaAvance.global
+          ? await _avanceRepository.getResumenGlobal(_cert.id)
+          : <CertificadoAvanceGlobal>[];
 
       if (!mounted) return;
       setState(() {
@@ -113,6 +142,8 @@ class _CargaAvanceRubrosScreenState extends State<CargaAvanceRubrosScreen> {
         _hayContraparte = acuerdo.$1;
         _puedeConformar = acuerdo.$2;
         _puedeEmitir = puedeEmitir;
+        _modoCarga = modo;
+        _globales = globales;
         _cargando = false;
       });
     } catch (e) {
@@ -253,6 +284,7 @@ class _CargaAvanceRubrosScreenState extends State<CargaAvanceRubrosScreen> {
       children: [
         _buildResumenChico(),
         _buildBloqueAcuerdo(),
+        if (_modoCarga == ModoCargaAvance.global) _buildBloqueGlobal(),
         if (_rubrosConTildados.isEmpty)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 40),
@@ -511,6 +543,210 @@ class _CargaAvanceRubrosScreenState extends State<CargaAvanceRubrosScreen> {
     if (f == null) return '';
     final l = f.toLocal();
     return ' el ${l.day.toString().padLeft(2, '0')}/${l.month.toString().padLeft(2, '0')}';
+  }
+
+  // ===========================================================================
+  // Avance global (0132)
+  // ===========================================================================
+
+  /// El porcentaje que se carga es el **acumulado del alcance**, no el del período: "el rubro está
+  /// al 40%". La base deriva el incremento de cada partida. Los errores se muestran tal cual los
+  /// escribió la función: son las reglas del modo, y explican qué hacer.
+  Future<void> _cargarAvanceGlobal() async {
+    final pct = ParserNumeroAr.parsear(_pctGlobalController.text);
+    if (pct == null || pct <= 0 || pct > 100) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('El avance acumulado va entre 0 y 100.')),
+      );
+      return;
+    }
+    setState(() => _cargandoGlobal = true);
+    try {
+      await _avanceRepository.cargarAvanceGlobal(
+        certificadoId: _cert.id,
+        rubroId: _rubroGlobalSeleccionado,
+        porcentajeAcumulado: pct,
+      );
+      _pctGlobalController.clear();
+      await _cargarDatos();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _cargandoGlobal = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            e is PostgrestException ? e.message : 'No se pudo cargar el avance global.',
+          ),
+        ),
+      );
+      return;
+    }
+    if (mounted) setState(() => _cargandoGlobal = false);
+  }
+
+  Future<void> _borrarAvanceGlobal(CertificadoAvanceGlobal g) async {
+    final confirmado = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Quitar este avance global', style: TextStyle(fontSize: 14)),
+        content: Text(
+          'Se borra la declaración de "${g.etiquetaAlcance}", cargada al '
+          '${g.porcentajeCargado.toStringAsFixed(2)}%. Las partidas que sembró NO se borran: quedan '
+          'cargadas y se editan rubro por rubro, acá abajo. Esto solo quita el "se cargó como global".',
+          style: const TextStyle(fontSize: 12.5),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Quitar')),
+        ],
+      ),
+    );
+    if (confirmado != true) return;
+    try {
+      await _avanceRepository.borrarAvanceGlobal(certificadoId: _cert.id, rubroId: g.rubroId);
+      await _cargarDatos();
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No se pudo quitar el avance global.')),
+      );
+    }
+  }
+
+  /// La carga global y lo ya cargado. Las partidas siguen listadas abajo **a propósito**: el reparto
+  /// se corrige a mano antes de proponer (decisión de Seba, 2026-09-14 -- *"la obra empieza por
+  /// fundaciones, no por un poco de todo, y el que firma sabe qué se hizo de verdad"*).
+  Widget _buildBloqueGlobal() {
+    final habilitado = _puedeCargarAvance && !_cargandoGlobal && !_accionando;
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      elevation: 1,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Avance global',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF1B365D)),
+            ),
+            const SizedBox(height: 2),
+            const Text(
+              'Cargá el porcentaje acumulado del rubro y se reparte entre sus partidas, ponderado '
+              'por monto. Es cuánto lleva hecho en total, no lo del período.',
+              style: TextStyle(fontSize: 11, color: Colors.black54),
+            ),
+            const SizedBox(height: 10),
+            if (_puedeCargarAvance) ...[
+              // En columna y no en fila: en pantalla angosta un dropdown de nombres de rubro al
+              // lado de un campo numérico y un botón se desborda seguro.
+              DropdownButtonFormField<String?>(
+                initialValue: _rubroGlobalSeleccionado,
+                isDense: true,
+                isExpanded: true,
+                style: const TextStyle(fontSize: 12, color: Colors.black87),
+                decoration: const InputDecoration(labelText: 'Alcance', isDense: true),
+                items: [
+                  const DropdownMenuItem<String?>(
+                    value: null,
+                    child: Text('Toda la obra', style: TextStyle(fontSize: 12)),
+                  ),
+                  for (final r in _rubrosConTildados)
+                    DropdownMenuItem<String?>(
+                      value: r.id,
+                      child: Text(
+                        r.nombre,
+                        style: const TextStyle(fontSize: 12),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                ],
+                onChanged: habilitado ? (v) => setState(() => _rubroGlobalSeleccionado = v) : null,
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _pctGlobalController,
+                      enabled: habilitado,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      style: const TextStyle(fontSize: 12),
+                      decoration: const InputDecoration(
+                        labelText: 'Avance acumulado (%)',
+                        isDense: true,
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF1B365D),
+                      foregroundColor: Colors.white,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    onPressed: habilitado ? _cargarAvanceGlobal : null,
+                    child: _cargandoGlobal
+                        ? const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Text('Cargar', style: TextStyle(fontSize: 12)),
+                  ),
+                ],
+              ),
+            ],
+            if (_globales.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              const Text(
+                'Cargado en este certificado',
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.black54),
+              ),
+              for (final g in _globales) _buildFilaGlobal(g),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Cuando el reparto se corrigió a mano, se muestran los DOS números. El declarado solo sería
+  /// mentir por omisión, y el efectivo solo borraría lo que el que midió quiso decir.
+  Widget _buildFilaGlobal(CertificadoAvanceGlobal g) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${g.etiquetaAlcance} — ${g.porcentajeCargado.toStringAsFixed(2)}%',
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                ),
+                if (g.ajustado)
+                  Text(
+                    'El reparto se corrigió a mano: queda en ${g.porcentajeEfectivo.toStringAsFixed(2)}%.',
+                    style: TextStyle(fontSize: 10.5, color: Colors.orange.shade900),
+                  ),
+              ],
+            ),
+          ),
+          if (_puedeCargarAvance)
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(Icons.close, size: 16, color: Colors.black45),
+              tooltip: 'Quitar',
+              onPressed: _accionando ? null : () => _borrarAvanceGlobal(g),
+            ),
+        ],
+      ),
+    );
   }
 
   Widget _buildFilaRubro(RubroCatalogo rubro) {
