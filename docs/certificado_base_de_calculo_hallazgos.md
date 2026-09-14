@@ -1,7 +1,7 @@
-# Sobre qué base calcula el certificado — dos hallazgos (2026-09-14)
+# Sobre qué base calcula el certificado — tres hallazgos (2026-09-14)
 
 Salieron de cargar la obra real de Galpón Mix y verificar los montos contra `CERTIFICADO 1.pdf`, el
-certificado que Seba emitió de verdad. **Ninguno de los dos se había detectado antes**, y el motivo
+certificado que Seba emitió de verdad. **Ninguno de los tres se había detectado antes**, y el motivo
 es el mismo: hasta ahora los certificados se probaron con obras armadas para la prueba, donde los
 números se comparaban contra lo que la app misma calculaba. Contra un papel real aparecen.
 
@@ -86,14 +86,19 @@ certificado 1). No mueve plata, pero si aparece en una demo hay que saber qué e
 
 ---
 
-## Por qué el certificado del adicional sí cierra exacto
+## El control que acota los dos primeros
 
-Vale como control: el CERTIFICADO 1 ADICIONAL da **930,06, idéntico al PDF**. No es casualidad — ese
-certificado no tiene ninguno de los dos problemas: el adicional no lleva descuento (hallazgo 2 no
-aplica) y tiene **anticipo 0%**, con lo cual las dos bases del hallazgo 1 coinciden.
+Si se hace la cuenta a mano sobre el adicional —100% de la partida 1.1, anticipo 0%, fondo 5%— da
+**930,06, idéntico al PDF**. No es casualidad: ese caso no tiene ninguno de los dos problemas, porque
+el adicional no lleva descuento (hallazgo 2 no aplica) y con **anticipo 0%** las dos bases del
+hallazgo 1 coinciden.
 
-O sea que la maquinaria de certificación está bien; lo que está mal son esas dos cuentas. Es un dato
-útil: acota el arreglo a `calcular_totales_certificado` y descarta que haya algo roto aguas arriba.
+O sea que la aritmética de retenciones está bien donde las dos bases coinciden; lo que está mal es
+**sobre qué base se aplican**. Eso acota el arreglo a `calcular_totales_certificado` y descarta que
+haya algo roto aguas arriba.
+
+(Ese número no se puede ver hoy en la app: el hallazgo 3 explica por qué un adicional no tiene
+certificado.)
 
 ---
 
