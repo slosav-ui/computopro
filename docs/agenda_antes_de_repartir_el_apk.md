@@ -9,6 +9,12 @@ paso y siempre como "está en la misma lista que...". Esta es esa lista.
 fácil se posterga. También es la que tiene fecha: el APK se reparte a colegas, y una vez repartido
 no se puede des-repartir.
 
+**Y la fecha se adelantó (2026-09-14): es esta semana, antes de que los arquitectos vean la app.**
+Mostrar no es repartir —una demo en el teléfono de Seba no deja el APK en manos de nadie— pero es el
+primer momento en que gente de afuera ve el trabajo, y el activo que se expone es el mismo: la
+curación técnica, no el código. El orden correcto es iniciar el depósito **antes** de la muestra, no
+después.
+
 ---
 
 ## 1. Depósito de obra inédita en la DNDA — **en marcha esta semana**

@@ -439,13 +439,45 @@ otra pieza y entra por otro lado (ver `docs/descuento_pactado_horizonte.md`).
 
 ---
 
-## 10. El proveedor queda abierto: la próxima prueba es con Gemini (2026-09-14)
+## 10. Se sale sin importador de PDF (2026-09-14)
 
-**La Edge Function queda escrita y sin desplegar.** Decisión de Seba al cerrar la jornada: por ahora
-no paga la API de Anthropic, así que **la próxima decisión es probar el importador con Gemini, que
-tiene capa gratuita.**
+**Decisión de Seba, y el motivo es de producto, no de presupuesto:**
 
-### Por qué esto no invalida nada de lo construido
+> *"El de Excel ya funciona, no cuesta nada, y cubre al que tiene su planilla, que es la mayoría."*
+
+Vale registrar la forma del razonamiento porque es reusable: **la pregunta no fue "¿está terminado?"
+sino "¿a quién deja afuera si no sale?"**. La respuesta —al que no tiene su cómputo en una planilla—
+es una minoría hoy, y para esa minoría el costo de esperar es bajo. Lo que sí tenía costo era salir
+con una función que depende de una cuenta paga que todavía no se justifica.
+
+La lectura con IA **queda construida entera y apagada**, con un interruptor:
+`lecturaConIaDisponible` en `importar_presupuesto_screen.dart`. Apagada, la pantalla no ofrece lo
+que no puede cumplir: solo acepta `.xlsx`/`.xls`, sin cámara, sin cupo a la vista, y un Excel que el
+parser no entiende termina en un mensaje que dice **qué arreglar en la planilla** en vez de una
+oferta de leerlo con IA. Es el mismo criterio que la solapa Proveedores: mejor "no está" que un
+borrador que falla.
+
+Para prenderlo hacen falta **las dos cosas o ninguna**: el interruptor en `true` *y* la Edge
+Function desplegada. Prenderlo sin desplegar deja la pantalla ofreciendo un error, que es
+exactamente lo que apagarla evita.
+
+### Cuándo se retoma, y los dos caminos
+
+**La condición que lo dispara: que la app genere ingresos.** No es una fecha ni un hito técnico —
+está construido y anda; lo que falta es que el costo tenga de dónde salir.
+
+Ahí hay dos caminos, y no son excluyentes:
+
+| | Para qué sirve | Límite |
+| --- | --- | --- |
+| **Pagar la API de Anthropic** | El camino de producción: sirve para cualquier documento, de cualquier usuario | Cuesta plata desde el primer documento (1-3 centavos, §2) |
+| **Probar con Gemini (capa gratuita)** | **Validar que el importador sirve**, sin pagar nada | **Solo documentos propios** — ver abajo |
+
+**Gemini es para validar, no para producir.** Es una distinción que conviene no perder: sirve para
+contestar "¿el extractor lee bien un presupuesto real?" sin gastar un peso, y esa pregunta se puede
+contestar con los PDF de Galpón Mix, que son de Seba.
+
+### Por qué cambiar de proveedor no invalida nada de lo construido
 
 Vale decirlo porque es el riesgo obvio de leer esta sección sola. §2 ya había concluido que **a uno a
 tres centavos por documento, la elección de proveedor no es una decisión de costo**: lo que decide es
@@ -463,8 +495,8 @@ de que el extractor fuera un solo archivo detrás de una interfaz chica.
 
 ### La restricción que NO se puede relajar
 
-> *"Usando mis propios presupuestos para validar que el importador sirve — no documentos de
-> clientes, porque la capa gratuita de Google entrena con lo que recibe."*
+> *"Probar con Gemini para validar — pero la capa gratuita de Google entrena con lo que recibe,
+> así que no sirve para documentos de clientes reales."*
 
 **Esto es una condición de uso, no una precaución.** La capa gratuita de Gemini usa el contenido
 enviado para mejorar los modelos; la paga no. Mandar el presupuesto de un cliente por ahí sería
@@ -478,10 +510,16 @@ una obra es exactamente el tipo de documento que nadie quiere que circule.
 - **En el momento en que un usuario que no es Seba suba un documento, la capa gratuita deja de ser
   una opción.** No es un umbral de volumen ni de costo: es que el documento deja de ser propio.
 
+Y notar que eso encaja solo con la condición de retomar: **si lo que destraba la pieza son ingresos,
+para entonces hay usuarios que no son Seba** — o sea que el camino de producción es el pago, y
+Gemini se queda del lado de la validación previa. Los dos caminos no compiten: uno contesta si vale
+la pena, el otro lo pone en manos de la gente.
+
 Conviene que eso quede escrito acá y no solo en la cabeza, porque el salto de "estoy probando" a
 "hay alguien más usándolo" no avisa. **El cupo de la `0145` sigue siendo el mismo mecanismo y no
 cambia** — si el proveedor pasa a tener costo, el tope ya está puesto, que era el punto de ponerlo
-desde el principio.
+desde el principio. Es lo único de esta pieza que sigue vivo con la IA apagada: las migraciones
+están aplicadas y las columnas existen, simplemente no se llenan hasta que haya lecturas.
 
 ### Qué hay que mirar en la prueba, más allá de si anda
 

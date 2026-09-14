@@ -9,8 +9,23 @@ import 'revisar_importacion_screen.dart';
 
 /// Importar un presupuesto a esta obra. Ver docs/importador_inteligente_diagnostico.md.
 ///
-/// **Tres puertas, un solo destino.** Excel, PDF o foto entran por acá y terminan siempre en
-/// `RevisarImportacionScreen`, que no se entera de por dónde entraron.
+/// ================== HOY: SOLO EXCEL ==================
+///
+/// **Decisión de Seba del 2026-09-14: se sale sin importador de PDF.** El de Excel ya funciona, no
+/// cuesta nada y cubre al que tiene su planilla, que es la mayoría. La lectura con IA está
+/// construida entera y **apagada** con [lecturaConIaDisponible]; se retoma cuando la app genere
+/// ingresos (§10 del diagnóstico, con los dos caminos posibles).
+///
+/// Apagada, esta pantalla **no ofrece lo que no puede cumplir**: el selector acepta solo `.xlsx` y
+/// `.xls`, no hay botón de cámara, no se muestra el cupo, y un Excel cuyos encabezados el parser no
+/// reconoce termina en un mensaje que dice qué arreglar en la planilla -- no en una oferta de leerlo
+/// con IA. Mismo criterio que la solapa Proveedores, que dice "en construcción" en vez de mostrar un
+/// borrador: ofrecer un PDF con la Edge Function sin desplegar sería ofrecer un error.
+///
+/// ================== PRENDIDA: TRES PUERTAS, UN DESTINO ==================
+///
+/// Excel, PDF o foto entran por acá y terminan siempre en `RevisarImportacionScreen`, que no se
+/// entera de por dónde entraron.
 ///
 ///   - **Excel** intenta primero el parser determinístico del cliente: gratis, instantáneo y exacto
 ///     cuando reconoce los encabezados. Si no los reconoce, se ofrece leerlo con IA -- se ofrece,
@@ -19,6 +34,15 @@ import 'revisar_importacion_screen.dart';
 ///
 /// El cupo mensual (0145) se muestra **antes** de elegir el archivo. Que alguien saque una foto, la
 /// suba y recién ahí se entere de que no le quedan lecturas es la peor forma de decirlo.
+
+/// El interruptor de la lectura con IA. Hoy `false` -- ver la cabecera de este archivo.
+///
+/// Para prenderlo: ponerlo en `true` **y desplegar la Edge Function** (`supabase secrets set
+/// ANTHROPIC_API_KEY=...` y `supabase functions deploy leer-documento`). Las dos cosas o ninguna:
+/// prenderlo sin desplegar deja la pantalla ofreciendo un error, que es justo lo que apagarlo
+/// evita.
+const bool lecturaConIaDisponible = false;
+
 class ImportarPresupuestoScreen extends StatefulWidget {
   final String obraId;
 
@@ -56,6 +80,10 @@ class _ImportarPresupuestoScreenState extends State<ImportarPresupuestoScreen> {
   }
 
   Future<void> _cargarCupo() async {
+    if (!lecturaConIaDisponible) {
+      setState(() => _cargandoCupo = false);
+      return;
+    }
     try {
       final cupo = await _repository.cupoIa();
       if (!mounted) return;
@@ -88,7 +116,9 @@ class _ImportarPresupuestoScreenState extends State<ImportarPresupuestoScreen> {
     setState(() => _error = null);
     final resultado = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ['xlsx', 'xls', 'pdf', 'jpg', 'jpeg', 'png'],
+      allowedExtensions: lecturaConIaDisponible
+          ? ['xlsx', 'xls', 'pdf', 'jpg', 'jpeg', 'png']
+          : ['xlsx', 'xls'],
       withData: true,
     );
     if (resultado == null || resultado.files.isEmpty) return;
@@ -174,10 +204,23 @@ class _ImportarPresupuestoScreenState extends State<ImportarPresupuestoScreen> {
       final filas = ExcelParser.procesarFilas(bytes, hojas);
 
       if (filas.isEmpty) {
-        // **No es un error: es la otra puerta.** El parser no reconoció los encabezados, que es
-        // exactamente el caso para el que existe el modelo. Se ofrece, no se hace solo: gasta una
-        // lectura del cupo y esa decisión es del usuario.
-        setState(() => _paso = _Paso.ofreciendoIa);
+        // Con la IA prendida esto **no es un error, es la otra puerta**: el parser no reconoció los
+        // encabezados, que es exactamente el caso para el que existe el modelo. Se ofrece, no se
+        // hace solo, porque gasta una lectura del cupo y esa decisión es del usuario.
+        //
+        // Apagada, no hay otra puerta que ofrecer, así que se dice qué falta **en términos de lo
+        // que el usuario puede hacer**: cambiar los encabezados de su planilla. Mandarlo a un
+        // "no se pudo" sin salida sería dejarlo trabado con el archivo en la mano.
+        if (lecturaConIaDisponible) {
+          setState(() => _paso = _Paso.ofreciendoIa);
+          return;
+        }
+        setState(() {
+          _paso = _Paso.eligiendoHojas;
+          _error = 'No se reconocieron los encabezados en las hojas elegidas. La planilla tiene que '
+              'tener una fila de títulos con al menos Descripción, Cantidad y Precio Unitario '
+              '(Rubro y Unidad son opcionales). Revisá que esa fila exista y volvé a intentar.';
+        });
         return;
       }
 
@@ -277,10 +320,15 @@ class _ImportarPresupuestoScreenState extends State<ImportarPresupuestoScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Traé el presupuesto como lo tengas: una planilla de Excel, un PDF o una foto de la '
-              'hoja. Después vas a poder revisar partida por partida antes de que se cargue nada.',
-              style: TextStyle(fontSize: 12, color: Colors.black54),
+            Text(
+              lecturaConIaDisponible
+                  ? 'Traé el presupuesto como lo tengas: una planilla de Excel, un PDF o una foto '
+                      'de la hoja. Después vas a poder revisar partida por partida antes de que se '
+                      'cargue nada.'
+                  : 'Subí la planilla de tu cómputo, con una fila por partida (descripción, '
+                      'cantidad y precio unitario). Después vas a poder revisar partida por partida '
+                      'antes de que se cargue nada.',
+              style: const TextStyle(fontSize: 12, color: Colors.black54),
             ),
             const SizedBox(height: 16),
             _buildCupo(),
@@ -391,11 +439,12 @@ class _ImportarPresupuestoScreenState extends State<ImportarPresupuestoScreen> {
                 icon: const Icon(Icons.upload_file, size: 18),
                 label: const Text('Elegir archivo'),
               ),
-              OutlinedButton.icon(
-                onPressed: _sacarFoto,
-                icon: const Icon(Icons.photo_camera_outlined, size: 18),
-                label: const Text('Sacar una foto'),
-              ),
+              if (lecturaConIaDisponible)
+                OutlinedButton.icon(
+                  onPressed: _sacarFoto,
+                  icon: const Icon(Icons.photo_camera_outlined, size: 18),
+                  label: const Text('Sacar una foto'),
+                ),
             ],
           )
         else
@@ -414,7 +463,7 @@ class _ImportarPresupuestoScreenState extends State<ImportarPresupuestoScreen> {
         if (_nombreArchivo == null) ...[
           const SizedBox(height: 8),
           Text(
-            'Excel, PDF o imagen.',
+            lecturaConIaDisponible ? 'Excel, PDF o imagen.' : 'Planilla de Excel (.xlsx o .xls).',
             style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
           ),
         ],
