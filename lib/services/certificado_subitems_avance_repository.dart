@@ -115,6 +115,27 @@ class CertificadoSubitemsAvanceRepository {
     return (data as num?)?.toDouble() ?? 0;
   }
 
+  /// Acumulado de TODAS las partidas de la obra, en una llamada — RPC
+  /// `calcular_avance_acumulado_obra` (0147).
+  ///
+  /// Para mostrar "lleva X%, quedan Y%" al lado de cada partida mientras se carga el avance. Antes
+  /// ese dato solo aparecía cuando la base rechazaba un exceso, o sea después de equivocarse.
+  ///
+  /// Una llamada y no una por partida (`getAcumuladoSubitem`): con 24 partidas eran 24 viajes cada
+  /// vez que se abre la pantalla. Y la regla de qué certificados cuentan queda del lado de la base,
+  /// que es donde ya vivía — ver el comentario de la migración.
+  ///
+  /// Las partidas sin ningún avance vienen con 0, no se omiten: "le queda el 100%" es justamente lo
+  /// que hay que mostrar.
+  Future<Map<String, double>> getAcumuladoPorObra(String obraId) async {
+    final data = await _client.rpc('calcular_avance_acumulado_obra', params: {'p_obra_id': obraId});
+    return {
+      for (final row in (data as List))
+        (row as Map<String, dynamic>)['obra_subitem_id'].toString():
+            (row['acumulado'] as num?)?.toDouble() ?? 0,
+    };
+  }
+
   /// Avance ponderado por rubro — RPC a `calcular_avance_ponderado_rubros` (0052).
   Future<List<AvancePonderadoRubro>> getAvancePonderadoRubros(String obraId) async {
     final data = await _client.rpc('calcular_avance_ponderado_rubros', params: {'p_obra_id': obraId});

@@ -679,6 +679,7 @@ class _DetalleCertificadoScreenState extends State<DetalleCertificadoScreen> {
           const SizedBox(height: 16),
           DesgloseCertificado(
             certificadoId: _cert.id,
+            obraId: _cert.obraId,
             formatearMonto: _fmt,
             mostrarMontos: _puedeVerMontos,
           ),

@@ -361,7 +361,11 @@ class _VistaPreviaCertificadoScreenState extends State<VistaPreviaCertificadoScr
           // El desglose por partida vive en `DesgloseCertificado`, compartido con la pantalla del
           // certificado ya emitido (2026-09-14). Antes estaba escrito acá adentro, y por eso el
           // emitido no lo tenía: el detalle existía solo mientras el certificado era borrador.
-          DesgloseCertificado(certificadoId: widget.certificado.id, formatearMonto: _fmt),
+          DesgloseCertificado(
+            certificadoId: widget.certificado.id,
+            obraId: widget.obraId,
+            formatearMonto: _fmt,
+          ),
         const Divider(height: 32),
         // Desglose pactado/ajuste CAC (docs/cac_conectado_modelo_a_diseno.md §9, ambigüedad B) --
         // solo si hay ajuste que explicar. Para una obra sin CAC (la mayoría hoy) montoAjusteCac

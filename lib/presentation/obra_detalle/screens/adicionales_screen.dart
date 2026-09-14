@@ -741,6 +741,43 @@ class _AdicionalesScreenState extends State<AdicionalesScreen> {
     );
   }
 
+  /// La pantalla vacía es la primera que ve alguien que nunca cargó un adicional, así que es el
+  /// mejor lugar para decir qué es uno. Antes decía solo "todavía no hay adicionales cargados": una
+  /// constatación, sin ninguna salida.
+  Widget _buildVacio() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.playlist_add, size: 40, color: Colors.grey.shade400),
+            const SizedBox(height: 14),
+            const Text(
+              'Todavía no hay adicionales en esta obra',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF1B365D)),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Un adicional es un trabajo que no estaba en el contrato y se cotiza aparte. Se '
+              'presupuesta con sus propias partidas y, una vez aprobado, se certifica junto con la '
+              'obra.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12.5, height: 1.45, color: Colors.grey.shade700),
+            ),
+            const SizedBox(height: 18),
+            OutlinedButton.icon(
+              onPressed: _abrirCrear,
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text('Nuevo adicional'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -748,25 +785,33 @@ class _AdicionalesScreenState extends State<AdicionalesScreen> {
         title: const Text('Adicionales', style: TextStyle(fontSize: 15)),
         backgroundColor: const Color(0xFF1B365D),
         foregroundColor: Colors.white,
-        actions: [
-          IconButton(icon: const Icon(Icons.add), tooltip: 'Nuevo adicional', onPressed: _abrirCrear),
-        ],
+      ),
+      // ================== POR QUÉ UN BOTÓN CON TEXTO Y NO EL "+" DEL APPBAR ==================
+      //
+      // Seba, probando la obra real (2026-09-14): *"no encontré cómo iniciar un adicional nuevo...
+      // si yo no lo encuentro, un arquitecto menos"*.
+      //
+      // Hasta acá la ÚNICA forma de crear un adicional era un `IconButton` con un `+` pelado en el
+      // AppBar, cuya única explicación era un `tooltip`. **Un tooltip en un teléfono no existe**: se
+      // muestra al pasar el mouse por encima, y no hay mouse. O sea que la acción más importante de
+      // la pantalla estaba detrás de un ícono sin rótulo y sin forma de averiguar qué hacía.
+      //
+      // Un `FloatingActionButton.extended` dice qué hace, es lo primero que se ve y está donde la
+      // mano ya está. El `+` del AppBar se saca: dos entradas a lo mismo es ruido, y la que se
+      // saca es justamente la que no se entendía.
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _abrirCrear,
+        backgroundColor: const Color(0xFF1B365D),
+        foregroundColor: Colors.white,
+        icon: const Icon(Icons.add),
+        label: const Text('Nuevo adicional'),
       ),
       body: _cargando
           ? const Center(child: CircularProgressIndicator())
           : _error != null
               ? Center(child: Text(_error!, style: const TextStyle(color: Colors.black54)))
               : _adicionales.isEmpty
-                  ? const Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(24),
-                        child: Text(
-                          'Todavía no hay adicionales cargados para esta obra.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(color: Colors.black54),
-                        ),
-                      ),
-                    )
+                  ? _buildVacio()
                   : _buildLista(),
     );
   }

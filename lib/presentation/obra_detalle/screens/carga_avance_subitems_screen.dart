@@ -119,12 +119,12 @@ class _CargaAvanceSubitemsScreenState extends State<CargaAvanceSubitemsScreen> {
       // poder cargar avance; si falla, la pantalla sigue funcionando sin la marca.
       final ajusteCac = await ajusteCacFuture.catchError((_) => <MontoCongeladoAjustado>[]);
 
-      // Acumulado: una llamada por subítem tildado de este rubro, en paralelo — no hay (todavía)
-      // una versión batch de calcular_avance_acumulado_subitem, y un rubro tiene pocos subítems
-      // como para que N llamadas paralelas sean un problema real.
-      final acumulados = await Future.wait(
-        obraSubitems.map((os) => _avanceRepository.getAcumuladoSubitem(os.id)),
-      );
+      // Acumulado de toda la obra en UNA llamada (`calcular_avance_acumulado_obra`, 0147). Antes
+      // era una llamada por subítem en paralelo, con la nota de que "no hay todavía una versión
+      // batch": ahora la hay. Trae la obra entera y no solo este rubro, que sobra para la pantalla
+      // y cuesta lo mismo que traer uno.
+      final acumuladoPorObra = await _avanceRepository.getAcumuladoPorObra(widget.obraId);
+      final acumulados = [for (final os in obraSubitems) acumuladoPorObra[os.id] ?? 0.0];
 
       if (!mounted) return;
       setState(() {
@@ -427,6 +427,21 @@ class _CargaAvanceSubitemsScreenState extends State<CargaAvanceSubitemsScreen> {
                       if (alCien) ...[
                         const SizedBox(width: 4),
                         Icon(Icons.check_circle, size: 14, color: Colors.green.shade700),
+                      ] else ...[
+                        // "Quedan" es la mitad accionable del acumulado, y faltaba (Seba,
+                        // 2026-09-14): el que carga el certificado siguiente no necesita saber
+                        // cuánto se hizo, necesita saber **cuánto puede cargar**. Sin esto había
+                        // que restar de cabeza contra 100 en cada partida, o descubrir el tope
+                        // recién cuando la base rechaza el exceso al emitir.
+                        const SizedBox(width: 6),
+                        Flexible(
+                          child: Text(
+                            '· quedan ${_fmtEntrada(100 - acumulado)}%',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                          ),
+                        ),
                       ],
                     ],
                   ),

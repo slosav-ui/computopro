@@ -31,6 +31,9 @@ import '../../../services/auth_service.dart';
 class DesgloseCertificado extends StatefulWidget {
   final String certificadoId;
 
+  /// La obra a la que pertenece el certificado, para poder traer el acumulado de sus partidas.
+  final String obraId;
+
   /// Cómo formatear cada monto. Lo pone quien lo usa porque la conversión a la moneda de la obra
   /// (y con qué cotización) es decisión de la pantalla, no de este widget -- el certificado emitido
   /// usa la cotización congelada al emitir y la vista previa la de hoy.
@@ -43,6 +46,7 @@ class DesgloseCertificado extends StatefulWidget {
   const DesgloseCertificado({
     super.key,
     required this.certificadoId,
+    required this.obraId,
     required this.formatearMonto,
     this.mostrarMontos = true,
   });
@@ -63,6 +67,10 @@ class _DesgloseCertificadoState extends State<DesgloseCertificado> {
   List<CertificadoSubitemAvance> _avances = [];
   final Map<String, String> _descripcionPorObraSubitem = {};
   final Map<String, String> _rubroPorObraSubitem = {};
+
+  /// Cuánto lleva certificado cada partida **contando este certificado** (0147). Es lo que el
+  /// certificado en papel llama arrastre: cada uno muestra lo suyo y el acumulado a esa fecha.
+  Map<String, double> _acumulado = {};
   bool _cargando = true;
   bool _fallo = false;
 
@@ -90,6 +98,11 @@ class _DesgloseCertificadoState extends State<DesgloseCertificado> {
       final rubros = usuarioId == null
           ? await _rubrosRepository.getCatalogoOficial()
           : await _rubrosRepository.getCatalogoCompleto(usuarioId);
+      // Silencioso ante error: el desglose del período sigue sirviendo sin el acumulado, y es
+      // preferible mostrarlo incompleto a no mostrar nada.
+      final acumulado = await _avanceRepository
+          .getAcumuladoPorObra(widget.obraId)
+          .catchError((_) => <String, double>{});
 
       final descripcionPorCatalogo = {
         for (final s in subitemsCatalogo) s.id: '${s.codigo} - ${s.descripcion}',
@@ -111,6 +124,7 @@ class _DesgloseCertificadoState extends State<DesgloseCertificado> {
           ..clear()
           ..addEntries(obraSubitems
               .map((os) => MapEntry(os.id, nombrePorRubro[os.rubroId] ?? 'Rubro')));
+        _acumulado = acumulado;
         _cargando = false;
       });
     } catch (_) {
@@ -195,6 +209,7 @@ class _DesgloseCertificadoState extends State<DesgloseCertificado> {
   /// usuario agranda la fuente del sistema. Acá la descripción ocupa su renglón y los dos números
   /// van abajo, alineados a la derecha -- entra en cualquier ancho y a cualquier escala.
   Widget _buildFila(CertificadoSubitemAvance a) {
+    final acumulado = _acumulado[a.obraSubitemId];
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Column(
@@ -219,6 +234,24 @@ class _DesgloseCertificadoState extends State<DesgloseCertificado> {
                       fontSize: 10.5, fontWeight: FontWeight.w600, color: Colors.blueGrey.shade800),
                 ),
               ),
+              // El arrastre: cuánto lleva la partida contando este certificado, y cuánto queda.
+              // Es lo que convierte al certificado en referencia para cargar el siguiente.
+              if (acumulado != null) ...[
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    acumulado >= 100
+                        ? 'acumulado 100% — completa'
+                        : 'acumulado ${_fmtPct(acumulado)}% · quedan ${_fmtPct(100 - acumulado)}%',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      color: acumulado >= 100 ? Colors.green.shade700 : Colors.grey.shade600,
+                    ),
+                  ),
+                ),
+              ],
               const Spacer(),
               if (widget.mostrarMontos)
                 Flexible(
