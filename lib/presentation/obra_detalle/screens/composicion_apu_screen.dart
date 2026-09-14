@@ -510,14 +510,33 @@ class _ComposicionApuScreenState extends State<ComposicionApuScreen> {
     }
   }
 
-  // Anchos fijos de las 3 columnas numéricas, compartidos entre el encabezado y cada fila para que
-  // queden alineadas entre sí (y las cifras en la misma vertical) -- ver conversación: probado que
-  // el emulador angosto no alcanza para confiar en que "se acomoda solo", hay que fijarlos.
+  // Anchos BASE de las columnas numéricas, a escala de texto 1.0. Compartidos entre el encabezado y
+  // cada fila para que las cifras queden en la misma vertical.
+  //
+  // ================== POR QUÉ SON BASE Y NO FIJOS (2026-09-14) ==================
+  //
+  // Antes eran fijos, y el comentario que los justificaba decía que "el emulador angosto no alcanza
+  // para confiar en que se acomoda solo, hay que fijarlos". Eso resolvió el ancho angosto **a
+  // fuente normal** y creó el problema que reemplazó: **una caja de ancho fijo con texto adentro
+  // que sí escala**. Con la fuente del sistema en grande, el texto crece y la caja no, así que las
+  // columnas se entrecruzan -- que es exactamente el síntoma que reportó Seba en el teléfono.
+  //
+  // La lección, que vale más que el arreglo: **un emulador a fuente por defecto no puede validar un
+  // layout de ancho fijo.** Es el mismo tipo de agujero que el de buscar errores de fórmula en un
+  // solo idioma -- la verificación miraba donde el problema no estaba.
+  //
+  // Ahora se multiplican por la escala de texto (ver `_anchoColumnas`), y cuando ni así entran, la
+  // tabla se apila (`_buildFilaApilada`). Dos mecanismos porque resuelven cosas distintas: escalar
+  // mantiene la tabla legible mientras haya lugar; apilar es lo que hay que hacer cuando no lo hay.
   static const double _colUnidad = 32;
   static const double _colRendimiento = 46;
   static const double _colPrecio = 64;
   static const double _colSubtotal = 72;
   static const double _colAccion = 26;
+
+  /// Lo mínimo que puede medir la columna del insumo para que el nombre diga algo. Por debajo de
+  /// esto se lee "Cemento p..." , que no es un dato: ahí conviene apilar.
+  static const double _minimoInsumo = 96;
 
   /// `atenuarSiVacio`: la sección nunca se oculta (existe igual, con su título y su botón de
   /// agregar), pero si no tiene líneas cargadas se ve apagada -- se entiende que la opción existe
@@ -569,8 +588,7 @@ class _ComposicionApuScreenState extends State<ComposicionApuScreen> {
                 ),
               )
             else ...[
-              _buildEncabezadoColumnas(conAccionQuitar: conAccionQuitar),
-              for (final item in items) _buildFilaItem(item, conAccionQuitar: conAccionQuitar),
+              _buildTabla(items, conAccionQuitar: conAccionQuitar),
             ],
           ],
         ),
@@ -581,10 +599,167 @@ class _ComposicionApuScreenState extends State<ComposicionApuScreen> {
     return apagada ? Opacity(opacity: 0.45, child: tarjeta) : tarjeta;
   }
 
+  /// Elige entre tabla y lista apilada, y es el único lugar donde se toma esa decisión.
+  ///
+  /// La cuenta es la que importa: se calcula cuánto miden las columnas numéricas **a la escala de
+  /// texto real del dispositivo**, se resta del ancho disponible, y si lo que queda para el nombre
+  /// del insumo no llega a [_minimoInsumo] escalado, se apila. O sea que el corte no es un ancho de
+  /// pantalla adivinado ni un `if (esTelefono)`: es si los datos entran o no entran, que es la
+  /// pregunta real.
+  ///
+  /// `LayoutBuilder` y no `MediaQuery.size`: lo que importa es el ancho que esta tarjeta recibe
+  /// -- ya descontados el padding de la Card y el de la pantalla --, no el del teléfono.
+  Widget _buildTabla(List<ApuComposicionItemDetalle> items, {required bool conAccionQuitar}) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final escala = MediaQuery.textScalerOf(context).scale(1);
+        final anchoNumerico = _anchoColumnas(escala, conAccionQuitar: conAccionQuitar);
+        final apilado = constraints.maxWidth - anchoNumerico < _minimoInsumo * escala;
+
+        if (apilado) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (final item in items)
+                _buildFilaApilada(item, conAccionQuitar: conAccionQuitar),
+            ],
+          );
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildEncabezadoColumnas(conAccionQuitar: conAccionQuitar, escala: escala),
+            for (final item in items)
+              _buildFilaItem(item, conAccionQuitar: conAccionQuitar, escala: escala),
+          ],
+        );
+      },
+    );
+  }
+
+  double _anchoColumnas(double escala, {required bool conAccionQuitar}) {
+    final base = _colUnidad +
+        _colRendimiento +
+        _colPrecio +
+        _colSubtotal +
+        (conAccionQuitar ? _colAccion : 0);
+    return base * escala;
+  }
+
+  /// Una línea cuando la tabla no entra: el nombre arriba, y los datos abajo **con su etiqueta al
+  /// lado**.
+  ///
+  /// La etiqueta inline es lo que hace que esto funcione sin encabezado de columna: apilado no hay
+  /// una fila de títulos de la que colgarse, así que cada número tiene que decir qué es. Y va en un
+  /// `Wrap`, que es lo que garantiza que no se cruce nada por más que crezca la fuente -- si no
+  /// entran en un renglón, bajan.
+  Widget _buildFilaApilada(ApuComposicionItemDetalle item, {required bool conAccionQuitar}) {
+    final sinPrecio = item.precioUnitario == null;
+    final atenuado = item.tipoComponente == 'mano_obra' && item.rendimiento == 0;
+
+    final fila = Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Text(
+                  item.insumoNombre,
+                  // Dos líneas y no una: apilado sobra el alto y falta el ancho, así que cortar el
+                  // nombre acá sería tirar la única información que no se puede deducir.
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                ),
+              ),
+              if (conAccionQuitar)
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  icon: const Icon(Icons.close, size: 18, color: Colors.black38),
+                  onPressed: () => _onQuitarItem(item),
+                ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Wrap(
+            spacing: 14,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              _datoApilado('UNID.', Text(
+                item.insumoUnidad.toUpperCase(),
+                style: const TextStyle(fontSize: 11.5, color: Colors.black54),
+              )),
+              _datoApilado('REND.', Text(
+                _fmtRendimiento(item.rendimiento),
+                style: const TextStyle(fontSize: 11.5, color: Colors.black54),
+              )),
+              _datoApilado(
+                'P. UNIT.',
+                InkWell(
+                  onTap: _esObraHija ? null : () => _abrirEdicion(item),
+                  child: Text(
+                    sinPrecio ? 'Cargar precio' : CurrencyFormatter.formatARS(item.precioUnitario!),
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                      color: _esObraHija
+                          ? Colors.black45
+                          : (sinPrecio ? Colors.orange[800] : const Color(0xFF1B365D)),
+                      decoration: _esObraHija ? TextDecoration.none : TextDecoration.underline,
+                      decorationColor: Colors.black26,
+                    ),
+                  ),
+                ),
+              ),
+              _datoApilado(
+                'SUBTOTAL',
+                Text(
+                  sinPrecio ? '—' : CurrencyFormatter.formatARS(item.subtotal!),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF1B365D),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const Divider(height: 14, thickness: 0.5),
+        ],
+      ),
+    );
+    return atenuado ? Opacity(opacity: 0.5, child: fila) : fila;
+  }
+
+  Widget _datoApilado(String etiqueta, Widget valor) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          etiqueta,
+          style: const TextStyle(
+            fontSize: 9,
+            fontWeight: FontWeight.w600,
+            color: Colors.black38,
+            letterSpacing: 0.3,
+          ),
+        ),
+        const SizedBox(width: 4),
+        valor,
+      ],
+    );
+  }
+
   /// Encabezados de columna -- sin esto, las 3 cifras seguidas de cada línea (rendimiento, precio
   /// unitario, subtotal) no dicen cuál es cuál. Letra chica y atenuada a propósito, para que no
   /// compita con los datos de abajo.
-  Widget _buildEncabezadoColumnas({required bool conAccionQuitar}) {
+  Widget _buildEncabezadoColumnas({required bool conAccionQuitar, required double escala}) {
     const estilo = TextStyle(
       fontSize: 9,
       fontWeight: FontWeight.w600,
@@ -597,11 +772,23 @@ class _ComposicionApuScreenState extends State<ComposicionApuScreen> {
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           const Expanded(child: Text('INSUMO', style: estilo)),
-          const SizedBox(width: _colUnidad, child: Text('UNID.', style: estilo, textAlign: TextAlign.right)),
-          const SizedBox(width: _colRendimiento, child: Text('REND.', style: estilo, textAlign: TextAlign.right)),
-          const SizedBox(width: _colPrecio, child: Text('P. UNIT.', style: estilo, textAlign: TextAlign.right)),
-          const SizedBox(width: _colSubtotal, child: Text('SUBTOTAL', style: estilo, textAlign: TextAlign.right)),
-          if (conAccionQuitar) SizedBox(width: _colAccion),
+          SizedBox(
+              width: _colUnidad * escala,
+              child: const Text('UNID.', style: estilo, textAlign: TextAlign.right, maxLines: 1)),
+          SizedBox(
+              width: _colRendimiento * escala,
+              child: const Text('REND.', style: estilo, textAlign: TextAlign.right, maxLines: 1)),
+          SizedBox(
+              width: _colPrecio * escala,
+              child: const Text('P. UNIT.', style: estilo, textAlign: TextAlign.right, maxLines: 1)),
+          SizedBox(
+              width: _colSubtotal * escala,
+              child: const Text('SUBTOTAL',
+                  style: estilo,
+                  textAlign: TextAlign.right,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis)),
+          if (conAccionQuitar) SizedBox(width: _colAccion * escala),
         ],
       ),
     );
@@ -613,7 +800,11 @@ class _ComposicionApuScreenState extends State<ComposicionApuScreen> {
   /// editar, ver `PanelEditarItemApu`) y subtotal (texto plano, resultado calculado). Vale igual
   /// para material, mano de obra (el precio unitario ahí es el valor hora de la categoría) y
   /// equipos.
-  Widget _buildFilaItem(ApuComposicionItemDetalle item, {required bool conAccionQuitar}) {
+  Widget _buildFilaItem(
+    ApuComposicionItemDetalle item, {
+    required bool conAccionQuitar,
+    required double escala,
+  }) {
     final sinPrecio = item.precioUnitario == null;
     // Categoría de mano de obra sin rendimiento cargado (fila real en 0, o virtual todavía --
     // corrección #1: las 5 categorías siempre visibles, atenuadas mientras estén en 0).
@@ -632,23 +823,29 @@ class _ComposicionApuScreenState extends State<ComposicionApuScreen> {
             ),
           ),
           SizedBox(
-            width: _colUnidad,
+            width: _colUnidad * escala,
             child: Text(
               item.insumoUnidad.toUpperCase(),
               textAlign: TextAlign.right,
+              // maxLines faltaba acá y en REND.: sin él, un texto que no entra se parte en dos
+              // renglones y descuadra la fila entera respecto de sus vecinas.
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: const TextStyle(fontSize: 11, color: Colors.black45),
             ),
           ),
           SizedBox(
-            width: _colRendimiento,
+            width: _colRendimiento * escala,
             child: Text(
               _fmtRendimiento(item.rendimiento),
               textAlign: TextAlign.right,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: const TextStyle(fontSize: 11, color: Colors.black45),
             ),
           ),
           SizedBox(
-            width: _colPrecio,
+            width: _colPrecio * escala,
             // Único toque para editar rendimiento y precio (ver PanelEditarItemApu) -- visible
             // para cualquiera (Free incluido), el gate de PRO es al Guardar, adentro del diálogo.
             //
@@ -682,7 +879,7 @@ class _ComposicionApuScreenState extends State<ComposicionApuScreen> {
             ),
           ),
           SizedBox(
-            width: _colSubtotal,
+            width: _colSubtotal * escala,
             child: Text(
               sinPrecio ? '—' : CurrencyFormatter.formatARS(item.subtotal!),
               textAlign: TextAlign.right,
@@ -693,7 +890,7 @@ class _ComposicionApuScreenState extends State<ComposicionApuScreen> {
           ),
           if (conAccionQuitar)
             SizedBox(
-              width: _colAccion,
+              width: _colAccion * escala,
               // La sección que pasa conAccionQuitar:true es homogénea (solo materiales o solo
               // equipos, ver los dos call sites de _buildSeccion) -- alcanza con mostrar el ícono
               // siempre acá, _onQuitarItem ya distingue a qué RPC llamar según item.tipoComponente.
