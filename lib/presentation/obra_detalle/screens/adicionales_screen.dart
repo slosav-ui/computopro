@@ -250,18 +250,30 @@ class _AdicionalesScreenState extends State<AdicionalesScreen> {
     }
   }
 
-  /// Navega a las solapas de la obra hija (Rubros/APU/Mat y MO/Resumen/Proveedores -- sin Gestión
-  /// de Obra, ver `PresupuestosScreen`) para seguir presupuestando un adicional ya creado por esta
-  /// vía. Trae la fila completa porque `PresupuestosScreen` espera el mapa de la obra, no solo el
-  /// id.
-  Future<void> _abrirObraHija(String obraHijaId) async {
+  /// Navega a las solapas de la obra hija. Trae la fila completa porque `PresupuestosScreen` espera
+  /// el mapa de la obra, no solo el id.
+  ///
+  /// `solapa` existe desde la `0148`: **la obra hija ahora tiene Gestión de Obra**, que es donde el
+  /// adicional emite sus certificados. Por defecto abre en Cómputo, que es lo que hace falta
+  /// mientras se lo está presupuestando.
+  Future<void> _abrirObraHija(
+    String obraHijaId, {
+    SolapaPresupuestos solapa = SolapaPresupuestos.computo,
+  }) async {
     try {
       final obraHija = await _obrasRepository.getObraPorId(obraHijaId);
       if (!mounted) return;
       await Navigator.push(
         context,
-        MaterialPageRoute(builder: (_) => PresupuestosScreen(obra: obraHija)),
+        MaterialPageRoute(
+          builder: (_) => PresupuestosScreen(obra: obraHija, solapaInicial: solapa),
+        ),
       );
+      // Al volver se relee: el resumen del adicional (porcentaje y monto certificado) lo recalcula
+      // un trigger cuando se emite o se anula un certificado de la hija (0148), así que puede haber
+      // cambiado sin que esta pantalla haya tocado nada.
+      if (!mounted) return;
+      await _cargarDatos();
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -377,24 +389,28 @@ class _AdicionalesScreenState extends State<AdicionalesScreen> {
     }, 'No se pudo rechazar el adicional.');
   }
 
-  /// Seguimiento de un aprobado (0120): suma el avance del período. Firme -- el diálogo pide
-  /// confirmación explícita antes de devolver el porcentaje (§14.5-C).
-  Future<void> _certificarAvance(ModificacionObra m) async {
-    final porcentaje = await showDialog<double>(
-      context: context,
-      builder: (ctx) => _CertificarAvanceDialog(
-        adicional: m,
-        mostrarMontos: _veMontos,
-        // Los montos de este diálogo son porciones del monto ya aprobado: van con la cotización de
-        // esa aprobación, no con la de hoy (0122).
-        fmtMonto: (montoArs) => _fmtMontoDe(m, montoArs),
-      ),
-    );
-    if (porcentaje == null || !mounted) return;
-    await _transicion(m, () async {
-      final acumulado = await _repo.certificarAvance(modificacionId: m.id, porcentaje: porcentaje);
-      return 'Avance certificado: +${_fmtPorcentaje(porcentaje)}%, acumulado ${_fmtPorcentaje(acumulado)}%.';
-    }, 'No se pudo certificar el avance.');
+  /// Lleva a los certificados del adicional.
+  ///
+  /// **Antes acá se cargaba un porcentaje suelto en un diálogo** (`certificar_avance_adicional`,
+  /// 0120). Desde la `0148` el adicional certifica como una obra: emite sus propios certificados,
+  /// con número, avance por partida y retenciones. Un diálogo de un campo no puede representar eso,
+  /// y lo que sí puede ya existe -- es la misma Gestión de Obra de siempre, sobre la obra hija.
+  ///
+  /// Por eso esto no abre una pantalla nueva: abre la que ya había, en la solapa correcta.
+  Future<void> _abrirCertificadosDelAdicional(ModificacionObra m) async {
+    final hija = m.obraHijaId;
+    if (hija == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Este adicional se cargó como un monto fijo, sin partidas, así que no tiene '
+            'certificados. Los certificados son de los adicionales presupuestados con la app.',
+          ),
+        ),
+      );
+      return;
+    }
+    await _abrirObraHija(hija, solapa: SolapaPresupuestos.gestionObra);
   }
 
   /// Barra de avance + certificado/saldo de un aprobado (0120). Quien no ve montos ve la barra y el
@@ -625,9 +641,9 @@ class _AdicionalesScreenState extends State<AdicionalesScreen> {
                                 ),
                               if (puedeCertificar)
                                 TextButton(
-                                  onPressed: () => _certificarAvance(m),
+                                  onPressed: () => _abrirCertificadosDelAdicional(m),
                                   style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(0, 0)),
-                                  child: const Text('Certificar avance', style: TextStyle(fontSize: 12)),
+                                  child: const Text('Certificados', style: TextStyle(fontSize: 12)),
                                 ),
                             ],
                           ),
@@ -820,154 +836,6 @@ class _AdicionalesScreenState extends State<AdicionalesScreen> {
 /// Mismo formato que la carga de avance de la obra (`carga_avance_subitems_screen.dart`): entero si
 /// no tiene decimales, si no, dos.
 String _fmtPorcentaje(double v) => v == v.roundToDouble() ? v.toInt().toString() : v.toStringAsFixed(2);
-
-/// Certificar avance de un adicional aprobado (0120) -- el mismo gesto que la carga de avance de la
-/// obra: se ingresa el % DEL PERÍODO con el acumulado y lo disponible a la vista, y si se pasa ofrece
-/// certificar solo lo que queda. Antes de devolver el porcentaje pide confirmación explícita: la
-/// carga es firme, sin borrador ni anulación (§14.5-C). El candado real del 100% está en la base.
-class _CertificarAvanceDialog extends StatefulWidget {
-  final ModificacionObra adicional;
-  final bool mostrarMontos;
-  final String Function(double montoArs) fmtMonto;
-
-  const _CertificarAvanceDialog({
-    required this.adicional,
-    required this.mostrarMontos,
-    required this.fmtMonto,
-  });
-
-  @override
-  State<_CertificarAvanceDialog> createState() => _CertificarAvanceDialogState();
-}
-
-class _CertificarAvanceDialogState extends State<_CertificarAvanceDialog> {
-  final TextEditingController _controller = TextEditingController();
-  String? _error;
-
-  double get _acumulado => widget.adicional.porcentajeAvance;
-  double get _disponible => double.parse((100 - _acumulado).toStringAsFixed(2));
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  /// Solo para mostrar mientras se escribe -- la misma cuenta que `certificar_avance_adicional`
-  /// (sobre el acumulado nuevo, exacto al 100%), que es la que manda: el monto real lo fija la base.
-  double _montoDelPeriodo(double porcentaje) {
-    final a = widget.adicional;
-    final nuevoAcumulado = _acumulado + porcentaje;
-    final nuevoMonto = nuevoAcumulado >= 100
-        ? a.montoTotal
-        : (a.montoTotal * nuevoAcumulado / 100 * 100).roundToDouble() / 100;
-    return nuevoMonto - a.montoCertificado;
-  }
-
-  Future<void> _continuar() async {
-    var valor = ParserNumeroAr.parsear(_controller.text.trim());
-    if (valor == null || valor <= 0) {
-      setState(() => _error = 'Ingresá un porcentaje mayor a 0.');
-      return;
-    }
-    if (valor > _disponible) {
-      final disponible = _disponible;
-      final usarDisponible = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Excede lo disponible', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
-          content: Text(
-            'Para llegar al 100% le queda solamente un ${_fmtPorcentaje(disponible)}% disponible. '
-            '¿Querés certificar ese ${_fmtPorcentaje(disponible)}% o preferís revisar el número?',
-            style: const TextStyle(fontSize: 13),
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Revisar')),
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: Text('Certificar ${_fmtPorcentaje(disponible)}%'),
-            ),
-          ],
-        ),
-      );
-      if (usarDisponible != true || !mounted) return;
-      valor = disponible;
-    }
-
-    final porcentaje = valor;
-    final nuevoAcumulado = _acumulado + porcentaje;
-    final confirmado = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Confirmar avance', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
-        content: Text(
-          '+${_fmtPorcentaje(porcentaje)}% → acumulado ${_fmtPorcentaje(nuevoAcumulado)}%'
-          '${widget.mostrarMontos ? ", ${widget.fmtMonto(_montoDelPeriodo(porcentaje))} en este período" : ""}.\n\n'
-          'Queda firme: no se puede deshacer ni bajar después.',
-          style: const TextStyle(fontSize: 13),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Volver')),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Certificar')),
-        ],
-      ),
-    );
-    if (confirmado != true || !mounted) return;
-    Navigator.pop(context, porcentaje);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final valor = ParserNumeroAr.parsear(_controller.text.trim());
-    final valorValido = valor != null && valor > 0 && valor <= _disponible;
-    return AlertDialog(
-      title: const Text('Certificar avance', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(widget.adicional.descripcion, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-            const SizedBox(height: 6),
-            Text(
-              'Acumulado: ${_fmtPorcentaje(_acumulado)}% · Disponible: ${_fmtPorcentaje(_disponible)}%',
-              style: const TextStyle(fontSize: 12, color: Colors.black54),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: _controller,
-              autofocus: true,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(labelText: 'Avance de este período (%)', isDense: true),
-              style: const TextStyle(fontSize: 13),
-              onChanged: (_) => setState(() => _error = null),
-            ),
-            if (widget.mostrarMontos && valorValido)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Text(
-                  'Este período: ${widget.fmtMonto(_montoDelPeriodo(valor))}',
-                  style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: Color(0xFF1B365D)),
-                ),
-              ),
-            if (_error != null) ...[
-              const SizedBox(height: 8),
-              Text(_error!, style: TextStyle(fontSize: 11.5, color: Colors.red.shade700)),
-            ],
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
-        ElevatedButton(
-          onPressed: _continuar,
-          style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1B365D)),
-          child: const Text('Continuar', style: TextStyle(color: Colors.white)),
-        ),
-      ],
-    );
-  }
-}
 
 enum _ViaCargaAdicional { montoFijo, presupuestar, importar }
 

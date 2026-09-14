@@ -29,6 +29,14 @@ import 'presupuesto_estado_panel.dart';
 class GestionObraTab extends StatefulWidget {
   final String obraId;
 
+  /// Si esta obra es el adicional de otra (obra hija, `0113`).
+  ///
+  /// Desde la `0148` un adicional certifica como una obra y por eso tiene esta solapa -- pero **no
+  /// todo lo que hay acá tiene sentido para él**: un adicional no lleva adicionales propios ni
+  /// quitas, y su libro de obra es el de la obra madre. Lo que se esconde es eso y nada más; los
+  /// certificados y la configuración son suyos y se usan igual.
+  final bool esObraHija;
+
   /// El contexto de permisos completo, no un booleano derivado — a diferencia de otras solapas
   /// más simples (RubrosTab recibe un solo `puedeEditarComputo`), Gestión de Obra ya necesita más
   /// de un chequeo de rol acá (config de certificación, cargar avance, ver montos) y va a seguir
@@ -40,6 +48,7 @@ class GestionObraTab extends StatefulWidget {
   const GestionObraTab({
     Key? key,
     required this.obraId,
+    this.esObraHija = false,
     required this.userContext,
   }) : super(key: key);
 
@@ -862,20 +871,28 @@ class _GestionObraTabState extends State<GestionObraTab> {
                 // entera de una demasía/quita comentando ahí, no aprobándola, docs/
                 // adicionales_quitas_demasias_diagnostico.md §6). Aprobar/rechazar/crear se
                 // gatean adentro de la pantalla, no acá.
-                AccionObra(
-                  icono: Icons.rule_outlined,
-                  label: 'Quitas y Demasías',
-                  onTap: _abrirQuitasDemasias,
-                ),
+                // Un adicional no lleva quitas ni demasías propias: las correcciones sobre un
+                // adicional se hacen en su cómputo, que todavía es suyo, o con otro adicional de la
+                // obra madre. Ofrecerlo acá abriría una pantalla que trabaja sobre la obra
+                // equivocada.
+                if (!widget.esObraHija)
+                  AccionObra(
+                    icono: Icons.rule_outlined,
+                    label: 'Quitas y Demasías',
+                    onTap: _abrirQuitasDemasias,
+                  ),
                 // Visible para cualquiera, mismo criterio que "Quitas y Demasías" -- cualquier
                 // miembro puede solicitar un adicional (ambigüedad E,
                 // docs/adicionales_quitas_demasias_diagnostico.md §11.3), la barrera real es
                 // la aprobación, gateada adentro de la pantalla.
-                AccionObra(
-                  icono: Icons.add_business_outlined,
-                  label: 'Adicionales',
-                  onTap: _abrirAdicionales,
-                ),
+                // Ídem: un adicional de un adicional no existe como concepto. Si hace falta más
+                // trabajo, es otro adicional de la obra madre.
+                if (!widget.esObraHija)
+                  AccionObra(
+                    icono: Icons.add_business_outlined,
+                    label: 'Adicionales',
+                    onTap: _abrirAdicionales,
+                  ),
                 AccionObra(
                   icono: Icons.settings_outlined,
                   label: 'Configuración',
@@ -898,7 +915,9 @@ class _GestionObraTabState extends State<GestionObraTab> {
                 // Solo si la obra usa el libro (0137). Y visible para CUALQUIER miembro: el cliente
                 // y el veedor lo leen completo, y esconderles la entrada les sacaría lo único que
                 // hacen acá.
-                if (_librosHabilitados)
+                // El libro es de la obra, no del adicional: las comunicaciones de una obra no se
+                // parten por adicional. Se lee desde la madre.
+                if (_librosHabilitados && !widget.esObraHija)
                   AccionObra(
                     icono: Icons.menu_book_outlined,
                     label: 'Libro de obra',

@@ -46,15 +46,14 @@ class PresupuestosScreen extends StatefulWidget {
 class _PresupuestosScreenState extends State<PresupuestosScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
 
-  /// Índice real de cada solapa. Depende de si es obra hija: un adicional presupuestado con la app
-  /// no tiene la solapa Gestión de Obra (ver el `tabs:` del build), así que lo que va después se
-  /// corre un lugar. Si alguna vez se reordenan las solapas, esto se actualiza junto con el `tabs:`
-  /// y con el `animateTo(1)` de `_abrirComposicionDesdeComputo`.
-  int get _indiceResumen => _esObraHija ? 3 : 4;
-
-  /// Obra hija: no existe la solapa -> cae en Cómputo, que es donde se carga el adicional. Nunca un
-  /// índice fuera de rango.
-  int get _indiceGestionObra => _esObraHija ? 0 : 3;
+  /// Índice real de cada solapa. Si alguna vez se reordenan, esto se actualiza junto con el `tabs:`
+  /// del build y con el `animateTo(1)` de `_abrirComposicionDesdeComputo`.
+  ///
+  /// **Hasta la `0148` estos dos índices dependían de si la obra era hija**, porque un adicional no
+  /// tenía la solapa Gestión de Obra y todo lo que venía después se corría un lugar. Ahora la tiene,
+  /// así que las seis solapas son las mismas para las dos y los índices vuelven a ser constantes.
+  static const int _indiceResumen = 4;
+  static const int _indiceGestionObra = 3;
 
   int _indiceDe(SolapaPresupuestos solapa) {
     switch (solapa) {
@@ -157,7 +156,7 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> with SingleTick
     };
 
     _tabController = TabController(
-      length: _esObraHija ? 5 : 6,
+      length: 6,
       initialIndex: _indiceDe(widget.solapaInicial),
       vsync: this,
     );
@@ -313,10 +312,11 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> with SingleTick
             const Tab(text: 'Cómputo'),
             const Tab(text: 'APU'),
             const Tab(text: 'Mat y MO'),
-            // Un adicional (obra hija, 0113) nunca certifica por su cuenta -- esta solapa queda
-            // afuera para esa obra, no solo deshabilitada. Ver docs/adicionales_quitas_demasias_
-            // diagnostico.md §4/§12.9.
-            if (!_esObraHija) const Tab(text: 'Gestión de Obra'),
+            // Un adicional (obra hija, 0113) SÍ certifica por su cuenta desde la `0148`: emite sus
+            // propios certificados, con número, partidas y retenciones. Hasta entonces esta solapa
+            // quedaba afuera para una obra hija, y esa línea era el candado que lo impedía --
+            // sacarla es lo que destraba la pieza entera, sin una pantalla nueva.
+            const Tab(text: 'Gestión de Obra'),
             const Tab(text: 'Resumen'),
             const Tab(text: 'Proveedores'),
           ],
@@ -346,10 +346,13 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> with SingleTick
                         puedeEditarPrecios: _userContext?.puedeEditarPreciosObra == true,
                       )
                     : const Center(child: Text('No se pudo determinar la obra.')),
-                if (!_esObraHija)
-                  _obraId != null
-                      ? GestionObraTab(obraId: _obraId!, userContext: _userContext)
-                      : const Center(child: Text('No se pudo determinar la obra.')),
+                _obraId != null
+                    ? GestionObraTab(
+                        obraId: _obraId!,
+                        userContext: _userContext,
+                        esObraHija: _esObraHija,
+                      )
+                    : const Center(child: Text('No se pudo determinar la obra.')),
                 _buildTabResumenFinal(),
                 _buildTabProveedores(),
               ],

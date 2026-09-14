@@ -216,20 +216,6 @@ class AdicionalesRepository {
     });
   }
 
-  /// Suma `porcentaje` (el avance DEL PERÍODO, no el acumulado) a un adicional aprobado (0120,
-  /// `certificar_avance_adicional`). Firme: no hay borrador ni anulación. La base rechaza si pasa del
-  /// 100% o si quien carga no es admin/profesional/constructor, y registra quién lo hizo en
-  /// audit_log. Devuelve el acumulado nuevo.
-  Future<double> certificarAvance({required String modificacionId, required double porcentaje}) {
-    return _conLog('certificarAvance', () async {
-      final acumulado = await _client.rpc('certificar_avance_adicional', params: {
-        'p_modificacion_id': modificacionId,
-        'p_porcentaje': porcentaje,
-      });
-      return _aDouble(acumulado);
-    });
-  }
-
   Future<void> rechazarAdicional({required String modificacionId, String? comentario}) {
     return _conLog('rechazarAdicional', () async {
       await _client.rpc('rechazar_adicional', params: {
