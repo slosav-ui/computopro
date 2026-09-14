@@ -45,6 +45,18 @@ enum TipoPendiente {
   /// La vuelta de lo anterior: al cliente le respondieron la objeción y sigue abierta. Le toca leer
   /// la aclaración y levantarla, o dejarla planteada.
   objecionRespondida,
+
+  /// El borrador ya conformado que todavía nadie emitió (`0130`). Va a quien emite en esa obra según
+  /// la escalera de la `0125` — que puede no haber participado ni de la propuesta ni de la
+  /// conformidad, y por eso el aviso hace falta: hasta la `0130` este certificado **no le aparecía a
+  /// nadie** y podía quedar esperando para siempre, con las dos partes técnicas creyendo que ya
+  /// estaba.
+  certificadoConforme,
+
+  /// El borrador que la contraparte devolvió con un comentario y todavía nadie volvió a proponer
+  /// (`0131`). Va solo a quien propuso: un borrador que te devolvieron no es trabajo que elegiste
+  /// tener abierto, es una respuesta que te esperan.
+  certificadoDevuelto,
 }
 
 class Pendiente {
@@ -67,6 +79,12 @@ class Pendiente {
   /// Desde cuándo espera -- envío/solicitud, emisión, lectura, pago o propuesta, según el tipo.
   final DateTime? desde;
 
+  /// Cuándo esto se resuelve **solo**, si tiene plazo (`0131`). Hoy lo llena una sola rama, la
+  /// objeción respondida, y recién pasados los 2 días en que corresponde avisar: la base manda la
+  /// fecha cuando hay que decirla y null antes. Por eso acá no hay ningún número de días -- ni el 2
+  /// ni el 5 viven en Dart, y no se pueden desincronizar con los que aplica la función.
+  final DateTime? vence;
+
   const Pendiente({
     required this.obraId,
     required this.obraNombre,
@@ -76,6 +94,7 @@ class Pendiente {
     this.certificadoNumero,
     this.certificadoVersion,
     this.desde,
+    this.vence,
   });
 
   bool get esDeCertificado => certificadoNumero != null;
@@ -110,6 +129,10 @@ class Pendiente {
         return 'Certificado N° $_numero para responder una objeción';
       case TipoPendiente.objecionRespondida:
         return 'Certificado N° $_numero para revisar la respuesta a tu objeción';
+      case TipoPendiente.certificadoConforme:
+        return 'Certificado N° $_numero para emitir';
+      case TipoPendiente.certificadoDevuelto:
+        return 'Certificado N° $_numero para corregir y volver a proponer';
     }
   }
 
@@ -147,7 +170,20 @@ class Pendiente {
       case TipoPendiente.certificadoObjetado:
         return _conFecha('Período $descripcion', 'objetado el', cuando);
       case TipoPendiente.objecionRespondida:
-        return _conFecha('Período $descripcion', 'respondida el', cuando);
+        final base = _conFecha('Período $descripcion', 'respondida el', cuando);
+        // El aviso de los 2 días (0131). Lo decide la base: manda `vence` recién cuando hay que
+        // avisar. "Se resuelve sola" y no "vence" ni "se pierde": lo que llega no es un castigo por
+        // no contestar, es el plazo que se pactó para sostener una objeción.
+        final seResuelve = _fechaCorta(vence);
+        return seResuelve == null ? base : '$base · se resuelve sola el $seResuelve';
+      case TipoPendiente.certificadoConforme:
+        // "conformado", el hecho que abrió la espera, y no "sin emitir": el que mira recién se está
+        // enterando de que le toca.
+        return _conFecha('Período $descripcion', 'conformado el', cuando);
+      case TipoPendiente.certificadoDevuelto:
+        // La fecha es la de la propuesta que devolvieron: la devolución no guarda fecha propia
+        // (0124 guardó el comentario y no el momento), y decir "propuesto el" es lo cierto.
+        return _conFecha('Período $descripcion', 'propuesto el', cuando);
     }
   }
 
@@ -176,6 +212,7 @@ class Pendiente {
       certificadoNumero: (row['certificado_numero'] as num?)?.toInt(),
       certificadoVersion: (row['certificado_version'] as num?)?.toInt(),
       desde: row['desde'] != null ? DateTime.tryParse(row['desde'].toString()) : null,
+      vence: row['vence'] != null ? DateTime.tryParse(row['vence'].toString()) : null,
     );
   }
 
@@ -207,6 +244,10 @@ class Pendiente {
         return TipoPendiente.certificadoObjetado;
       case 'objecion_respondida':
         return TipoPendiente.objecionRespondida;
+      case 'certificado_conforme':
+        return TipoPendiente.certificadoConforme;
+      case 'certificado_devuelto':
+        return TipoPendiente.certificadoDevuelto;
       default:
         return null;
     }

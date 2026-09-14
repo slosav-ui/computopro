@@ -112,3 +112,96 @@ con "tenés trabajo a medio hacer".
 - `lib/presentation/dashboard/cartel_pendientes.dart` + `ObrasListScreen`: cartel arriba de la
   lista, contador por card, y cada ítem lleva a Adicionales, Quitas y Demasías o al detalle del
   certificado (armando el `UserContext` de esa obra). Recarga al volver.
+
+---
+
+## 6. Ramas que faltan — auditoría del 2026-09-14
+
+Seba reporta que **a `slosav` (admin_maestro + profesional) no le aparece el cartel** en momentos en
+que la obra claramente lo esperaba, aunque al entrar a la obra ve todo. Revisadas una por una las
+14 ramas de `mis_pendientes()` tal como quedó en la `0129`, contra el ciclo real después de la
+`0124` (conformidad) y la `0125` (quién emite).
+
+### 6.1 Falta la rama de EMITIR — confirmada, es un agujero estructural
+
+**El certificado conformado y sin emitir no le aparece a nadie.** La tabla de §2 se escribió en la
+`0117`, cuando el ciclo iba `borrador -> emitido` en un solo acto y emitir era la decisión de quien
+ya estaba mirando el borrador. La `0124` partió ese acto en dos (`propuesto -> conforme -> emitido`)
+y la `0125` le dio la emisión a **otra persona** que la que propone y la que conforma — el
+profesional, que puede no haber participado de ninguno de los dos pasos anteriores. Desde entonces
+existe un estado de espera nuevo, real, con nombre y con autoridad propia
+(`estado='borrador' and acuerdo_estado='conforme'`, resuelto por `emitir_certificado`), y **ninguna
+rama lo cubre**. `certificacion_periodo` ya se apagó (hay borrador), `certificado_propuesto` ya se
+apagó (la conformidad se dio), y `certificado_emitido` todavía no se prende.
+
+Es exactamente el caso de Seba: como profesional de la obra, era él quien tenía que emitir, y el
+dashboard no se lo pidió nunca.
+
+**Escrita en la `0130` el mismo día, por pedido de Seba** (*"ese es un bug real y no le aparece a
+nadie, así que un certificado puede quedar esperando indefinidamente sin que la app avise"*), como
+`certificado_conforme` — nombrada por el estado del certificado, como el resto
+(`certificado_propuesto`, `certificado_leido`), no por la acción. En el dashboard abre la **vista
+previa**, no la pantalla de carga: es donde vive el botón "Emitir", y mandar al que emite a la
+pantalla de carga lo pone a un toque de modificar un avance, que por el trigger de la `0124` tira
+abajo la conformidad que este mismo pendiente vino a cobrar.
+
+La rama es de una línea y no inventa autoridad: `puede_emitir_certificado(obra_id)` ya existe desde
+la `0125` y ya la llama la app por RPC para decidir si muestra el botón "Emitir". `desde` =
+`conforme_fecha`.
+
+### 6.2 Falta la vuelta de la devolución — mismo origen, misma tanda
+
+`devolver_avance_certificado` (0124) manda el borrador a `en_carga` **con un comentario obligatorio**
+y le deja la pelota a quien propuso. No hay rama para eso tampoco.
+
+**Escrita en la `0131`** como `certificado_devuelto`, en la misma tanda del plazo de la objeción
+(Seba, 2026-09-14: *"suma la también: es el mismo caso que el conformado sin emitir"*). Abre la
+pantalla de carga, al revés que `certificado_conforme`: acá sí hay que editar los números.
+
+No choca con el criterio de §4-D ("lo que está en preparación no figura, es trabajo en curso de
+quien lo cotiza"): un borrador que alguien te devolvió con un comentario **no es trabajo que elegiste
+tener abierto**, es una respuesta que te están esperando. La diferencia está en la base y es
+consultable: `comentario_devolucion is not null` con `propuesto_por = auth.uid()`.
+
+### 6.3 Las dos ramas de la objeción SÍ incluyen a `slosav` — hay que medirlo contra la base
+
+`certificado_objetado` (0129) incluye `profesional`, `constructor` **y `admin_maestro`**, así que por
+código tendría que haberle aparecido mientras la objeción estuvo abierta y sin respuesta. Y que
+`certificado_pagado` (admin_maestro o constructor) sí le haya aparecido prueba que su fila de
+`admin_maestro` está activa y que `tiene_rol_en_obra` le da true.
+
+Quedan dos explicaciones, y se distinguen con una consulta, no discutiendo:
+
+1. **La ventana**: entre la objeción de `seba_losa` y la respuesta de `seba2135` puede no haber
+   habido ningún momento en que se mirara el dashboard de `slosav`. La rama se apaga en cuanto hay
+   respuesta, por diseño.
+2. **La función desplegada no es la del archivo**: la `0129` reescribe `mis_pendientes()` entera; si
+   se aplicó por partes, en la base puede haber quedado el cuerpo de la `0126`, que no tiene ninguna
+   de las dos ramas de objeción.
+
+**`objecion_respondida` va solo al cliente, y eso está bien**: con la respuesta dada, la acción que
+falta es del cliente (leer la aclaración y levantar la objeción). `mis_pendientes()` es "lo que
+tenés que hacer vos", no "lo que está pasando en la obra" — si le mandáramos al técnico un aviso por
+algo que no puede resolver, el cartel empieza a mentir. Lo que sí le falta al técnico en ese momento
+es el **plazo** de esa espera, y eso se resuelve en la §5.2 del diagnóstico de certificación.
+
+### 6.4 Cómo probar cualquier rama con un solo usuario, sin tres dispositivos
+
+Hasta ahora todas las verificaciones de `mis_pendientes()` decían "el SQL Editor corre sin usuario
+logueado". Se puede, dentro de una transacción, haciéndose pasar por el usuario — `auth.uid()` lee el
+claim `sub`:
+
+```sql
+begin;
+  set local role authenticated;
+  set local request.jwt.claims = '{"sub":"<uuid de slosav>","role":"authenticated"}';
+  select tipo, obra_nombre, certificado_numero, desde from mis_pendientes();
+rollback;
+```
+
+Y para saber cuál de las dos explicaciones de §6.3 es la buena, **antes** de cambiar nada:
+
+```sql
+select prosrc like '%certificado_objetado%' as tiene_la_rama_0129
+from pg_proc where proname = 'mis_pendientes';
+```

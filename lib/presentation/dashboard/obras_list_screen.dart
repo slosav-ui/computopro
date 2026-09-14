@@ -10,6 +10,7 @@ import '../obra_detalle/screens/carga_avance_rubros_screen.dart';
 import '../obra_detalle/screens/detalle_certificado_screen.dart';
 import '../obra_detalle/screens/presupuestos_screen.dart';
 import '../obra_detalle/screens/quitas_demasias_screen.dart';
+import '../obra_detalle/screens/vista_previa_certificado_screen.dart';
 import 'cartel_pendientes.dart';
 import '../auth/aceptar_invitacion_screen.dart';
 import 'editar_perfil_screen.dart';
@@ -426,6 +427,10 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
           final certificado = await _certificadosRepository.getPorId(p.entidadId!);
           destino = DetalleCertificadoScreen(obraId: p.obraId, certificado: certificado, userContext: userContext);
         case TipoPendiente.certificadoPropuesto:
+        // El borrador devuelto va al mismo lado y por el mismo motivo (0131): lo que hay que hacer
+        // es corregir los números que la contraparte objetó y volver a proponer, y eso se hace en la
+        // pantalla de carga. Acá sí corresponde entrar editando, al revés que en certificadoConforme.
+        case TipoPendiente.certificadoDevuelto:
           // El único tipo de certificado que NO abre el detalle: lo que hay que revisar es el
           // avance cargado del borrador, y eso vive en la pantalla de carga (0124). El botón de
           // conformar/devolver está ahí, al lado de los números que se están conformando.
@@ -433,6 +438,18 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
           destino = CargaAvanceRubrosScreen(
             obraId: p.obraId,
             certificado: borrador,
+            userContext: userContext,
+          );
+        case TipoPendiente.certificadoConforme:
+          // Va derecho a la vista previa, que es donde vive el botón "Emitir" (y donde el desglose
+          // se ve completo, con la misma cuenta que va a congelar la emisión). NO a la pantalla de
+          // carga, aunque sea el otro camino a este certificado: ahí se editan los avances, y tocar
+          // un número tira abajo la conformidad por el trigger de la 0124 -- justo lo que este
+          // pendiente viene a cobrar. Al que le toca emitir hay que dejarlo mirando, no editando.
+          final conformado = await _certificadosRepository.getPorId(p.entidadId!);
+          destino = VistaPreviaCertificadoScreen(
+            obraId: p.obraId,
+            certificado: conformado,
             userContext: userContext,
           );
         case TipoPendiente.certificacionPeriodo:

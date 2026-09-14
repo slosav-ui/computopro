@@ -49,7 +49,12 @@ extension AcuerdoCertificadoLabel on AcuerdoCertificado {
 /// mientras se discute. `null` = nunca fue objetado, que es el caso de casi todos.
 ///
 /// `abierta` **frena el pago**; leer sigue permitido (leer no es pagar).
-enum ObjecionCertificado { abierta, aclarada, aceptada }
+///
+/// `vencida` (0131) es el cuarto final y no es lo mismo que `aclarada`, aunque las dos destraben el
+/// pago: `aclarada` la levantó el cliente y deja `objecionResueltaPor` cargado; `vencida` se levantó
+/// sola a los 5 días de la respuesta y lo deja en null **a propósito** — hacer constar una
+/// conformidad que no existió sería peor que la demora.
+enum ObjecionCertificado { abierta, aclarada, aceptada, vencida }
 
 extension ObjecionCertificadoLabel on ObjecionCertificado {
   String get label {
@@ -60,6 +65,10 @@ extension ObjecionCertificadoLabel on ObjecionCertificado {
         return 'Objeción aclarada';
       case ObjecionCertificado.aceptada:
         return 'Objeción aceptada';
+      case ObjecionCertificado.vencida:
+        // Dice cómo se cerró, no solo que se cerró: en un documento que puede terminar en una
+        // discusión formal, "vencida" a secas se lee como si el cliente hubiera aceptado.
+        return 'Objeción levantada por vencimiento del plazo';
     }
   }
 }

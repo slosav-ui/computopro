@@ -53,6 +53,11 @@ class _DetalleCertificadoScreenState extends State<DetalleCertificadoScreen> {
   /// vacío, y el aviso lo dice con el número: "se emitieron 3 certificados después de este" es
   /// accionable, "tené cuidado" no.
   int _posteriores = 0;
+
+  /// Cuándo se levanta sola la objeción abierta de este certificado (0131), o null si no tiene
+  /// plazo corriendo (sin objeción, o con una que todavía nadie respondió: esa no vence). La fecha
+  /// la calcula la base -- los 5 días no se copian a Dart.
+  DateTime? _objecionVence;
   String _moneda = 'ARS';
   double _cotizacionHoy = 0;
 
@@ -105,7 +110,17 @@ class _DetalleCertificadoScreenState extends State<DetalleCertificadoScreen> {
   Future<bool> _recargar() async {
     final estadoAnterior = _cert.estado;
     try {
+      // 0131: el vencimiento de la objeción no lo escribe ningún job -- se calcula al leer y se
+      // materializa al tocar. Abrir el certificado es tocarlo. Va ANTES de releer para que lo que
+      // se lea ya esté al día; si no corresponde vencer nada, no hace nada.
+      await _certificadosRepository.vencerObjecionSiCorresponde(_cert.id);
       final fresco = await _certificadosRepository.getPorId(_cert.id);
+      // Solo hay plazo corriendo si la objeción está abierta Y ya fue respondida: la que nadie
+      // respondió no vence (decisión de Seba -- el silencio del que debe responder no puede
+      // beneficiar al que debe cobrar).
+      final vence = fresco.tieneObjecionAbierta && fresco.objecionRespondidaFecha != null
+          ? await _certificadosRepository.objecionVenceEl(fresco.objecionRespondidaFecha!)
+          : null;
       final falta = fresco.estado == EstadoCertificado.anulado &&
           await _certificadosRepository.faltaReemplazo(fresco.id);
       final posteriores = falta ? await _certificadosRepository.contarPosteriores(fresco.id) : 0;
@@ -114,6 +129,7 @@ class _DetalleCertificadoScreenState extends State<DetalleCertificadoScreen> {
         _cert = fresco;
         _faltaReemplazo = falta;
         _posteriores = posteriores;
+        _objecionVence = vence;
       });
       return fresco.estado != estadoAnterior;
     } catch (_) {
@@ -838,6 +854,21 @@ class _DetalleCertificadoScreenState extends State<DetalleCertificadoScreen> {
                   : 'Mientras la objeción esté abierta, este certificado no se puede pagar. La '
                       'levanta quien la planteó; si tiene razón, el camino es anular y emitir uno '
                       'corregido.',
+              style: TextStyle(fontSize: 11.5, color: Colors.orange.shade900),
+            ),
+          ],
+          // El plazo (0131). Se muestra desde que hay respuesta, no recién a los 2 días: el aviso
+          // de los 2 días es el empujón en el cartel del dashboard; acá, adentro del documento, la
+          // fecha tiene que estar disponible desde el principio para los dos lados.
+          if (abierta && _objecionVence != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              esCliente
+                  ? 'Si no la levantás, se resuelve sola el ${_fmtFecha(_objecionVence)} y el pago '
+                      'se destraba. Va a quedar registrado que se levantó por vencimiento del '
+                      'plazo, no que la aceptaste.'
+                  : 'Si el cliente no la levanta, se resuelve sola el ${_fmtFecha(_objecionVence)} '
+                      'y el pago se destraba, con constancia de que fue por vencimiento del plazo.',
               style: TextStyle(fontSize: 11.5, color: Colors.orange.shade900),
             ),
           ],

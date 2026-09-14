@@ -340,6 +340,164 @@ documento; no puede frenar la obra.
 
 ---
 
+### 5.2 Tanda 5 — el plazo de la objeción, migración `0131` (escrita 2026-09-14, sin aplicar)
+
+Salió de probar el circuito completo con tres usuarios. Textual: **"si el técnico responde y el
+cliente no levanta, el certificado queda trabado para siempre. Y el plazo de pago es de cinco días,
+así que una objeción abierta quince lo convierte en letra muerta."**
+
+La §5.1 dejó contestado *"¿y si no la levanta nunca?"* con la anulación: el lado técnico siempre
+puede anular y emitir corregido sin pedirle permiso al cliente. Esa salida sigue siendo verdad, pero
+**no sirve para el caso que apareció**, y conviene ver por qué: la anulación es para cuando la
+objeción tenía razón. Acá la objeción **ya fue respondida** y nadie sostiene que el certificado esté
+mal — simplemente el cliente no contesta. Anular un certificado correcto para destrabar un silencio
+es tirar abajo el documento, renumerar la versión y rehacer el circuito entero de las dos partes
+técnicas, todo para resolver que alguien no abrió la app. El silencio del cliente no puede costar
+más caro que su objeción.
+
+**Lo que pidió Seba, en dos tiempos, contados desde la respuesta del técnico:**
+
+- **a los 2 días**, avisarle al cliente que si no responde la objeción se resuelve sola;
+- **a los 5 días**, levantarla automáticamente.
+
+Y la condición que no es un detalle: **tiene que quedar registrado que se levantó por vencimiento, no
+porque el cliente la aceptó.** Textual: *"hacer constar una conformidad que no existió sería peor que
+la demora, y en un documento que puede terminar en una discusión formal eso importa."* Es el mismo
+principio que ya ordena toda la pieza — la conformidad la da alguien, no se deduce — aplicado al
+final del recorrido: un certificado cuya objeción venció es un certificado **pagable**, no un
+certificado **conformado**.
+
+**Lo que la forma de la `0129` ya deja resuelto.** La objeción es un eje aparte, no un estado del
+certificado, así que el vencimiento **no toca `certificados.estado`**: no hay check constraints de
+fechas, ni candado del 100%, ni numeración, ni `calcular_avance_acumulado_subitem` en el radio. Es un
+cuarto valor en `objecion_estado` (`abierta` / `aclarada` / `aceptada` / **`vencida`**) y el freno de
+`marcar_certificado_pagado` sigue siendo la misma única línea, que ya pregunta por `'abierta'`.
+
+Y la constancia sale sola de las columnas que ya existen, sin agregar ninguna: **`aclarada` la escribe
+un humano y deja `objecion_resuelta_por` cargado; `vencida` deja `objecion_resuelta_por` en NULL.**
+"Nadie la levantó" queda dicho por ausencia de firmante, que es la forma más fuerte de decirlo. El
+único ajuste es `certificados_objecion_cierre_check`, que hoy exige `resuelta_por` para todo cierre:
+pasa a exigirlo para `aclarada`/`aceptada` y a exigir **solo la fecha** para `vencida`.
+
+**Dos cosas que no se pueden calcar de lo que ya hay, y son las que hacen falta decidir:**
+
+1. **No hay quién ejecute el vencimiento.** El proyecto no tiene `pg_cron` ni ningún job: la única
+   Edge Function es `importar-excel`, y se dispara desde la app. Todo lo que "pasa solo" hasta hoy
+   (`proximo_periodo_certificacion`) es en realidad **calculado en el momento de leer**, nunca escrito
+   por nadie.
+2. **`audit_log.usuario_id` es `not null`** (0002). Un vencimiento no tiene autor, así que no hay
+   forma de anotarlo en el rastro sin cambiar la columna o sin mentir sobre quién lo hizo.
+
+#### Las 8 ambigüedades, y cómo se cerraron (respuestas más abajo)
+
+**A. ¿Quién dispara el vencimiento: se calcula al leer, o se escribe con un job?**
+Recomiendo **calcularlo**, por consistencia con lo único parecido que ya existe (`0123`) y porque no
+mete infraestructura nueva: la objeción vencida deja de frenar el pago por predicado
+(`abierta` y `respondida_fecha + plazo > now()`), y la fila se **materializa** a `vencida` en el
+momento en que alguien la toca — al pagar, al abrir el certificado. La fecha que se escribe es la del
+vencimiento real (`respondida_fecha + plazo`), no la de la materialización, así que el documento no
+miente aunque nadie mire la app en dos semanas. El costo: entre el vencimiento y el primero que mira,
+la fila en la base todavía dice `abierta`. ¿Te sirve, o preferís `pg_cron` para que la base cuente
+sola?
+
+**B. ¿5 días fijos, o el plazo de pago de la obra?** Ya existe
+`obras.dias_plazo_pago_certificados`, configurable por obra y congelado en cada certificado
+(`certificados.dias_plazo_pago`). El "cinco" de tu frase es el plazo de pago de *esta* obra, no una
+constante del mundo. Recomiendo **atar el plazo de la objeción al de pago de la obra** (mismo número,
+misma configuración) y usar 5 solo como default cuando la obra no lo tenga cargado — si mañana pactás
+30 días de pago, una objeción que vence a los 5 pasa a ser demasiado corta sin que nadie lo note.
+¿O querés un número propio, independiente del de pago?
+
+**C. ¿Días corridos o hábiles?** Cinco corridos que arrancan un jueves vencen el martes, con un fin
+de semana adentro. Hábiles necesita calendario de feriados de Argentina, que el proyecto no tiene y
+no es una línea. Recomiendo **corridos**, y decirlo en la UI con la fecha exacta ("se resuelve sola
+el 19/09") en vez de con el número de días, que es lo que la persona necesita saber igual.
+
+**D. Si el técnico NUNCA responde, ¿también vence?** Es el espejo exacto del problema que trajiste y
+hoy tampoco tiene salida: la objeción sin respuesta frena el pago indefinidamente. Pero el reloj no
+puede ser el mismo: **el silencio del que tiene que responder no puede beneficiar al que tiene que
+cobrar.** Si una objeción sin responder venciera sola, al lado técnico le convendría no contestar
+nunca. Mi recomendación es dejarlo **fuera de esta tanda** y que la objeción sin respuesta siga sin
+plazo — pero decidilo a propósito, no por omisión.
+
+**E. Una objeción vencida, ¿habilita volver a objetar el mismo certificado?** Hoy `objetar_certificado`
+solo rechaza si ya hay una `abierta`, así que con `vencida` el cliente podría objetar de nuevo el
+día 6 y frenar el pago otros cinco días, y otra vez, sin techo: el plazo quedaría decorativo.
+Recomiendo **una sola objeción por certificado**: vencida la primera, el camino que queda es el que
+ya existe y sí tiene contraparte (pedir la anulación). ¿De acuerdo, o preferís permitir una objeción
+nueva con fundamento distinto?
+
+**F. El aviso de los 2 días, ¿es un pendiente nuevo o el mismo con otro texto?** Recomiendo **el mismo
+`objecion_respondida`, con el detalle cambiado** cuando pasaron los 2 días: dos ítems distintos en el
+cartel por el mismo certificado sería contarle dos veces lo mismo. El texto tiene que decir la fecha
+en que se resuelve sola, no los días que faltan, y sin sonar a reproche ni a amenaza — el criterio de
+tono de `Pendiente` aplica igual acá. Va al cliente, como pediste. **Pregunta aparte: ¿el lado
+técnico tiene que ver algo?** Hoy, respondida la objeción, al técnico no le aparece nada (§6.3 de
+`avisos_pendientes_diseno.md`), y con el plazo corriendo eso deja de ser del todo cierto: hay una
+fecha que le importa. Mi recomendación es que **no** vaya al cartel de acciones requeridas (no tiene
+nada que hacer) pero **sí** se vea la fecha en el certificado.
+
+**G. El rastro del vencimiento, ¿dónde va?** Con `audit_log.usuario_id not null`, hay tres caminos:
+(i) hacer la columna nullable y que NULL signifique "el sistema" — el más honesto y el que sirve para
+todo lo automático que venga después; (ii) anotar como autor a quien disparó la materialización, que
+es falso y justo del tipo de falsedad que esta pieza quiere evitar; (iii) no anotar nada en
+`audit_log` y que la constancia viva solo en las columnas del certificado. Recomiendo **(i)**.
+
+**H. ¿El plazo de pago se corrió?** Si el certificado se emitió el 1 con 5 días de plazo y la objeción
+se levanta por vencimiento el 20, el pago nace vencido el día que se destraba. Hoy no rompe nada
+—`dias_plazo_pago` solo se muestra, no dispara ningún aviso ni cálculo— así que **no propongo tocarlo
+en esta tanda**, pero es la clase de cosa que aparece sola el día que exista el aviso de "certificado
+por vencer". ¿Lo dejamos anotado y seguimos?
+
+---
+
+#### Cerradas por Seba (2026-09-14) — y escritas en la `0131`
+
+**Son dos relojes distintos**, y esta era la confusión de fondo: el de la **objeción** corre por
+tiempo total desde la respuesta, **sin pausas**; el de **pago** se congela mientras hay una objeción
+abierta. Separarlos deja las dos intuiciones bien: el que objeta no gana tiempo por objetar, y el que
+tiene que pagar no pierde su plazo por una discusión que no eligió.
+
+| | Respuesta | Dónde quedó |
+|---|---|---|
+| **A** — quién dispara el vencimiento | Se calcula al leer, se materializa al tocar. Sin `pg_cron` | `objecion_vigente()` + `vencer_objecion_si_corresponde()` |
+| **B** — el plazo | **5 días fijos**, NO el plazo de pago de la obra | `objecion_vence_el()` |
+| **C** — corridos u hábiles | Corridos ("por tiempo total"), y la UI dice la fecha exacta | ídem |
+| **D** — la objeción sin responder | **No vence.** *"Si el técnico no responde, el certificado frenado lo tiene él"* | `objecion_vigente()`: sin respuesta no hay plazo |
+| **E** — volver a objetar | No por el mismo motivo; sí por algo nuevo | guard en `objetar_certificado` |
+| **F** — el aviso de los 2 días | El mismo pendiente, con la fecha | `objecion_avisa_el()` + `mis_pendientes.vence` |
+| **G** — el rastro | `audit_log.usuario_id` nullable = el sistema | paso 5 |
+| **H** — el plazo de pago corrido | Se congela, y **no hay nada que construir** | paso 8 |
+
+**B, con las palabras de Seba, porque es la que se va a querer "corregir" después:** *"el plazo de
+pago es cuánto tarda en pagarse el certificado; este es cuánto tiempo tenés para sostener una
+objeción. Si alguien pacta pago a treinta días, no corresponde que una objeción viva treinta."* Los
+dos números viven en funciones (`objecion_vence_el`, `objecion_avisa_el`) y en ningún lado más — el
+Dart no conoce ni el 2 ni el 5: `mis_pendientes()` manda `vence` **recién cuando corresponde avisar**,
+así que "hay fecha" y "hay que avisar" son la misma cosa del lado de la app.
+
+**E tiene un límite que conviene no maquillar:** la base compara **textos**, no intenciones. El guard
+rechaza un fundamento ya presentado en ese certificado (normalizado), y los anteriores salen de
+`audit_log`. Alguien decidido puede reescribir el mismo reclamo con otras palabras; cerrarlo a lo
+bruto (una objeción por certificado y listo) le sacaría al cliente el derecho a plantear un problema
+real que aparece después. Lo que queda: cada vuelta le cuesta una respuesta al técnico, reinicia el
+reloj de 5 días, y todas quedan una al lado de la otra en `audit_log`.
+
+**H no necesitó código y conviene que esté escrito**, para que nadie agregue una columna al pedo:
+`dias_plazo_pago` hoy **solo se muestra** — no hay reloj de pago que congelar. Y cuando lo haya, los
+días frenados son una resta entre `objecion_fecha` y `objecion_resuelta_fecha`, que ya están
+guardadas en las cuatro salidas posibles.
+
+**Lo que se construyó (`0131`, escrita el 2026-09-14, sin aplicar):** el cuarto valor `vencida` con
+el check que impide falsearlo en las dos direcciones (nadie firma un vencimiento; nadie aclara sin
+firmar), los dos plazos como funciones, `objecion_vigente()` como única definición de "esto todavía
+frena" (la usan el pago y tres ramas de avisos), la materialización con **la fecha del vencimiento
+real y no la de la materialización**, `audit_log` con autor nulo, el guard del mismo motivo, y en
+`mis_pendientes()` la columna `vence` + la rama `certificado_devuelto` de §6.2 del diseño de avisos,
+que Seba sumó en la misma tanda.
+
+---
+
 ## 6. El avance global — no es el Modelo B
 
 **Modelo B es etapas con monto cerrado.** `hitos_certificacion.monto` es un importe fijo por hito, el

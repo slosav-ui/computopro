@@ -324,6 +324,32 @@ class CertificadosRepository {
         .rpc('levantar_objecion_certificado', params: {'p_certificado_id': certificadoId});
   }
 
+  // ===========================================================================
+  // El plazo de la objeción (0131)
+  // ===========================================================================
+  //
+  // El proyecto no tiene ningún job: el vencimiento **se calcula al leer y se materializa al
+  // tocar**. Todo lo que decide algo del lado de la base ya pregunta por `objecion_vigente()`, así
+  // que estas dos llamadas no cambian ningún resultado -- ponen la fila al día y traen la fecha
+  // para poder decirla en pantalla.
+
+  /// Pasa la objeción a `vencida` si su plazo ya se cumplió. Idempotente y sin autoridad propia: no
+  /// es el acto de nadie, es el reloj. Llamarla antes de releer el certificado.
+  Future<void> vencerObjecionSiCorresponde(String certificadoId) async {
+    await _client
+        .rpc('vencer_objecion_si_corresponde', params: {'p_certificado_id': certificadoId});
+  }
+
+  /// Cuándo se levanta sola una objeción respondida en esta fecha. **Los 5 días no se copian acá**:
+  /// se le preguntan a la base, que es la que los aplica (mismo criterio que `puedeEmitir`).
+  Future<DateTime?> objecionVenceEl(DateTime respondidaFecha) async {
+    final data = await _client.rpc(
+      'objecion_vence_el',
+      params: {'p_respondida_fecha': respondidaFecha.toUtc().toIso8601String()},
+    );
+    return data == null ? null : DateTime.tryParse(data.toString());
+  }
+
   /// Cuántos certificados vigentes se emitieron DESPUÉS de este (0127). Si es > 0, el reemplazo de
   /// un anulado nace vacío: no se puede saber si esos certificados ya recertificaron lo que medía el
   /// anulado, y copiarlo lo contaría dos veces.
@@ -430,6 +456,8 @@ class CertificadosRepository {
         return ObjecionCertificado.aclarada;
       case 'aceptada':
         return ObjecionCertificado.aceptada;
+      case 'vencida':
+        return ObjecionCertificado.vencida;
       default:
         return ObjecionCertificado.abierta;
     }
