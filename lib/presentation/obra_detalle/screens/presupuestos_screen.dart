@@ -7,6 +7,7 @@ import '../../../services/adicionales_repository.dart';
 import '../../../services/auth_service.dart';
 import '../../../services/obra_members_repository.dart';
 import '../tabs/apu_listado_tab.dart';
+import '../tabs/proveedores_tab.dart';
 import '../tabs/rubros_tab.dart';
 import '../tabs/gestion_obra_tab.dart';
 import '../tabs/mat_y_mo_tab.dart';
@@ -436,48 +437,14 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> with SingleTick
     );
   }
 
-  // 6. PROVEEDORES
+  // 6. PROVEEDORES -- en construcción
+  //
+  // Hasta 2026-09-14 esta solapa mostraba tres proveedores inventados con totales inventados
+  // ("Corralón San Martín -- $ 12.450.000"). Se saca antes de mostrarle la app a arquitectos: es
+  // mejor que vean que va a estar a que entren a un borrador y lo tomen por lo construido.
+  // El diseño de lo que va acá está cerrado y sin construir: docs/proveedores_canje_diseno.md.
   Widget _buildTabProveedores() {
-    return ListView(
-      padding: const EdgeInsets.all(12),
-      children: [
-        Card(
-          color: Colors.blueGrey[50],
-          child: const Padding(
-            padding: EdgeInsets.all(12),
-            child: Row(
-              children: [
-                Icon(Icons.compare_arrows, color: Color(0xFF1B365D)),
-                SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Comparativo y Cotización de Proveedores Directos por Insumo.',
-                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF1B365D)),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 8),
-        _buildProveedorCard('Corralón San Martín', 'Hierro / Cementos', 'Descuento 5% pago contado', '\$ 12.450.000'),
-        _buildProveedorCard('Hormigonera del Sur', 'Hormigón Elaborado', 'Incluye bomba pluma', '\$ 8.900.000'),
-        _buildProveedorCard('Distribuidora Eléctrica Central', 'Materiales Eléctricos', 'Presupuesto válido por 10 días', '\$ 4.320.000'),
-      ],
-    );
-  }
-
-  Widget _buildProveedorCard(String nombre, String rubro, String condicion, String total) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      child: ListTile(
-        leading: const Icon(Icons.store, color: Color(0xFF1B365D)),
-        title: Text(nombre, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-        subtitle: Text('$rubro\n$condicion', style: const TextStyle(fontSize: 11)),
-        isThreeLine: true,
-        trailing: Text(total, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF2E7D32))),
-      ),
-    );
+    return const ProveedoresEnConstruccion();
   }
 
   // 5. RESUMEN FINAL DINÁMICO

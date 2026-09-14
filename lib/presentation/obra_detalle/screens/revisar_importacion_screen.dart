@@ -5,6 +5,8 @@ import '../../../data/models/rubro_catalogo.dart';
 import '../../../data/models/subitem_catalogo.dart';
 import '../../../services/auth_service.dart';
 import '../../../services/importaciones_repository.dart';
+import '../../../core/utils/parser_numero_ar.dart';
+import '../../../core/utils/currency_formatter.dart';
 import '../../../services/rubros_repository.dart';
 import '../../../services/subitems_repository.dart';
 
@@ -78,7 +80,7 @@ class _RevisarImportacionScreenState extends State<RevisarImportacionScreen> {
       if (!mounted) return;
       setState(() {
         _importacion = importacion;
-        _items = items;
+        _items = _ordenadas(items);
         _rubros = rubros;
         _subitems = subitems;
         _cargando = false;
@@ -92,10 +94,27 @@ class _RevisarImportacionScreenState extends State<RevisarImportacionScreen> {
     }
   }
 
+  /// Lo dudoso primero.
+  ///
+  /// Con 97 partidas, una fila que el modelo marcó "baja" en el puesto 60 no la ve nadie. El orden
+  /// del documento deja de ser el mejor orden apenas hay filas de distinta calidad -- y el orden
+  /// original no se pierde, sigue escrito en `orden` y se muestra como desempate.
+  ///
+  /// Para una importación de Excel esto no cambia nada: sin confianza, todas las filas empatan en
+  /// el mismo grupo y quedan en el orden del archivo.
+  List<ImportacionItem> _ordenadas(List<ImportacionItem> items) {
+    final copia = [...items];
+    copia.sort((a, b) {
+      final porConfianza = a.ordenDeRevision.compareTo(b.ordenDeRevision);
+      return porConfianza != 0 ? porConfianza : a.orden.compareTo(b.orden);
+    });
+    return copia;
+  }
+
   Future<void> _recargarItems() async {
     final items = await _importacionesRepository.getItems(widget.importacionId);
     if (!mounted) return;
-    setState(() => _items = items);
+    setState(() => _items = _ordenadas(items));
   }
 
   RubroCatalogo? _rubroDe(ImportacionItem item) {
@@ -311,8 +330,13 @@ class _RevisarImportacionScreenState extends State<RevisarImportacionScreen> {
               onRefresh: _cargar,
               child: ListView.builder(
                 padding: const EdgeInsets.fromLTRB(12, 12, 12, 90),
-                itemCount: _items.length,
-                itemBuilder: (context, index) => _buildFila(_items[index]),
+                // +1: la verificación de la suma va arriba de todo, no al pie. Es lo primero que
+                // hay que mirar, porque decide si vale la pena revisar fila por fila o si conviene
+                // volver a leer el documento.
+                itemCount: _items.length + 1,
+                itemBuilder: (context, index) => index == 0
+                    ? _buildControlDeTotal()
+                    : _buildFila(_items[index - 1]),
               ),
             ),
       bottomNavigationBar: _cargando || _error != null
@@ -338,6 +362,182 @@ class _RevisarImportacionScreenState extends State<RevisarImportacionScreen> {
                 ),
               ),
             ),
+    );
+  }
+
+  /// La suma de lo interpretado contra el total impreso en el documento.
+  ///
+  /// **Es la única verificación de esta pantalla que no se apoya en la misma lectura que está bajo
+  /// sospecha.** Todo lo demás (la confianza, el texto original, hasta la descripción) sale del
+  /// modelo; esto sale de comparar dos números que tienen que dar igual. Si una cantidad se leyó
+  /// 41096 donde decía 410,96, acá se nota aunque la fila parezca perfecta.
+  ///
+  /// Solo aparece en importaciones que leyó un modelo: para el Excel determinístico no hay un total
+  /// impreso que contrastar, y un cartel que no puede decir nada es ruido.
+  Widget _buildControlDeTotal() {
+    final leyoUnModelo = _items.any((i) => i.confianza != null);
+    if (!leyoUnModelo) return const SizedBox.shrink();
+
+    final moneda = _importacion?.monedaDefault ?? 'ARS';
+    final suma = _items
+        .where((i) => !_descartados.contains(i.id))
+        .fold<double>(0, (acc, i) => acc + (i.cantidad ?? 0) * (i.precioUnitario ?? 0));
+    final declarado = _importacion?.totalDeclarado;
+
+    if (declarado == null) {
+      // Decirlo es mejor que callarlo: el usuario tiene que saber que este control no corrió, para
+      // no confundir "no hay aviso" con "está todo bien".
+      return _cartel(
+        icono: Icons.info_outline,
+        color: Colors.grey.shade700,
+        fondo: Colors.grey.shade100,
+        borde: Colors.grey.shade300,
+        titulo: 'El documento no traía un total al pie',
+        detalle: 'Lo importado suma ${CurrencyFormatter.formatByCurrency(suma, moneda)}. No hay con '
+            'qué contrastarlo, así que conviene revisar las filas con atención.',
+      );
+    }
+
+    final diferencia = suma - declarado;
+    // Tolerancia: los redondeos por partida se acumulan, y un presupuesto de 97 filas nunca cierra
+    // al centavo. Medio por ciento del total, con un piso de un peso para montos chicos.
+    final tolerancia = (declarado.abs() * 0.005).clamp(1.0, double.infinity);
+
+    if (diferencia.abs() <= tolerancia) {
+      return _cartel(
+        icono: Icons.check_circle_outline,
+        color: Colors.green.shade800,
+        fondo: Colors.green.shade50,
+        borde: Colors.green.shade200,
+        titulo: 'La suma coincide con el total del documento',
+        detalle: '${CurrencyFormatter.formatByCurrency(suma, moneda)}. Es buena señal, pero no '
+            'garantiza que cada partida esté bien: revisá igual las marcadas para revisar.',
+      );
+    }
+
+    final pct = declarado == 0 ? 0.0 : (diferencia / declarado) * 100;
+    return _cartel(
+      icono: Icons.error_outline,
+      color: Colors.red.shade800,
+      fondo: Colors.red.shade50,
+      borde: Colors.red.shade200,
+      titulo: 'La suma no coincide con el total del documento',
+      detalle: 'Lo importado suma ${CurrencyFormatter.formatByCurrency(suma, moneda)} y el '
+          'documento dice ${CurrencyFormatter.formatByCurrency(declarado, moneda)}: '
+          '${diferencia > 0 ? "sobran" : "faltan"} '
+          '${CurrencyFormatter.formatByCurrency(diferencia.abs(), moneda)} '
+          '(${pct.abs().toStringAsFixed(1)}%). Casi siempre es una cantidad o un precio leído mal, '
+          'o una partida que no se leyó.',
+    );
+  }
+
+  Widget _cartel({
+    required IconData icono,
+    required Color color,
+    required Color fondo,
+    required Color borde,
+    required String titulo,
+    required String detalle,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: fondo,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: borde),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icono, size: 18, color: color),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(titulo,
+                    style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: color)),
+                const SizedBox(height: 3),
+                Text(detalle,
+                    style: TextStyle(fontSize: 11.5, height: 1.45, color: Colors.grey.shade800)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Corregir lo que el modelo leyó mal.
+  ///
+  /// **Esta acción faltaba, y era el agujero grande del importador**: la pantalla sabía mapear una
+  /// fila al catálogo o descartarla, pero no arreglar un número. Con el parser de Excel se podía
+  /// vivir sin esto; con un modelo de por medio no, porque el error típico es justamente un número
+  /// mal leído que llega con toda la cara de estar bien.
+  Future<void> _corregirValores(ImportacionItem item) async {
+    final cambios = await showDialog<_ValoresCorregidos>(
+      context: context,
+      builder: (_) => _DialogoCorregirValores(item: item),
+    );
+    if (cambios == null) return;
+    try {
+      await _importacionesRepository.actualizarItem(
+        item.id,
+        descripcionTexto: cambios.descripcion,
+        unidadTexto: cambios.unidad,
+        cantidad: cambios.cantidad,
+        precioUnitario: cambios.precioUnitario,
+        limpiarCantidad: cambios.limpiarCantidad,
+        limpiarPrecio: cambios.limpiarPrecio,
+      );
+      await _recargarItems();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('No se pudo guardar la corrección: $e')));
+    }
+  }
+
+  /// El aviso de que esta fila conviene mirarla, con el texto original al lado.
+  ///
+  /// El texto original es la mitad que hace útil a la otra: "cant. 41096" sola parece un dato;
+  /// "cant. 41096" junto a la línea que decía "410,96" es un error evidente.
+  Widget _buildConfianza(ImportacionItem item) {
+    if (item.confianza == null || item.confianza == 'alta') {
+      if (item.textoOriginal == null) return const SizedBox.shrink();
+      return Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Text('En el documento: ${item.textoOriginal}',
+            style: TextStyle(fontSize: 10.5, color: Colors.grey.shade600, height: 1.3)),
+      );
+    }
+
+    final baja = item.confianza == 'baja';
+    final color = baja ? Colors.red.shade700 : Colors.orange.shade800;
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.priority_high, size: 13, color: color),
+              const SizedBox(width: 3),
+              Text(
+                baja ? 'Revisar: la lectura es dudosa' : 'Revisar: hubo que interpretar',
+                style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: color),
+              ),
+            ],
+          ),
+          if (item.textoOriginal != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text('En el documento: ${item.textoOriginal}',
+                  style: TextStyle(fontSize: 10.5, color: Colors.grey.shade700, height: 1.3)),
+            ),
+        ],
+      ),
     );
   }
 
@@ -383,6 +583,7 @@ class _RevisarImportacionScreenState extends State<RevisarImportacionScreen> {
               ].join(' · '),
               style: const TextStyle(fontSize: 11, color: Colors.black54),
             ),
+            _buildConfianza(item),
             if (rubro != null && subitem != null) ...[
               const SizedBox(height: 4),
               Text(
@@ -414,6 +615,14 @@ class _RevisarImportacionScreenState extends State<RevisarImportacionScreen> {
                     textStyle: const TextStyle(fontSize: 11),
                   ),
                   child: const Text('Crear como propia'),
+                ),
+                OutlinedButton(
+                  onPressed: () => _corregirValores(item),
+                  style: OutlinedButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    textStyle: const TextStyle(fontSize: 11),
+                  ),
+                  child: const Text('Corregir valores'),
                 ),
                 TextButton(
                   onPressed: () => _descartar(item),
@@ -889,6 +1098,196 @@ class _DialogoCrearPropiaState extends State<_DialogoCrearPropia> {
                 )
               : const Text('Crear y usar'),
         ),
+      ],
+    );
+  }
+}
+
+
+/// Lo que devuelve el diálogo de corrección. Los dos `limpiar*` distinguen "no lo toqué" de
+/// "quiero que quede vacío", que con un `double?` solo no se puede decir.
+class _ValoresCorregidos {
+  final String? descripcion;
+  final String? unidad;
+  final double? cantidad;
+  final double? precioUnitario;
+  final bool limpiarCantidad;
+  final bool limpiarPrecio;
+
+  const _ValoresCorregidos({
+    this.descripcion,
+    this.unidad,
+    this.cantidad,
+    this.precioUnitario,
+    this.limpiarCantidad = false,
+    this.limpiarPrecio = false,
+  });
+}
+
+/// Corregir los valores de una fila importada.
+///
+/// Los números se leen con [ParserNumeroAr], que es la única lógica de coma/punto del proyecto
+/// (ver la memoria "bug_separador_miles_mat_y_mo" para el diagnóstico que la motivó). Acá importa
+/// más que en ningún otro lado: el usuario está corrigiendo justamente un número que se leyó mal, y
+/// sería absurdo que la corrección se guardara mal por la misma clase de error.
+///
+/// Y se muestra el valor interpretado debajo de cada campo mientras se escribe, con un aviso
+/// reforzado en el caso genuinamente ambiguo ("1.500" puede ser mil quinientos o uno con medio).
+class _DialogoCorregirValores extends StatefulWidget {
+  final ImportacionItem item;
+
+  const _DialogoCorregirValores({required this.item});
+
+  @override
+  State<_DialogoCorregirValores> createState() => _DialogoCorregirValoresState();
+}
+
+class _DialogoCorregirValoresState extends State<_DialogoCorregirValores> {
+  late final TextEditingController _descripcion;
+  late final TextEditingController _unidad;
+  late final TextEditingController _cantidad;
+  late final TextEditingController _precio;
+
+  @override
+  void initState() {
+    super.initState();
+    _descripcion = TextEditingController(text: widget.item.descripcionTexto ?? '');
+    _unidad = TextEditingController(text: widget.item.unidadTexto ?? '');
+    _cantidad = TextEditingController(text: _aTexto(widget.item.cantidad));
+    _precio = TextEditingController(text: _aTexto(widget.item.precioUnitario));
+  }
+
+  @override
+  void dispose() {
+    _descripcion.dispose();
+    _unidad.dispose();
+    _cantidad.dispose();
+    _precio.dispose();
+    super.dispose();
+  }
+
+  /// Se muestra con coma decimal porque es como se escribe acá, y porque el campo se vuelve a leer
+  /// con ParserNumeroAr: si se mostrara con punto, reabrir y guardar sin tocar nada podría cambiar
+  /// el valor.
+  String _aTexto(double? valor) {
+    if (valor == null) return '';
+    final texto = valor == valor.roundToDouble()
+        ? valor.toStringAsFixed(0)
+        : valor.toStringAsFixed(2);
+    return texto.replaceAll('.', ',');
+  }
+
+  void _guardar() {
+    final cantidadTexto = _cantidad.text.trim();
+    final precioTexto = _precio.text.trim();
+    Navigator.pop(
+      context,
+      _ValoresCorregidos(
+        descripcion: _descripcion.text.trim().isEmpty ? null : _descripcion.text.trim(),
+        unidad: _unidad.text.trim().isEmpty ? null : _unidad.text.trim(),
+        cantidad: ParserNumeroAr.parsear(cantidadTexto),
+        precioUnitario: ParserNumeroAr.parsear(precioTexto),
+        limpiarCantidad: cantidadTexto.isEmpty,
+        limpiarPrecio: precioTexto.isEmpty,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final original = widget.item.textoOriginal;
+    return AlertDialog(
+      title: const Text('Corregir valores', style: TextStyle(fontSize: 16)),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (original != null) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('En el documento dice',
+                        style: TextStyle(fontSize: 10.5, color: Colors.grey.shade600)),
+                    const SizedBox(height: 3),
+                    Text(original,
+                        style: const TextStyle(fontSize: 12, height: 1.35, color: Colors.black87)),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+            ],
+            TextField(
+              controller: _descripcion,
+              decoration: const InputDecoration(labelText: 'Descripción', isDense: true),
+              style: const TextStyle(fontSize: 13),
+              maxLines: null,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _unidad,
+              decoration: const InputDecoration(labelText: 'Unidad', isDense: true),
+              style: const TextStyle(fontSize: 13),
+            ),
+            const SizedBox(height: 12),
+            _campoNumero(_cantidad, 'Cantidad'),
+            const SizedBox(height: 12),
+            _campoNumero(_precio, 'Precio unitario'),
+            const SizedBox(height: 10),
+            Text(
+              'Dejar un número vacío lo borra: una partida sin precio es una partida sin precio, y '
+              'es mejor que un número inventado.',
+              style: TextStyle(fontSize: 10.5, height: 1.35, color: Colors.grey.shade600),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
+        ElevatedButton(onPressed: _guardar, child: const Text('Guardar')),
+      ],
+    );
+  }
+
+  Widget _campoNumero(TextEditingController ctrl, String etiqueta) {
+    final texto = ctrl.text.trim();
+    final valor = ParserNumeroAr.parsear(texto);
+    final ambiguo = ParserNumeroAr.esInterpretacionDeMiles(texto);
+    final alternativa = ambiguo ? ParserNumeroAr.lecturaAlternativaSiEsMiles(texto) : null;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        TextField(
+          controller: ctrl,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: InputDecoration(labelText: etiqueta, isDense: true),
+          style: const TextStyle(fontSize: 13),
+          onChanged: (_) => setState(() {}),
+        ),
+        if (texto.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          if (valor == null)
+            Text('No se entiende como número',
+                style: TextStyle(fontSize: 10.5, color: Colors.red.shade700))
+          else if (ambiguo)
+            Text(
+              'Se va a guardar ${valor.toStringAsFixed(2).replaceAll('.', ',')} '
+              '(si querías ${alternativa?.toStringAsFixed(2).replaceAll('.', ',')}, '
+              'escribilo con coma)',
+              style: TextStyle(fontSize: 10.5, color: Colors.orange.shade800, height: 1.3),
+            )
+          else
+            Text('Se va a guardar ${valor.toStringAsFixed(2).replaceAll('.', ',')}',
+                style: TextStyle(fontSize: 10.5, color: Colors.grey.shade600)),
+        ],
       ],
     );
   }

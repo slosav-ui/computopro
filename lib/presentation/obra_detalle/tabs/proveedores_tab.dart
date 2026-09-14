@@ -1,310 +1,156 @@
 import 'package:flutter/material.dart';
 
-class Proveedor {
-  final String id;
-  final String nombre;
-  final String rubro; // ej: Corralón, Electricidad, Sanitaria, Alquiler de Equipos
-  final String telefono;
-  final String direccion;
-  final List<String> insumosPrincipales;
+/// Solapa Proveedores — en construcción.
+///
+/// Hasta hoy esta pantalla mostraba un directorio con proveedores inventados ("Corralón El Valle",
+/// "Electrostock S.A.") que no salían de la base ni se guardaban en ningún lado. Se reemplazó por
+/// este anticipo antes de mostrarle la app a arquitectos: **es mejor que vean que va a estar a que
+/// entren a un borrador** y crean que eso es lo construido. La versión anterior queda en el
+/// historial de git si hace falta mirar el armado visual.
+///
+/// Ojo con la historia de este archivo: el `ProveedoresTab` que vivía acá **no lo usaba nadie** --
+/// la solapa que se ve en la app la arma `_buildTabProveedores()` dentro de `presupuestos_screen.
+/// dart`, y era otro mock distinto, con otros proveedores inventados. Ahora hay un solo lugar: esa
+/// función devuelve este widget.
+///
+/// El diseño de lo que va a ir acá está cerrado y sin construir:
+/// `docs/proveedores_canje_diseno.md`. Lo que se muestra abajo es la parte que le sirve saber al
+/// usuario de la app — el trato con el proveedor no se cuenta acá.
+class ProveedoresEnConstruccion extends StatelessWidget {
+  const ProveedoresEnConstruccion({super.key});
 
-  Proveedor({
-    required this.id,
-    required this.nombre,
-    required this.rubro,
-    required this.telefono,
-    required this.direccion,
-    required this.insumosPrincipales,
-  });
-}
-
-class ProveedoresTab extends StatefulWidget {
-  final String obraId;
-
-  const ProveedoresTab({super.key, required this.obraId});
+  static const _azul = Color(0xFF1B365D);
 
   @override
-  State<ProveedoresTab> createState() => _ProveedoresTabState();
-}
-
-class _ProveedoresTabState extends State<ProveedoresTab> {
-  final TextEditingController _searchCtrl = TextEditingController();
-  String _filtroTexto = '';
-
-  final List<Proveedor> _proveedores = [
-    Proveedor(
-      id: 'p1',
-      nombre: 'Corralón El Valle',
-      rubro: 'Materiales Gruesos',
-      telefono: '0299-4481234',
-      direccion: 'Ruta 22 Km 1200',
-      insumosPrincipales: ['Cemento', 'Arena gruesa', 'Hierro ø12', 'Ladrillo del 18'],
-    ),
-    Proveedor(
-      id: 'p2',
-      nombre: 'Electrostock S.A.',
-      rubro: 'Electricidad e Iluminación',
-      telefono: '0299-4428899',
-      direccion: 'Av. Argentina 450',
-      insumosPrincipales: ['Cable 2.5 mm2', 'Térmica 20A', 'Caño corrugado 3/4'],
-    ),
-    Proveedor(
-      id: 'p3',
-      nombre: 'Sanitarios Neuquén',
-      rubro: 'Sanitaria y Gas',
-      telefono: '0299-4431122',
-      direccion: 'Perticone 890',
-      insumosPrincipales: ['Caño PVC ø110', 'Caño Termofusión ø25', 'Llave de paso 3/4'],
-    ),
-  ];
-
-  List<Proveedor> get _proveedoresFiltrados {
-    if (_filtroTexto.isEmpty) return _proveedores;
-    return _proveedores.where((p) {
-      final query = _filtroTexto.toLowerCase();
-      final nom = p.nombre.toLowerCase();
-      final rub = p.rubro.toLowerCase();
-      final ins = p.insumosPrincipales.join(' ').toLowerCase();
-      return nom.contains(query) || rub.contains(query) || ins.contains(query);
-    }).toList();
-  }
-
-  void _agregarProveedorModal() {
-    final nombreCtrl = TextEditingController();
-    final rubroCtrl = TextEditingController();
-    final telCtrl = TextEditingController();
-    final dirCtrl = TextEditingController();
-    final insumosCtrl = TextEditingController();
-
-    showDialog(
-      context: context,
-      builder: (dialogCtx) => AlertDialog(
-        title: const Text(
-          'Registrar Nuevo Proveedor',
-          style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1B365D)),
-        ),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             children: [
-              TextField(
-                controller: nombreCtrl,
-                decoration: const InputDecoration(labelText: 'Nombre o Razón Social'),
+              const Icon(Icons.local_shipping_outlined, color: _azul, size: 26),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text(
+                  'Proveedores',
+                  style: TextStyle(fontSize: 19, fontWeight: FontWeight.bold, color: _azul),
+                ),
               ),
-              TextField(
-                controller: rubroCtrl,
-                decoration: const InputDecoration(labelText: 'Rubro (ej: Corralón, Sanitaria)'),
-              ),
-              TextField(
-                controller: telCtrl,
-                keyboardType: TextInputType.phone,
-                decoration: const InputDecoration(labelText: 'Teléfono de Contacto'),
-              ),
-              TextField(
-                controller: dirCtrl,
-                decoration: const InputDecoration(labelText: 'Dirección / Depósito'),
-              ),
-              TextField(
-                controller: insumosCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Insumos (separados por coma)',
-                  hintText: 'ej: Cemento, Cal, Arena',
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.amber.shade100,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  'En construcción',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.amber.shade900,
+                  ),
                 ),
               ),
             ],
           ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(dialogCtx), child: const Text('Cancelar')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1B365D)),
-            onPressed: () {
-              if (nombreCtrl.text.isNotEmpty) {
-                final insumosList = insumosCtrl.text
-                    .split(',')
-                    .map((e) => e.trim())
-                    .where((e) => e.isNotEmpty)
-                    .toList();
-
-                setState(() {
-                  _proveedores.add(Proveedor(
-                    id: DateTime.now().millisecondsSinceEpoch.toString(),
-                    nombre: nombreCtrl.text,
-                    rubro: rubroCtrl.text.isEmpty ? 'General' : rubroCtrl.text,
-                    telefono: telCtrl.text,
-                    direccion: dirCtrl.text,
-                    insumosPrincipales: insumosList,
-                  ));
-                });
-                Navigator.pop(dialogCtx);
-              }
-            },
-            child: const Text('Guardar', style: TextStyle(color: Colors.white)),
+          const SizedBox(height: 20),
+          const Text(
+            'Pedir cotización sin volver a cargar nada',
+            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: _azul),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'La app ya sabe qué materiales lleva la obra y en qué cantidad. Esta solapa va a usar ese '
+            'cómputo para pedirle precio a los proveedores de la zona, sin rehacer la lista a mano.',
+            style: TextStyle(fontSize: 13.5, height: 1.5, color: Colors.grey.shade800),
+          ),
+          const SizedBox(height: 24),
+          _Punto(
+            icono: Icons.request_quote_outlined,
+            titulo: 'El pedido sale con el cómputo hecho',
+            detalle:
+                'El proveedor recibe la lista de materiales con sus cantidades, no una consulta suelta.',
+          ),
+          _Punto(
+            icono: Icons.category_outlined,
+            titulo: 'Cada pedido va a quien corresponde',
+            detalle:
+                'Los materiales se agrupan por rubro comercial, para no pedirle revestimientos a un '
+                'corralón de obra gruesa.',
+          ),
+          _Punto(
+            icono: Icons.pin_drop_outlined,
+            titulo: 'Y siempre podés elegir vos',
+            detalle: 'Si ya trabajás con alguien, el pedido va a ese proveedor y listo.',
+          ),
+          const SizedBox(height: 28),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade100,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.grey.shade300),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.info_outline, size: 18, color: Colors.grey.shade600),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Mientras tanto, los precios de los materiales se cargan y se comparan desde la '
+                    'solapa Mat y MO, que ya está funcionando.',
+                    style: TextStyle(fontSize: 12.5, height: 1.45, color: Colors.grey.shade700),
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
     );
   }
+}
+
+class _Punto extends StatelessWidget {
+  final IconData icono;
+  final String titulo;
+  final String detalle;
+
+  const _Punto({required this.icono, required this.titulo, required this.detalle});
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // PANEL BUSCADOR Y RESUMEN
-            Card(
-              color: const Color(0xFF1B365D),
-              elevation: 3,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          'DIRECTORIO DE PROVEEDORES',
-                          style: TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.w600),
-                        ),
-                        Text(
-                          'Registrados: ${_proveedores.length}',
-                          style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 12),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: _searchCtrl,
-                      onChanged: (val) => setState(() => _filtroTexto = val),
-                      style: const TextStyle(color: Colors.white, fontSize: 13),
-                      decoration: InputDecoration(
-                        hintText: 'Buscar por nombre, rubro o material...',
-                        hintStyle: const TextStyle(color: Colors.white54, fontSize: 13),
-                        prefixIcon: const Icon(Icons.search, color: Colors.amber, size: 20),
-                        suffixIcon: _filtroTexto.isNotEmpty
-                            ? IconButton(
-                                icon: const Icon(Icons.clear, color: Colors.white54, size: 18),
-                                onPressed: () {
-                                  _searchCtrl.clear();
-                                  setState(() => _filtroTexto = '');
-                                },
-                              )
-                            : null,
-                        filled: true,
-                        fillColor: Colors.white.withOpacity(0.12),
-                        contentPadding: const EdgeInsets.symmetric(vertical: 8),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide.none,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // CABECERA
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 18),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icono, size: 20, color: const Color(0xFF1B365D)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Listado de Proveedores',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1B365D)),
+                Text(
+                  titulo,
+                  style: const TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF1B365D),
+                  ),
                 ),
-                ElevatedButton.icon(
-                  onPressed: _agregarProveedorModal,
-                  icon: const Icon(Icons.add_business, size: 16, color: Colors.white),
-                  label: const Text('Nuevo Proveedor', style: TextStyle(color: Colors.white, fontSize: 12)),
-                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1B365D)),
+                const SizedBox(height: 3),
+                Text(
+                  detalle,
+                  style: TextStyle(fontSize: 12.5, height: 1.4, color: Colors.grey.shade700),
                 ),
               ],
             ),
-            const SizedBox(height: 12),
-
-            // LISTA DE PROVEEDORES
-            ListView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: _proveedoresFiltrados.length,
-              itemBuilder: (context, index) {
-                final prov = _proveedoresFiltrados[index];
-                return Card(
-                  elevation: 2,
-                  margin: const EdgeInsets.only(bottom: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                  child: Padding(
-                    padding: const EdgeInsets.all(14.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              prov.nombre,
-                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF1B365D)),
-                            ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF1B365D).withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Text(
-                                prov.rubro,
-                                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF1B365D)),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
-                        Row(
-                          children: [
-                            const Icon(Icons.phone_outlined, size: 14, color: Colors.black54),
-                            const SizedBox(width: 4),
-                            Text(prov.telefono.isEmpty ? 'Sin teléfono' : prov.telefono, style: const TextStyle(fontSize: 12, color: Colors.black54)),
-                            const SizedBox(width: 16),
-                            const Icon(Icons.location_on_outlined, size: 14, color: Colors.black54),
-                            const SizedBox(width: 4),
-                            Expanded(
-                              child: Text(
-                                prov.direccion.isEmpty ? 'Sin dirección' : prov.direccion,
-                                style: const TextStyle(fontSize: 12, color: Colors.black54),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          ],
-                        ),
-                        if (prov.insumosPrincipales.isNotEmpty) ...[
-                          const Divider(height: 16),
-                          Wrap(
-                            spacing: 6,
-                            runSpacing: 4,
-                            children: prov.insumosPrincipales.map((insumo) {
-                              return Chip(
-                                label: Text(insumo, style: const TextStyle(fontSize: 10, color: Colors.black54)),
-                                backgroundColor: Colors.grey.shade200,
-                                visualDensity: VisualDensity.compact,
-                                padding: EdgeInsets.zero,
-                              );
-                            }).toList(),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

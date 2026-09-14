@@ -11,7 +11,7 @@ import '../../../services/obra_rubros_orden_repository.dart';
 import '../../../services/perfil_repository.dart';
 import '../../../services/auth_service.dart';
 import '../../shared/pro_gate_dialog.dart';
-import '../screens/importar_excel_screen.dart';
+import '../screens/importar_presupuesto_screen.dart';
 import '../screens/subitems_screen.dart';
 
 class RubrosTab extends StatefulWidget {
@@ -853,7 +853,7 @@ class _RubrosTabState extends State<RubrosTab> {
     }
     await Navigator.push(
       context,
-      MaterialPageRoute(builder: (context) => ImportarExcelScreen(obraId: widget.obraId)),
+      MaterialPageRoute(builder: (context) => ImportarPresupuestoScreen(obraId: widget.obraId)),
     );
     await _cargarConteos();
   }
