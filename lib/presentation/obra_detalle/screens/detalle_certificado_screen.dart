@@ -8,6 +8,7 @@ import '../../../services/certificado_subitems_avance_repository.dart';
 import '../../../services/certificados_repository.dart';
 import '../../../services/indices_economicos_repository.dart';
 import '../../../services/obras_repository.dart';
+import '../widgets/desglose_certificado.dart';
 
 /// Detalle de un certificado YA EMITIDO -- cierra el ciclo de 5 estados que hasta ahora quedaba
 /// atascado en "Emitido" (Gestión de Obra, auditoría 2026-09-11,
@@ -670,6 +671,17 @@ class _DetalleCertificadoScreenState extends State<DetalleCertificadoScreen> {
           if (_puedeVerMontos) _buildMontos(),
           // Cómo se midió, pegado al monto y no al final: califica el número de arriba.
           if (_globales.isNotEmpty) ...[const SizedBox(height: 12), _buildBloqueGlobal()],
+          // Qué se certificó, partida por partida. Va inmediatamente después del monto y antes de
+          // la línea de tiempo porque **es el certificado**: el total de arriba es su resultado, y
+          // los estados de abajo son su trámite. Hasta 2026-09-14 este desglose existía solo en la
+          // vista previa del borrador, así que el documento emitido -el que se manda al comitente-
+          // era un número sin respaldo (encontrado por Seba probando la obra real).
+          const SizedBox(height: 16),
+          DesgloseCertificado(
+            certificadoId: _cert.id,
+            formatearMonto: _fmt,
+            mostrarMontos: _puedeVerMontos,
+          ),
           const SizedBox(height: 16),
           _buildLineaTiempo(),
           const SizedBox(height: 24),

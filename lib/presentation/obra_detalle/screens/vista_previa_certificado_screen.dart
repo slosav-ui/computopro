@@ -13,6 +13,7 @@ import '../../../services/obra_subitems_repository.dart';
 import '../../../services/obras_repository.dart';
 import '../../../services/rubros_repository.dart';
 import '../../../services/subitems_repository.dart';
+import '../widgets/desglose_certificado.dart';
 
 /// Vista previa del certificado antes de emitir — Gestión de Obra, pieza 4, tanda 1. Muestra el
 /// detalle por rubro/subítem (de `certificado_subitems_avance`, ya snapshoteado) y el desglose de
@@ -207,15 +208,6 @@ class _VistaPreviaCertificadoScreenState extends State<VistaPreviaCertificadoScr
     }
   }
 
-  Map<String, List<CertificadoSubitemAvance>> get _avancesPorRubro {
-    final mapa = <String, List<CertificadoSubitemAvance>>{};
-    for (final a in _avances) {
-      final rubro = _rubroNombrePorObraSubitem[a.obraSubitemId] ?? 'Rubro';
-      mapa.putIfAbsent(rubro, () => []).add(a);
-    }
-    return mapa;
-  }
-
   /// Silenciosas ante error las dos, con el mismo criterio que el resto de los datos secundarios de
   /// este proyecto: si fallan se sigue con lo que se tenía, y el guard real de la base es el que
   /// decide igual. Lo único que se pierde es el aviso anticipado.
@@ -366,7 +358,10 @@ class _VistaPreviaCertificadoScreenState extends State<VistaPreviaCertificadoScr
             ),
           )
         else
-          ..._avancesPorRubro.entries.map(_buildBloqueRubro),
+          // El desglose por partida vive en `DesgloseCertificado`, compartido con la pantalla del
+          // certificado ya emitido (2026-09-14). Antes estaba escrito acá adentro, y por eso el
+          // emitido no lo tenía: el detalle existía solo mientras el certificado era borrador.
+          DesgloseCertificado(certificadoId: widget.certificado.id, formatearMonto: _fmt),
         const Divider(height: 32),
         // Desglose pactado/ajuste CAC (docs/cac_conectado_modelo_a_diseno.md §9, ambigüedad B) --
         // solo si hay ajuste que explicar. Para una obra sin CAC (la mayoría hoy) montoAjusteCac
@@ -457,41 +452,6 @@ class _VistaPreviaCertificadoScreenState extends State<VistaPreviaCertificadoScr
                   '${_fmtPct(e.disponible)}% disponibles y se cargó ${_fmtPct(e.intentado)}%. '
                   'Volvé a la carga de avance para corregirlo.',
                   style: TextStyle(fontSize: 11.5, color: Colors.red.shade700),
-                ),
-              )),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildBloqueRubro(MapEntry<String, List<CertificadoSubitemAvance>> entry) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(entry.key,
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF1B365D))),
-          const SizedBox(height: 4),
-          ...entry.value.map((a) => Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        _descripcionPorObraSubitem[a.obraSubitemId] ?? 'subítem sin descripción',
-                        style: const TextStyle(fontSize: 12.5),
-                      ),
-                    ),
-                    Text('${_fmtPct(a.porcentajePeriodo)}%',
-                        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
-                    const SizedBox(width: 12),
-                    SizedBox(
-                      width: 90,
-                      child: Text(_fmt(a.montoPeriodo),
-                          textAlign: TextAlign.right, style: const TextStyle(fontSize: 12.5)),
-                    ),
-                  ],
                 ),
               )),
         ],
