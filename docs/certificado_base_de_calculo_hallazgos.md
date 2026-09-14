@@ -102,7 +102,7 @@ certificado.)
 
 ---
 
-## Hallazgo 3 — el certificado de un adicional no es representable — **CERRADO por la 0148**
+## Hallazgo 3 — el certificado de un adicional no es representable — **CERRADO y VERIFICADO**
 
 Salió de la misma carga, cuando Seba vio en el teléfono que el adicional decía **0% certificado**
 aunque su certificado estaba emitido.
@@ -134,3 +134,13 @@ Y resultó ser la opción más chica de las tres, no la más grande: **un adicio
 maquinaria ya funcionaba sobre la hija; lo único que faltaba era usarla y que la madre se entere. La
 `0148` no construye un segundo circuito — **borra el segundo circuito** (el porcentaje suelto) y deja
 el que ya existía.
+
+**Verificado en el teléfono por Seba (2026-09-14)**, con la obra real cargada: el certificado Nº 1
+del adicional con su desglose por partida, el porcentaje del adicional actualizándose solo en la
+lista (lo escribe el trigger, nadie lo tipea) y la configuración propia del adicional, con sus
+retenciones distintas de las de la obra.
+
+Lo que sigue abierto de esta pieza es el **hallazgo 1**: la base de cálculo del fondo de reparo. En
+el adicional no se nota porque tiene anticipo 0% y ahí las dos cuentas coinciden -- por eso su neto
+da exacto contra el PDF. En el certificado de la obra, con anticipo 20%, la diferencia es de USD
+33,99.
