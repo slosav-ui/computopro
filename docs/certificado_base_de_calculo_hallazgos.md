@@ -11,7 +11,7 @@ es una migración, y una decisión.
 
 ---
 
-## Hallazgo 1 — el fondo de reparo se calcula sobre otra base que en el papel
+## Hallazgo 1 — el fondo de reparo se calcula sobre otra base que en el papel — **CONFIRMADO, a corregir**
 
 **Este es el importante, porque no depende de ninguna pieza pendiente y afecta a todas las obras con
 anticipo.**
@@ -43,15 +43,52 @@ del certificado y con las dos alícuotas.
 No es un redondeo ni una interpretación: son dos cuentas distintas, y la del papel es la que rige
 en el contrato.
 
-Qué implicaría corregirlo:
+### Confirmado por Seba (2026-09-14)
 
-- una migración sobre `calcular_totales_certificado`, de dos líneas;
-- **decidir qué pasa con los certificados ya emitidos**, que guardan `monto_fondo_reparo_retenido` y
-  `monto_neto_a_pagar` congelados. Son un snapshot de lo que se emitió, así que recalcularlos
-  cambiaría documentos ya entregados. Lo más probable es que haya que dejarlos como están y que la
-  corrección rija de acá en adelante — pero es una decisión, no un detalle de implementación;
-- confirmar antes que la base correcta es la del PDF en general y no una particularidad de cómo
-  factura esta empresa. **Lo primero es eso**, no el SQL.
+Era la pregunta que faltaba y quedó respondida:
+
+> *"El fondo de reparo se retiene sobre el neto, después de descontar el anticipo. Es la base general
+> en obra, no cómo factura mi empresa. La columna de mi planilla se llama 'subtotal a certificar'
+> justamente por eso."*
+
+O sea que **la app está mal y el papel está bien**, en general y no en un caso. El nombre de la
+columna no era una etiqueta: era el concepto que falta.
+
+### La decisión sobre lo ya emitido: rige de acá en adelante
+
+También de Seba, y con un precedente del propio proyecto: *"igual que hicimos con la cotización"*.
+
+Un certificado emitido guarda `anticipo_pct_aplicado`, `fondo_reparo_pct_aplicado`,
+`monto_fondo_reparo_retenido` y `monto_neto_a_pagar` **congelados**. Eso no es una caché que se pueda
+recalcular: es el registro de lo que se emitió y se entregó. Es exactamente el criterio con el que la
+`0107` y la `0122` trataron la cotización — cada documento queda con la suya, y los anteriores no se
+reescriben.
+
+### Lo que hay que mirar igual, porque no es solo cosmético
+
+**El fondo de reparo es plata que se devuelve al final de la obra.** Retener de menos no es un error
+de visualización: al momento de la devolución, lo que se devuelve es lo que se retuvo. Así que una
+obra con certificados emitidos bajo las dos reglas va a tener un **total retenido que mezcla dos
+criterios**, y ese total es el que se liquida al cerrar.
+
+Dos consecuencias concretas:
+
+- la diferencia por certificado es `fondo% × anticipo% × monto` — con 20% y 5%, **el 1% de lo
+  certificado**. No compone entre certificados, pero se acumula en el total del fondo;
+- **Galpón Mix ya tiene un certificado emitido con la regla vieja** (USD 33,99 retenidos de menos).
+  Si se quiere que la obra real quede fiel al papel, la salida no es tocar la fila sino **anular y
+  reemplazar** ese certificado después de corregir — el circuito de anulación existe justamente para
+  esto. Con el script de carga es más simple todavía: recargar la obra.
+
+### Qué falta para corregirlo
+
+- una migración sobre `calcular_totales_certificado`, de dos líneas: el fondo de reparo se aplica
+  sobre `monto - monto_anticipo`, no sobre `monto`;
+- **y decidir si el "subtotal a certificar" se muestra**, que es la parte de producto. Hoy la
+  pantalla del certificado va del monto directo al neto; el papel tiene ese escalón en el medio, y
+  sin él la cuenta no se puede seguir. Mi lectura es que tiene que estar — es el número sobre el que
+  se calcula la retención, y un certificado que no deja reconstruir su propia cuenta obliga a
+  confiar.
 
 ## Hallazgo 2 — con el ajuste pactado en el snapshot, la plata se calcula sobre la base sin descuento
 
