@@ -131,8 +131,8 @@ Cada una se verifica sola, y **solo la tercera necesita Firebase funcionando**:
 | --- | --- | --- | --- |
 | **0** | Las decisiones de §7 + crear el proyecto de Firebase y bajar `google-services.json` | No hay nada que verificar: es la reunión y una consola | Chica |
 | **1** | Tabla `dispositivos` + registrar/borrar el token en el arranque y el logout + permiso Android 13 | `select * from dispositivos` muestra el token. **Sin mandar nada** | Chica |
-| **2** | Tabla `notificaciones` (outbox) + quién es el destinatario en SQL + escribir filas desde las transiciones de certificados y adicionales | En SQL: emitir un certificado y ver aparecer la fila con el destinatario correcto. **Sin mandar nada** | Media |
-| **3** | La Edge Function + el webhook + FCM | *** El primer push que llega a un teléfono | Media |
+| **2** | Tabla `notificaciones` (outbox) + quién es el destinatario en SQL + escribir filas desde las transiciones de certificados y adicionales | En SQL: emitir un certificado y ver aparecer la fila con el destinatario correcto. **Sin mandar nada** | **Escrita: `0143`** |
+| **3** | La Edge Function + el webhook + **`pg_cron`** + FCM | *** El primer push que llega a un teléfono | Media |
 | **4** | Tocar la notificación abre la pantalla + limpieza de tokens muertos + horario | Con la app cerrada, tocar y caer en el certificado | Chica |
 
 **Por qué en ese orden:** las tandas 1 y 2 son las que tienen la lógica de negocio y **se prueban sin
@@ -261,6 +261,74 @@ en Play para siempre.
 - **Registrar en cada arranque, no solo al iniciar sesión.** Un token de FCM cambia al reinstalar, al
   borrar datos, y a veces solo porque FCM lo rota. Registrarlo únicamente en el login deja aparatos
   con tokens muertos **sin que nada falle de forma visible**: simplemente no llega.
+
+## 6-ter. La Tanda 2, como quedó escrita (`0143`, 2026-09-14)
+
+**Cero Dart.** Es toda de base: una tabla, tres funciones y dos triggers. La app no se entera de que
+existe.
+
+**Triggers, y no encolar adentro de las cuatro transiciones.** Meterlo en `emitir_certificado`,
+`aprobar_adicional`, `marcar_certificado_pagado` y `responder_objecion_certificado` habría sido
+copiar **cuatro cuerpos de función enteros** (entre 50 y 110 líneas cada uno) para agregarles tres
+líneas — y la `0138` ya salió a arreglar una función rota por reescribir cuerpos grandes. Los
+triggers miran la **transición** (`old.estado` vs `new.estado`), no "cambió una fila", y el
+destinatario se calcula en SQL: eso es exactamente lo que §4 pedía, y lo que descarta es otra cosa
+(un webhook que dispare por cualquier cambio y resuelva el destinatario en TypeScript). De yapa: si
+mañana aparece otro camino que emite un certificado, el aviso sale igual.
+
+**Una fila por persona y hecho**, no una por hecho: así el reintento y el error son por
+destinatario, que es como falla FCM en la vida real — se cae un token, no un evento.
+
+**Dos reglas viven en un solo lugar** (`encolar_notificacion`): **no avisarle al que lo hizo**, y
+**nunca cortar la transición** — si encolar falla, emitir el certificado no puede fallar con él.
+
+### Lo que la Tanda 2 deja planteado y la 3 tiene que resolver
+
+**Una fila fechada en el futuro no la despierta nadie.** El webhook de Supabase dispara en el INSERT,
+y el evento 4 (objeción por vencer, a las 24 h) se encola **ahora** para mandarse **mañana**. Para los
+eventos 1 a 3 el webhook alcanza; para el 4 hace falta algo que pase cada tanto — `pg_cron`, que
+Supabase deja habilitar, con un job que pinchee la Edge Function.
+
+Es la misma clase de hallazgo que la `0131`: **el proyecto no tiene ningún scheduler**, y este evento
+es el primero que lo pide de verdad. No es un problema de esta tanda, pero conviene saber que la
+Tanda 3 no es solo "la Edge Function".
+
+### La duplicación de la delegación — RESUELTA en la `0144`
+
+`destinatarios_notificacion` repite la regla de la delegación del apoderado, que ya está en
+`tiene_rol_en_obra`. Lo correcto sería que la segunda se definiera en términos de la primera — y
+este proyecto ya se quemó una vez con esa regla duplicada.
+
+No lo hice en la `0143` por una razón concreta: **`tiene_rol_en_obra` la evalúan las políticas RLS
+de casi todas las tablas, fila por fila**, y mezclar ese refactor con una feature deja sin saber cuál
+de los dos rompió qué.
+
+**Se hizo aparte, en la `0144`, que no hace nada más.** Una función canónica `miembros_con_roles`, y
+`tiene_rol_en_obra` y `destinatarios_notificacion` definidas en términos de ella. Misma firma, mismos
+permisos, mismo resultado — no hubo que tocar ni una política. La verificación compara la función
+contra la regla escrita a mano sobre **todas** las membresías reales y tiene que dar cero filas.
+
+## 6-quater. Para la Tanda 3: hace falta un scheduler, y el proyecto no tiene ninguno
+
+**Anotado como hallazgo, para que la Tanda 3 no arranque creyendo que es solo la Edge Function.**
+
+El webhook de Supabase dispara **en el INSERT**. Los eventos 1 a 3 se encolan con
+`enviar_despues_de = now()`, así que ahí alcanza: llega el webhook, la función manda. Pero el evento
+4 —la objeción por vencer— **se encola hoy para mandarse en 24 horas**, y a esa fila **no la despierta
+nadie**: cuando el webhook disparó, todavía no correspondía mandarla.
+
+Hace falta algo que pase cada tanto y junte lo vencido. La forma es **`pg_cron`**, que Supabase deja
+habilitar con una línea, más un job que pinchee la Edge Function cada N minutos.
+
+**Es la tercera vez que este proyecto se topa con lo mismo**, y conviene verlo junto: la `0123`
+(período de certificación) y la `0131` (plazo de la objeción) resolvieron el "pasa solo" **calculando
+al leer**, precisamente porque no hay scheduler. Acá esa salida no existe: un push no se puede
+"calcular cuando alguien mire" — el punto es que llegue sin que nadie mire.
+
+Cuando se habilite, conviene saber que **el cron abre la puerta a otras piezas que hoy no se pueden
+hacer**: el aviso de "certificado por vencer" del plazo de pago, el resumen diario en vez de un push
+por hecho, y la limpieza periódica de tokens muertos. Ninguna justifica habilitarlo sola; las cuatro
+juntas, sí.
 
 ## 7. Lo que hay que decidir antes de la tanda 1
 
