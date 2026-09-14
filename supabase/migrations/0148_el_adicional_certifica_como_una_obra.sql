@@ -137,10 +137,24 @@ comment on function recalcular_avance_adicional(uuid) is
 --
 -- Sobre `certificados` y no sobre `certificado_subitems_avance`: mientras el certificado es borrador
 -- no cuenta para nada (ni el ponderado ni el monto lo miran), así que cargar avance no tiene que
--- disparar nada. Lo que mueve el resumen es que el certificado **cambie de estado** -- emitirse,
--- anularse -- o que desaparezca.
+-- disparar nada. Lo que mueve el resumen es que el certificado **cambie de estado**: emitirse o
+-- anularse.
 --
 -- `after` y no `before`: el resumen se calcula sobre la fila ya escrita.
+--
+-- ================== POR QUÉ NO DISPARA EN DELETE (corregido antes de aplicar) ==================
+--
+-- La primera versión también disparaba en `delete`, y eso rompía el borrado de una obra. La cadena:
+-- borrar una obra madre hace cascade sobre la hija, que hace cascade sobre sus certificados, que
+-- dispararía este trigger -- y el recálculo termina en `calcular_monto_congelado_ajustado`, que
+-- **exige membresía**. Desde el SQL Editor no hay sesión, así que el borrado abortaba.
+--
+-- No es hipotético: es exactamente lo que le pasa al script de carga de la obra real, que arranca
+-- borrando la corrida anterior.
+--
+-- Y no hace falta: **un certificado no se borra nunca en uso normal** -- anular es un estado, no un
+-- delete, y la tabla no tiene política de DELETE. Los únicos deletes son cascades de borrar la obra
+-- entera, y ahí el resumen no importa porque la fila que lo guarda se está yendo también.
 
 create or replace function certificados_recalcular_adicional()
 returns trigger
@@ -149,11 +163,6 @@ security definer
 set search_path = public
 as $$
 begin
-  if tg_op = 'DELETE' then
-    perform recalcular_avance_adicional(old.obra_id);
-    return old;
-  end if;
-
   perform recalcular_avance_adicional(new.obra_id);
 
   -- Un UPDATE que mueve el certificado de una obra a otra no pasa hoy por ninguna función, pero si
@@ -169,7 +178,7 @@ $$;
 
 drop trigger if exists certificados_recalcular_adicional on certificados;
 create trigger certificados_recalcular_adicional
-after insert or update or delete on certificados
+after insert or update on certificados
 for each row execute function certificados_recalcular_adicional();
 
 
@@ -211,17 +220,82 @@ comment on function certificar_avance_adicional(uuid, numeric) is
 -- Recalcula todos los adicionales aprobados con la regla nueva. Leé la advertencia de la cabecera
 -- antes de correr esto: los que tengan avance viejo sin certificados detrás vuelven a cero, porque
 -- ese avance no está respaldado por ningún documento.
+--
+-- ================== POR QUÉ ESTE BLOQUE SE HACE PASAR POR UN USUARIO ==================
+--
+-- La primera versión de este paso fallaba al aplicarse con "No sos miembro de esta obra", y el
+-- motivo es una trampa que este proyecto ya conoce: el recálculo termina llamando a
+-- `calcular_monto_congelado_ajustado` (`0105`), que exige `is_obra_member`. **En el SQL Editor no
+-- hay sesión, así que `auth.uid()` es null y nadie es miembro de nada.** La `0106` ya lo había
+-- dejado escrito: *"un no-miembro (o una sesión sin auth.uid(), como el SQL Editor..."*.
+--
+-- De las dos salidas posibles, esta es la que NO debilita nada:
+--
+--   * **Saltear el chequeo** obligaría a que el recálculo no use `calcular_avance_ponderado_obra`
+--     sino una copia de su cuenta sin el gate. Eso pone la definición de "avance ponderado" en dos
+--     lugares, que es exactamente lo que la `0147` evitó a propósito dos días atrás. Y el chequeo no
+--     sobra: en uso normal el recálculo lo dispara una persona emitiendo un certificado, y ahí
+--     tiene que regir.
+--   * **Prestarle la identidad de un miembro real de cada obra hija**, que es lo que hace este
+--     bloque. El mismo truco de claims que ya usan las verificaciones de la `0130` y el script de
+--     carga de la obra real.
+--
+-- La identidad se toma de `obra_members` de cada hija -- no se inventa ni se pide: si la hija no
+-- tiene ningún miembro activo, se saltea y lo dice, porque sin miembros tampoco hay nadie que pueda
+-- ver ese adicional en la app.
 
 do $$
 declare
   v_hija uuid;
+  v_usuario uuid;
+  v_antes numeric;
+  v_despues numeric;
+  v_tocados int := 0;
+  v_saltados int := 0;
+  v_a_cero int := 0;
 begin
   for v_hija in
     select obra_hija_id from modificaciones_obra
     where tipo = 'adicional' and obra_hija_id is not null
   loop
+    select usuario_id into v_usuario
+    from obra_members
+    where obra_id = v_hija and activo
+    limit 1;
+
+    if v_usuario is null then
+      v_saltados := v_saltados + 1;
+      raise notice 'Adicional de la obra hija % salteado: no tiene ningún miembro activo.', v_hija;
+      continue;
+    end if;
+
+    select porcentaje_avance into v_antes
+    from modificaciones_obra where obra_hija_id = v_hija;
+
+    perform set_config(
+      'request.jwt.claims',
+      json_build_object('sub', v_usuario, 'role', 'authenticated')::text,
+      true
+    );
+
     perform recalcular_avance_adicional(v_hija);
+
+    select porcentaje_avance into v_despues
+    from modificaciones_obra where obra_hija_id = v_hija;
+
+    v_tocados := v_tocados + 1;
+    if coalesce(v_antes, 0) > 0 and coalesce(v_despues, 0) = 0 then
+      v_a_cero := v_a_cero + 1;
+      raise notice 'Adicional de la obra hija %: % %% -> 0 (no tenía certificados detrás).',
+        v_hija, v_antes;
+    end if;
   end loop;
+
+  -- Devolver la sesión a como estaba. `true` en set_config ya la ata a la transacción, así que esto
+  -- es por prolijidad: que el resto del script no herede una identidad prestada.
+  perform set_config('request.jwt.claims', '', true);
+
+  raise notice 'Recalculados %, salteados %, vueltos a cero %.', v_tocados, v_saltados, v_a_cero;
 end $$;
 
 
