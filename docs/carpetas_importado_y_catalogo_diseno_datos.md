@@ -51,9 +51,10 @@ numeración original, exactamente como vienen del Excel o el PDF. Textual: *"que
 como viene del Excel"*.
 
 **Y el catálogo de la app queda intacto al lado.** Los rubros que trae el importador van **a la
-carpeta de la obra, nunca al catálogo** — es la mitad que evita que se mezclen, y la que la tanda 5
-tiene que implementar: hoy `RevisarImportacionScreen` llama a `crearPersonalizado` sin `obraId`, así
-que sigue escribiendo en el catálogo personal.
+carpeta de la obra, nunca al catálogo** — es la mitad que evita que se mezclen. Hecho en la tanda 5:
+`RevisarImportacionScreen` pasa `obraId` en las dos llamadas a `crearPersonalizado`, y el `obraId`
+del diálogo que las hace es `required` sin default a propósito, porque un `null` ahí reintroduce el
+bug de las partidas duplicadas.
 
 En la solapa Cómputo hay **dos carpetas**: los rubros importados por un lado, los del catálogo por
 otro. Se alterna con un toque y no se mezclan. Al crear un rubro o una partida nueva, se elige en
@@ -471,7 +472,7 @@ el default mande siempre al catálogo personal, que es el comportamiento de hoy 
 | 2 | **`obra_id` en `rubros`/`subitems`** + índices de §4.3 + RLS de §4.4 + `obraId` en las consultas del repositorio. Sin UI, sin cambio visible. | **`0151` APLICADA y verificada 2026-09-15** |
 | 3 | **Las dos carpetas en Cómputo**: el toggle y elegir carpeta al crear (§6.3). | **hecha y verificada en emulador 2026-09-15** |
 | 4 | **Los agujeros de miembros**: carga de avance (§5.1) y nombres de rubro en el certificado. | **hecha 2026-09-15, sin probar en emulador** |
-| 5 | **El importador escribe en la carpeta importada.** Acá se reescribe el seed de Galpón Mix. | por hacer |
+| 5 | **El importador escribe en la carpeta importada.** Acá se reescribe el seed de Galpón Mix. | **hecha 2026-09-15, sin probar** |
 | 6 | **Copiar obra → catálogo** ("adoptar lo bueno de lo importado"). §6.1, dirección A. | por hacer |
 | 7 | **Copiar catálogo → obra** ("bajarlo para modificarlo"). §6.1, dirección B, con b.1 y b.2 ya cerradas. | por hacer |
 | 8 | **0150 — el precio manual gana sobre la cascada de APU.** | **escrita, marcada para no aplicar** |
@@ -505,13 +506,27 @@ los tres casos de aviso).
 
 Nada de esto bloquea la tanda 2.
 
-1. **¿Se puede copiar un subítem suelto**, sin su rubro? Las dos direcciones de §6.1 copian el rubro
+1. **El importador no captura la numeración original, porque nunca la lee.** Encontrado
+   construyendo la tanda 5. `importaciones_items` (0080) guarda `rubro_texto`, `descripcion_texto`,
+   `unidad_texto`, `cantidad` y `precio_unitario` — **no hay columna de código de partida**, y la
+   lista de sinónimos del parser mete "item"/"ítem" en la misma columna que "rubro"/"capítulo", así
+   que en una planilla con columnas *Item* y *Descripción* el número de la partida termina pisando
+   el nombre del rubro.
+
+   O sea que §2 promete "con su numeración original" y el importador hoy solo puede cumplirlo a
+   medias: los rubros y las descripciones entran tal cual, los códigos de partida se derivan. **El
+   seed de Galpón Mix sí conserva la numeración** porque no pasa por el parser.
+
+   Cerrarlo es una columna en `importaciones_items`, un sinónimo nuevo en el parser y un campo más
+   en la revisión. Chico pero es una tanda, no un arreglo al pasar.
+
+2. **¿Se puede copiar un subítem suelto**, sin su rubro? Las dos direcciones de §6.1 copian el rubro
    entero. Copiar una partida sola al catálogo tiene sentido ("esta me sirve siempre") y no está
    resuelto dónde cae si su rubro no existe del otro lado.
-2. **El presupuesto impreso**, cuando exista: con dos carpetas conviviendo, cómo se numeran los
+3. **El presupuesto impreso**, cuando exista: con dos carpetas conviviendo, cómo se numeran los
    ítems en el papel. Es el motivo original del índice único global de la 0025, y sigue sin
    documento que lo obligue.
-3. **Las solapas vacías** (APU y Mat y MO en una obra 100% importada). Pieza chica y aparte: el
+4. **Las solapas vacías** (APU y Mat y MO en una obra 100% importada). Pieza chica y aparte: el
    vacío tiene que explicar por qué está vacío *en esta obra* en vez de dar una instrucción genérica
    imposible de seguir.
 

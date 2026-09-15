@@ -115,10 +115,10 @@ class SubitemsRepository {
   /// importada, así que no alcanza con getSubitemsDeRubro (acotado a uno). El catálogo es chico
   /// (116 oficiales + lo que cada usuario haya creado), una sola consulta y filtro en Dart alcanza
   /// -- mismo criterio ya usado en getConteoOficialPorRubro.
-  Future<List<SubitemCatalogo>> getTodos({String? usuarioId}) async {
+  Future<List<SubitemCatalogo>> getTodos({String? usuarioId, String? obraId}) async {
     final data = usuarioId == null
         ? await _client.from('subitems').select().isFilter('creador_usuario_id', null)
-        : await _client.from('subitems').select().or('creador_usuario_id.is.null,creador_usuario_id.eq.$usuarioId');
+        : await _client.from('subitems').select().or(RubrosRepository.filtroCarpeta(usuarioId, obraId));
     return (data as List).map((row) => _fromRow(row as Map<String, dynamic>)).toList();
   }
 

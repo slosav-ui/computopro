@@ -71,11 +71,16 @@ class _RevisarImportacionScreenState extends State<RevisarImportacionScreen> {
       final items = await _importacionesRepository.getItems(
         widget.importacionId,
       );
+      // `obraId` (tanda 5): el buscador de "elegir del catálogo" también tiene que ofrecer lo que
+      // ya está en la carpeta de esta obra -- si no, reimportar no encontraría nunca las partidas
+      // de la importación anterior y crearía todo de nuevo.
       final rubros = await _rubrosRepository.getCatalogoCompleto(
         _usuarioId ?? '',
+        obraId: widget.obraId,
       );
       final subitems = await _subitemsRepository.getTodos(
         usuarioId: _usuarioId,
+        obraId: widget.obraId,
       );
       if (!mounted) return;
       setState(() {
@@ -211,6 +216,7 @@ class _RevisarImportacionScreenState extends State<RevisarImportacionScreen> {
       context: context,
       builder: (_) => _DialogoCrearPropia(
         item: item,
+        obraId: widget.obraId,
         rubros: _rubros,
         subitems: _subitems,
         usuarioId: usuarioId,
@@ -788,6 +794,11 @@ class _DialogoBuscarSubitemState extends State<_DialogoBuscarSubitem> {
 /// por Navigator.pop si guardó, `null`/`false` si se canceló.
 class _DialogoCrearPropia extends StatefulWidget {
   final ImportacionItem item;
+  /// La obra en cuya carpeta cae todo lo que este diálogo crea. **No es opcional y no tiene
+  /// default**: que lo importado vaya a la carpeta y no al catálogo personal es la mitad de la
+  /// pieza que evita que las obras se mezclen (§2 del doc). Un `null` acá reintroduce el bug de
+  /// las partidas duplicadas.
+  final String obraId;
   final List<RubroCatalogo> rubros;
   final List<SubitemCatalogo> subitems;
   final String usuarioId;
@@ -797,6 +808,7 @@ class _DialogoCrearPropia extends StatefulWidget {
 
   const _DialogoCrearPropia({
     required this.item,
+    required this.obraId,
     required this.rubros,
     required this.subitems,
     required this.usuarioId,
@@ -893,6 +905,7 @@ class _DialogoCrearPropiaState extends State<_DialogoCrearPropia> {
     final delRubro = await widget.subitemsRepository.getSubitemsDeRubro(
       rubro.id,
       usuarioId: widget.usuarioId,
+      obraId: widget.obraId,
     );
     String primerSegmento = rubro.orden.toString();
     var maxSegundo = 0;
@@ -905,7 +918,18 @@ class _DialogoCrearPropiaState extends State<_DialogoCrearPropia> {
       final segundo = int.tryParse(partes[1]);
       if (segundo != null && segundo > maxSegundo) maxSegundo = segundo;
     }
-    return '$primerSegmento.${maxSegundo + 1}';
+
+    // Desde la 0151 el código tiene que ser único en TODA la carpeta de la obra
+    // (`subitems_codigo_obra_unique`), no solo dentro del rubro. Dos rubros distintos de la misma
+    // carpeta pueden derivar el mismo `primerSegmento` -- por ejemplo si los dos arrancan sin
+    // partidas y caen en el `rubro.orden` -- y el segundo en llegar reventaría con un error sin
+    // explicación. Se avanza hasta el primero libre; un hueco en la secuencia no significa nada.
+    final ocupados = await widget.subitemsRepository.getCodigosDeObra(widget.obraId);
+    var siguiente = maxSegundo + 1;
+    while (ocupados.contains('$primerSegmento.$siguiente')) {
+      siguiente++;
+    }
+    return '$primerSegmento.$siguiente';
   }
 
   Future<void> _guardar() async {
@@ -939,14 +963,24 @@ class _DialogoCrearPropiaState extends State<_DialogoCrearPropia> {
       // una excepción que cae en el catch de abajo.
       await (() async {
         var rubro = _rubroElegido;
+        // **El cambio de fondo de la tanda 5**: lo que crea el importador va a la carpeta de la
+        // obra, no al catálogo personal. Antes iba al catálogo, y por eso una planilla importada
+        // aparecía en el Cómputo de todas las obras del usuario -- el origen de las partidas
+        // duplicadas que Seba vio en el teléfono.
         rubro ??= await widget.rubrosRepository.crearPersonalizado(
           nombre: nombreRubro,
           creadorUsuarioId: widget.usuarioId,
+          obraId: widget.obraId,
         );
 
+        // `obraId` solo si el rubro es de la carpeta: si el usuario eligió un rubro del catálogo en
+        // el buscador, la partida cuelga de ahí y va como "solo en esta obra" igual -- que es el
+        // caso que la 0151 habilita a propósito (§4.2). Mandar la carpeta con un rubro del catálogo
+        // sería coherente; al revés no, y el trigger lo rechazaría.
         final subitem = await widget.subitemsRepository.crearPersonalizado(
           rubroId: rubro.id,
           codigo: await _siguienteCodigo(rubro),
+          obraId: widget.obraId,
           descripcion: descripcion,
           unidad: unidad,
           creadorUsuarioId: widget.usuarioId,
