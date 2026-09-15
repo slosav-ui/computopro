@@ -188,6 +188,23 @@ select creador_usuario_id, codigo, count(*) from rubros
 where creador_usuario_id is not null group by 1, 2 having count(*) > 1;
 ```
 
+**Consecuencia que apareció construyendo la tanda 3, y que la tanda 5 tiene que respetar.** El
+código de un subítem creado a mano sale de `SubitemsScreen._siguienteCodigoPropio`, que lo deriva
+del número **posicional** del rubro en la lista de Cómputo. Ese número arranca de 1 **en cada
+carpeta**, así que el tercer rubro del catálogo y el tercero de la carpeta importada producen los
+dos un `3.x`. Con `subitems_codigo_obra_unique` siendo `(obra_id, codigo)`, los dos chocan si caen
+en la misma obra — y el caso es alcanzable: una partida "solo en esta obra" colgada de un rubro del
+catálogo convive con las partidas de la carpeta importada bajo el mismo `obra_id`.
+
+Resuelto del lado de la app, no de la base: al crear en la carpeta se consultan los códigos ya
+usados (`SubitemsRepository.getCodigosDeObra`) y se avanza hasta el primero libre. Un hueco en la
+secuencia no significa nada — el catálogo ya los tiene por borrados.
+
+**El importador (tanda 5) no puede apoyarse en eso**: trae los códigos del Excel, que es todo el
+punto de "tal cual viene". Si el Excel reinicia la numeración en cada rubro, dos partidas van a
+traer el mismo código y el índice las va a rechazar. La salida es prefijar con el código del rubro
+antes de insertar, y está anotada en el paso 2 de la `0151`.
+
 **Lo que NO cambia y conviene saber**: en Cómputo el número que se ve en cada tarjeta de rubro es
 **posicional** (índice+1 dentro de la lista, ver `rubros_tab.dart` y
 `docs/rubros_orden_diseno_datos.md` §3), no `rubro.codigo`. Así que dos carpetas numeran 1..N cada
@@ -373,14 +390,21 @@ el default mande siempre al catálogo personal, que es el comportamiento de hoy 
 | # | Tanda | Estado |
 |---|---|---|
 | 1 | **0149 — redondeo en los agregados.** Independiente de todo esto. | **APLICADA 2026-09-15** |
-| 2 | **`obra_id` en `rubros`/`subitems`** + índices de §4.3 + RLS de §4.4 + `obraId` en las consultas del repositorio. Sin UI, sin cambio visible. | **migración `0151` escrita, pendiente de aplicar** |
-| 3 | **Las dos carpetas en Cómputo**: el toggle y elegir carpeta al crear (§6.3). | por hacer |
-| 4 | **El importador escribe en la carpeta importada.** Acá se reescribe el seed de Galpón Mix. | por hacer |
-| 5 | **Los agujeros de miembros**: carga de avance (§5.1) y nombres de rubro en el certificado. | por hacer |
+| 2 | **`obra_id` en `rubros`/`subitems`** + índices de §4.3 + RLS de §4.4 + `obraId` en las consultas del repositorio. Sin UI, sin cambio visible. | **`0151` APLICADA y verificada 2026-09-15** |
+| 3 | **Las dos carpetas en Cómputo**: el toggle y elegir carpeta al crear (§6.3). | **hecha 2026-09-15, sin probar en emulador** |
+| 4 | **Los agujeros de miembros**: carga de avance (§5.1) y nombres de rubro en el certificado. | por hacer |
+| 5 | **El importador escribe en la carpeta importada.** Acá se reescribe el seed de Galpón Mix. | por hacer |
 | 6 | **0150 — el precio manual gana sobre la cascada de APU.** | **escrita, marcada para no aplicar** |
 
 **La tanda 2 es la única con riesgo real; las demás son consecuencia.** Es también la que decide
 todo: si `obra_id` queda bien puesto, el resto es UI y consultas.
+
+**Las tandas 4 y 5 están invertidas respecto del primer borrador de este doc, y el motivo importa.**
+Antes el importador iba cuarto y los agujeros de miembros quinto. Entre una y otra quedaba una
+ventana en la que una obra importada le muestra al cliente invitado partidas cuyos rubros **no
+aparecen en la pantalla de carga de avance** (`carga_avance_rubros_screen.dart:138` filtra por el
+catálogo del usuario, §5.1). Con las carpetas vacías no se nota; con una obra cargada y compartida,
+sí. **La regla general: los agujeros que una pieza destapa se tapan antes de llenarla, no después.**
 
 La **adopción** (§6.1) y el **reemplazo al reimportar** (§6.2) no están en el corte a propósito:
 dependen de que exista la carpeta y merecen su propia tanda cada una, después de la 4.

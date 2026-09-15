@@ -154,6 +154,22 @@ class SubitemsRepository {
     return segmentosA.length.compareTo(segmentosB.length);
   }
 
+  /// Los códigos que ya están usados en la carpeta de una obra (0151).
+  ///
+  /// Existe por un choque concreto: `subitems_codigo_obra_unique` es `(obra_id, codigo)`, o sea
+  /// que el código tiene que ser único en **toda** la carpeta, y el que arma los códigos en
+  /// `SubitemsScreen` los deriva del número POSICIONAL del rubro en la lista de Cómputo. Ese
+  /// número arranca de 1 en cada carpeta desde la tanda 3, así que el rubro que va tercero en el
+  /// catálogo y el que va tercero en la carpeta de la obra producen los dos un "3.x" -- y si los
+  /// dos terminan en la misma obra, chocan.
+  ///
+  /// Se consulta solo cuando se va a crear algo en la carpeta, no al abrir la pantalla: es una
+  /// acción rara y el catálogo de una obra es chico.
+  Future<Set<String>> getCodigosDeObra(String obraId) async {
+    final data = await _client.from('subitems').select('codigo').eq('obra_id', obraId);
+    return {for (final row in data as List) (row as Map<String, dynamic>)['codigo'].toString()};
+  }
+
   SubitemCatalogo _fromRow(Map<String, dynamic> row) {
     return SubitemCatalogo(
       id: row['id'].toString(),

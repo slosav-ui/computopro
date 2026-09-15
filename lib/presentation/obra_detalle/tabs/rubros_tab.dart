@@ -59,6 +59,27 @@ class _RubrosTabState extends State<RubrosTab> {
   // índice en cada drag: un vecino puede ya tener un override persistido con
   // una magnitud real distinta a la que le daría su posición en la lista.
   List<double> _posicionesCatalogo = [];
+
+  // ---------------------------------------------------------------- las dos carpetas (tanda 3)
+  //
+  // La carpeta de esta obra: los rubros con `obra_id` (migración 0151) — el presupuesto importado
+  // tal cual, con sus nombres y su numeración. Ver
+  // docs/carpetas_importado_y_catalogo_diseno_datos.md.
+  //
+  // **Dos pares de listas y no uno filtrado**, a propósito: `_onReorder` calcula el punto medio
+  // entre vecinos usando índices de la lista que se está mostrando. Con una sola lista filtrada
+  // habría que mapear cada índice de la vista al índice real, y ese mapeo es exactamente el tipo de
+  // cuenta que se rompe en silencio cuando alguien agrega un caso. Con dos pares, cada carpeta se
+  // ordena y se reordena sola, con el mismo código de siempre.
+  List<RubroCatalogo> _carpetaObra = [];
+  List<double> _posicionesCarpeta = [];
+
+  // Qué carpeta se está mirando. Arranca siempre en el catálogo: es lo que había antes de esta
+  // pieza, y una obra sin nada importado no tiene por qué verse distinta.
+  bool _verCarpetaDeObra = false;
+
+  List<RubroCatalogo> get _rubrosVisibles => _verCarpetaDeObra ? _carpetaObra : _catalogo;
+  List<double> get _posicionesVisibles => _verCarpetaDeObra ? _posicionesCarpeta : _posicionesCatalogo;
   // Indicador "N de M tildados" por rubro (ver diagnóstico: sin monto real
   // todavía, unit-agnostic, no depende de APU/precio_unitario_manual).
   Map<String, int> _totalPorRubro = {};
@@ -148,10 +169,22 @@ class _RubrosTabState extends State<RubrosTab> {
       final tildados = await tildadosFuture;
       final overrides = await overridesFuture;
       if (!mounted) return;
-      final (catalogoOrdenado, posiciones) = _mezclarOrden(rubros, overrides);
+      // Una pasada de _mezclarOrden por carpeta: los overrides de `obra_rubros_orden` son por
+      // (obra, rubro), así que sirven igual para las dos sin tocar esa tabla. Y como la posición
+      // default sale del índice DENTRO de la lista que se le pasa, cada carpeta numera desde 1 sin
+      // ninguna cuenta extra -- que es lo que la decisión 3.2 pide.
+      final (catalogoOrdenado, posiciones) =
+          _mezclarOrden(rubros.where((r) => r.obraId == null).toList(), overrides);
+      final (carpetaOrdenada, posicionesCarpeta) =
+          _mezclarOrden(rubros.where((r) => r.obraId != null).toList(), overrides);
       setState(() {
         _catalogo = catalogoOrdenado;
         _posicionesCatalogo = posiciones;
+        _carpetaObra = carpetaOrdenada;
+        _posicionesCarpeta = posicionesCarpeta;
+        // Si la carpeta se quedó sin rubros (se borró el último) no se puede seguir mirándola: el
+        // selector desaparece y quedaría una pantalla vacía sin forma de salir.
+        if (carpetaOrdenada.isEmpty) _verCarpetaDeObra = false;
         _esPro = esPro;
         _totalPorRubro = totales;
         _tildadosPorRubro = tildados;
@@ -217,12 +250,17 @@ class _RubrosTabState extends State<RubrosTab> {
     final usuarioId = _authService.usuarioActual?.id;
     if (usuarioId == null) return;
 
-    final rubro = _catalogo[oldIndex];
-    final catalogoPrevio = List<RubroCatalogo>.from(_catalogo);
-    final posicionesPrevias = List<double>.from(_posicionesCatalogo);
+    // Sobre la carpeta que se está mirando, no sobre "la lista": arrastrar en una no toca a la
+    // otra. Cada carpeta tiene su propia secuencia de posiciones.
+    final visibles = _rubrosVisibles;
+    final posicionesVisibles = _posicionesVisibles;
 
-    final catalogoSinMovido = List<RubroCatalogo>.from(_catalogo)..removeAt(oldIndex);
-    final posicionesSinMovido = List<double>.from(_posicionesCatalogo)..removeAt(oldIndex);
+    final rubro = visibles[oldIndex];
+    final catalogoPrevio = List<RubroCatalogo>.from(visibles);
+    final posicionesPrevias = List<double>.from(posicionesVisibles);
+
+    final catalogoSinMovido = List<RubroCatalogo>.from(visibles)..removeAt(oldIndex);
+    final posicionesSinMovido = List<double>.from(posicionesVisibles)..removeAt(oldIndex);
 
     final anterior = newIndex > 0 ? posicionesSinMovido[newIndex - 1] : null;
     final siguiente = newIndex < posicionesSinMovido.length ? posicionesSinMovido[newIndex] : null;
@@ -239,8 +277,15 @@ class _RubrosTabState extends State<RubrosTab> {
     }
 
     setState(() {
-      _catalogo = List<RubroCatalogo>.from(catalogoSinMovido)..insert(newIndex, rubro);
-      _posicionesCatalogo = List<double>.from(posicionesSinMovido)..insert(newIndex, nuevaPosicion);
+      final lista = List<RubroCatalogo>.from(catalogoSinMovido)..insert(newIndex, rubro);
+      final pos = List<double>.from(posicionesSinMovido)..insert(newIndex, nuevaPosicion);
+      if (_verCarpetaDeObra) {
+        _carpetaObra = lista;
+        _posicionesCarpeta = pos;
+      } else {
+        _catalogo = lista;
+        _posicionesCatalogo = pos;
+      }
     });
 
     try {
@@ -253,8 +298,13 @@ class _RubrosTabState extends State<RubrosTab> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _catalogo = catalogoPrevio;
-        _posicionesCatalogo = posicionesPrevias;
+        if (_verCarpetaDeObra) {
+          _carpetaObra = catalogoPrevio;
+          _posicionesCarpeta = posicionesPrevias;
+        } else {
+          _catalogo = catalogoPrevio;
+          _posicionesCatalogo = posicionesPrevias;
+        }
       });
       _mostrarSnackError('No se pudo guardar el nuevo orden. Probá de nuevo.');
     }
@@ -352,6 +402,7 @@ class _RubrosTabState extends State<RubrosTab> {
             child: _buildBotonesAccion(),
           ),
         ],
+        ?_buildSelectorCarpeta(),
         Expanded(
           child: RefreshIndicator(
             onRefresh: _cargarCatalogo,
@@ -359,6 +410,47 @@ class _RubrosTabState extends State<RubrosTab> {
           ),
         ),
       ],
+    );
+  }
+
+  /// Selector de carpeta: el catálogo por un lado, lo de esta obra por el otro.
+  ///
+  /// **`null` mientras la obra no tenga nada propio, y eso es la decisión, no una optimización.**
+  /// Hoy ninguna obra tiene carpeta (el importador que la llena es la tanda 5), así que mostrar
+  /// siempre el selector le pondría a todo el mundo una segunda pestaña vacía. Una pestaña vacía
+  /// parece rota — es el mismo criterio que Seba fijó para Mat y MO y la solapa APU. Cuando hay algo
+  /// que mostrar, aparece; antes no.
+  ///
+  /// Con esa regla, **el único camino para que nazca la primera carpeta es el diálogo de alta**
+  /// (`_mostrarDialogoAltaRubro`), que ofrece la elección siempre, haya carpeta o no.
+  ///
+  /// ChoiceChip adentro de un Wrap y no un SegmentedButton: con la fuente del sistema agrandada un
+  /// SegmentedButton no tiene a dónde ir y desborda, y esta pantalla ya pagó ese precio una vez
+  /// (ver el comentario de _buildBotonesAccion, tercer intento). El Wrap baja a dos renglones.
+  Widget? _buildSelectorCarpeta() {
+    if (_carpetaObra.isEmpty) return null;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 4,
+        children: [
+          _buildChipCarpeta('Catálogo', _catalogo.length, !_verCarpetaDeObra, false),
+          _buildChipCarpeta('De esta obra', _carpetaObra.length, _verCarpetaDeObra, true),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildChipCarpeta(String etiqueta, int cantidad, bool seleccionado, bool esCarpetaDeObra) {
+    return ChoiceChip(
+      label: Text('$etiqueta ($cantidad)', style: const TextStyle(fontSize: 12)),
+      selected: seleccionado,
+      visualDensity: VisualDensity.compact,
+      onSelected: (_) {
+        if (seleccionado) return;
+        setState(() => _verCarpetaDeObra = esCarpetaDeObra);
+      },
     );
   }
 
@@ -514,15 +606,22 @@ class _RubrosTabState extends State<RubrosTab> {
         ],
       );
     }
-    if (_catalogo.isEmpty) {
+    if (_rubrosVisibles.isEmpty) {
+      // El vacío dice por qué está vacío ESTA carpeta, no una instrucción genérica. La carpeta de
+      // obra en rigor no puede llegar vacía acá (sin rubros el selector no aparece y
+      // _verCarpetaDeObra vuelve a false), pero el texto queda escrito igual: es una rama de una
+      // línea y la alternativa es un mensaje que miente si algún día llega.
       return ListView(
-        children: const [
+        children: [
           Padding(
-            padding: EdgeInsets.all(24.0),
+            padding: const EdgeInsets.all(24.0),
             child: Text(
-              'No hay rubros en el catálogo todavía.',
+              _verCarpetaDeObra
+                  ? 'Esta obra todavía no tiene partidas propias. Se llenan importando el '
+                      'presupuesto, que entra con sus rubros y su numeración.'
+                  : 'No hay rubros en el catálogo todavía.',
               textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.black54, fontSize: 13),
+              style: const TextStyle(color: Colors.black54, fontSize: 13),
             ),
           ),
         ],
@@ -535,11 +634,11 @@ class _RubrosTabState extends State<RubrosTab> {
       // arrastre válido sea el ícono dedicado de abajo, sin pisar el onTap
       // que abre SubitemsScreen ni el ícono de borrar.
       buildDefaultDragHandles: false,
-      itemCount: _catalogo.length,
+      itemCount: _rubrosVisibles.length,
       onReorderItem: _onReorder,
       itemBuilder: (context, index) {
-        final rubro = _catalogo[index];
-        // Número mostrado = posición en _catalogo, que ya viene mezclado y
+        final rubro = _rubrosVisibles[index];
+        // Número mostrado = posición en la carpeta que se está mirando, que ya viene mezclada y
         // ordenado (ver _mezclarOrden) — nunca rubro.codigo, que queda
         // interno desde esta etapa (docs/rubros_orden_diseno_datos.md §3).
         final numeroMostrado = index + 1;
@@ -883,6 +982,10 @@ class _RubrosTabState extends State<RubrosTab> {
     // se resetearía a su valor inicial en cada rebuild.
     bool guardando = false;
     String? error;
+    // Default: la carpeta que se está mirando. Si estás parado en lo de esta obra, lo que crees
+    // cae ahí. Lo que no puede pasar es que el default mande siempre al catálogo personal, que es
+    // el comportamiento de antes de esta pieza y el que lo ensucia (§6.3 del doc).
+    bool enCarpetaDeObra = _verCarpetaDeObra;
 
     showDialog(
       context: context,
@@ -907,9 +1010,13 @@ class _RubrosTabState extends State<RubrosTab> {
               await _rubrosRepository.crearPersonalizado(
                 nombre: nombre,
                 creadorUsuarioId: usuarioId,
+                obraId: enCarpetaDeObra ? widget.obraId : null,
               );
               if (!dialogCtx.mounted) return;
               Navigator.of(dialogCtx).pop();
+              // Mostrar la carpeta donde acaba de caer: si nació la primera de esta obra, el
+              // selector recién aparece ahora y el rubro estaría en la pestaña que no se ve.
+              if (mounted) setState(() => _verCarpetaDeObra = enCarpetaDeObra);
               await _cargarCatalogo(); // trae el rubro nuevo, no solo los conteos
             } catch (e) {
               // Ya no hay un código elegido a mano que pueda chocar (Etapa D
@@ -928,7 +1035,10 @@ class _RubrosTabState extends State<RubrosTab> {
               'Nuevo Rubro',
               style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1B365D)),
             ),
-            content: Column(
+            // SingleChildScrollView: con las dos opciones de carpeta el diálogo pasó de tres
+            // elementos a siete, y en un teléfono con el teclado abierto no entra.
+            content: SingleChildScrollView(
+              child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 TextField(
@@ -936,10 +1046,43 @@ class _RubrosTabState extends State<RubrosTab> {
                   autofocus: true,
                   decoration: const InputDecoration(labelText: 'Nombre', border: OutlineInputBorder(), isDense: true),
                 ),
+                // Dónde va: la elección se ofrece SIEMPRE, tenga o no la obra una carpeta. Es el
+                // único camino para que nazca la primera (el selector de arriba no aparece hasta
+                // que hay algo adentro), y es la mitad de "elegir carpeta al crear" de §6.3.
+                const SizedBox(height: 12),
+                const Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text('Dónde va', style: TextStyle(fontSize: 11, color: Colors.black54)),
+                ),
+                const SizedBox(height: 4),
+                RadioListTile<bool>(
+                  value: false,
+                  groupValue: enCarpetaDeObra,
+                  onChanged: guardando ? null : (v) => setModalState(() => enCarpetaDeObra = v!),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('En mi catálogo', style: TextStyle(fontSize: 13)),
+                  subtitle: const Text(
+                    'Queda disponible en todas tus obras.',
+                    style: TextStyle(fontSize: 11, color: Colors.black54),
+                  ),
+                ),
+                RadioListTile<bool>(
+                  value: true,
+                  groupValue: enCarpetaDeObra,
+                  onChanged: guardando ? null : (v) => setModalState(() => enCarpetaDeObra = v!),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Solo en esta obra', style: TextStyle(fontSize: 13)),
+                  subtitle: const Text(
+                    'No aparece en tus otras obras. Se borra con la obra.',
+                    style: TextStyle(fontSize: 11, color: Colors.black54),
+                  ),
+                ),
                 // Precio manual por subítem, sin selector — 'global' queda
                 // reservado a Instalaciones/Carpinterías (decisión de negocio,
                 // ver RubrosRepository.crearPersonalizado).
-                const SizedBox(height: 12),
+                const SizedBox(height: 8),
                 const Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
@@ -953,6 +1096,7 @@ class _RubrosTabState extends State<RubrosTab> {
                   Text(error!, style: const TextStyle(color: Colors.red, fontSize: 12)),
                 ],
               ],
+              ),
             ),
             actions: [
               TextButton(

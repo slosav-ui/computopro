@@ -234,7 +234,18 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
   /// nivel de base — el índice único de subitems.codigo solo cubre filas
   /// oficiales — esto es solo para que se lea bien en la lista, siguiendo
   /// el mismo patrón "N.M" que ya usa el catálogo real.
-  String _siguienteCodigoPropio() {
+  /// Siguiente código libre dentro de este rubro: `<posición del rubro>.<máximo + 1>`.
+  ///
+  /// `ocupados` son los códigos ya usados en la carpeta de la obra, y solo se pasa cuando el
+  /// subítem va a caer ahí. Sin eso el código puede chocar contra otro rubro de la MISMA obra: el
+  /// número de la izquierda es la posición del rubro en la lista de Cómputo, y desde que hay dos
+  /// carpetas esa posición arranca de 1 en cada una -- el tercer rubro del catálogo y el tercero de
+  /// la carpeta producen los dos un "3.x". `subitems_codigo_obra_unique` es `(obra_id, codigo)`,
+  /// así que el segundo en llegar reventaba con un "no se pudo crear el subítem" sin explicación.
+  ///
+  /// Se avanza hasta encontrar uno libre en vez de fallar: para el usuario el número es un detalle,
+  /// y un hueco en la secuencia no significa nada (el catálogo ya tiene huecos por borrados).
+  String _siguienteCodigoPropio({Set<String>? ocupados}) {
     var maxSegundo = 0;
     for (final subitem in _subitems) {
       final partes = subitem.codigo.split('.');
@@ -242,7 +253,13 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
       final segundo = int.tryParse(partes[1]);
       if (segundo != null && segundo > maxSegundo) maxSegundo = segundo;
     }
-    return '${widget.numeroPosicion}.${maxSegundo + 1}';
+    var siguiente = maxSegundo + 1;
+    if (ocupados != null) {
+      while (ocupados.contains('${widget.numeroPosicion}.$siguiente')) {
+        siguiente++;
+      }
+    }
+    return '${widget.numeroPosicion}.$siguiente';
   }
 
   void _onNuevoSubitem() {
@@ -265,6 +282,17 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
     // se resetearía a su valor inicial en cada rebuild.
     bool guardando = false;
     String? error;
+
+    // La carpeta del subítem la manda el rubro (migración 0151):
+    //
+    //  * rubro de la carpeta de una obra  -> el subítem va ahí, sin elección posible. El trigger
+    //    `subitems_carpeta_coherente_trg` lo rechazaría de cualquier otra forma, así que ofrecer la
+    //    opción sería ofrecer un error.
+    //  * rubro del catálogo               -> se elige. "Solo en esta obra" es el caso que la 0151
+    //    habilita a propósito: una partida suelta colgada de un rubro oficial, que antes no existía
+    //    y era una de las formas en que el catálogo personal se ensuciaba (§4.2 del doc).
+    final rubroEsDeCarpeta = widget.rubro.obraId != null;
+    bool enCarpetaDeObra = rubroEsDeCarpeta;
 
     showDialog(
       context: context,
@@ -291,12 +319,16 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
               error = null;
             });
             try {
+              final ocupados = enCarpetaDeObra
+                  ? await _subitemsRepository.getCodigosDeObra(widget.obraId)
+                  : null;
               await _subitemsRepository.crearPersonalizado(
                 rubroId: widget.rubro.id,
-                codigo: _siguienteCodigoPropio(),
+                codigo: _siguienteCodigoPropio(ocupados: ocupados),
                 descripcion: descripcion,
                 unidad: unidad,
                 creadorUsuarioId: usuarioId,
+                obraId: enCarpetaDeObra ? widget.obraId : null,
               );
               if (!dialogCtx.mounted) return;
               Navigator.of(dialogCtx).pop();
@@ -330,6 +362,37 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
                     controller: unidadCtrl,
                     decoration: const InputDecoration(labelText: 'Unidad (ej. M2, ML, GL)', border: OutlineInputBorder(), isDense: true),
                   ),
+                  // Dónde va. Solo se ofrece en un rubro del catálogo: en uno de la carpeta de la
+                  // obra no hay nada que elegir (ver el comentario de arriba).
+                  if (!rubroEsDeCarpeta) ...[
+                    const SizedBox(height: 12),
+                    const Text('Dónde va', style: TextStyle(fontSize: 11, color: Colors.black54)),
+                    const SizedBox(height: 4),
+                    RadioListTile<bool>(
+                      value: false,
+                      groupValue: enCarpetaDeObra,
+                      onChanged: guardando ? null : (v) => setModalState(() => enCarpetaDeObra = v!),
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('En mi catálogo', style: TextStyle(fontSize: 13)),
+                      subtitle: const Text(
+                        'Queda en este rubro para todas tus obras.',
+                        style: TextStyle(fontSize: 11, color: Colors.black54),
+                      ),
+                    ),
+                    RadioListTile<bool>(
+                      value: true,
+                      groupValue: enCarpetaDeObra,
+                      onChanged: guardando ? null : (v) => setModalState(() => enCarpetaDeObra = v!),
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Solo en esta obra', style: TextStyle(fontSize: 13)),
+                      subtitle: const Text(
+                        'No aparece en tus otras obras. Se borra con la obra.',
+                        style: TextStyle(fontSize: 11, color: Colors.black54),
+                      ),
+                    ),
+                  ],
                   // Nunca tiene composición de APU (nadie la compuso
                   // todavía) — se carga con precio manual sin importar si
                   // el resto del rubro usa APU. Ver _buildContenido: la
