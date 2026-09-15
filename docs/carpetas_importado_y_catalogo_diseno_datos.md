@@ -361,6 +361,18 @@ tiene el badge N/M y compite por ancho en pantalla angosta; y la decisión de co
 mirando lo que tiene adentro, que es justamente esa pantalla. Un menú y no un botón: la acción
 depende de en qué carpeta está el rubro, y son dos operaciones distintas con dos avisos distintos.
 
+**El destino se nombra, no se señala.** Corrección de Seba después de probarlo: el menú decía
+"Copiar a esta obra", y *"cuando estás yendo y viniendo entre las dos carpetas, 'esta obra' no te
+dice adónde va. Con 'copiar a GALPON MIX' se entiende sin pensar."* Ahora dice el nombre de la obra,
+y en la otra dirección dice **"Guardar para todas mis obras"** en vez de "Copiar a mi catálogo": lo
+que el usuario necesita saber es dónde va a poder usarlo, no en qué tabla queda.
+
+Los nombres de obra pueden ser largos, así que se recortan en dos pasos: primero **se corta en el
+separador `" - "`** si lo hay —los nombres reales son del tipo "GALPON MIX - Emilio Frey 536", donde
+lo que identifica la obra es lo de adelante y la dirección es la aclaración—, y después un **tope de
+24 caracteres**, para que un nombre largo no estire el menú hasta el ancho de la pantalla. El
+`overflow: ellipsis` queda igual como red por si el usuario tiene la fuente del sistema agrandada.
+
 **El aviso de la dirección B no es un "¿estás seguro?"**: dice los dos efectos que la palabra
 "copiar" no anuncia, con el número real de partidas que se mueven, y la frase del precio congelado
 solo aparece si el rubro usa APU. Con 0 partidas cargadas, esa parte del aviso no aparece — no hay

@@ -28,6 +28,13 @@ class SubitemsScreen extends StatefulWidget {
   // RubrosTab._mezclarOrden) — no rubro.codigo, que queda interno desde esta
   // etapa (docs/rubros_orden_diseno_datos.md §3).
   final int numeroPosicion;
+
+  /// El nombre de la obra, para nombrarla en el menú de copiar en vez de decir "esta obra".
+  ///
+  /// Seba, 2026-09-15: *"Cuando estás yendo y viniendo entre las dos carpetas, 'esta obra' no te
+  /// dice adónde va. Con 'copiar a GALPON MIX' se entiende sin pensar."* Nullable porque `RubrosTab`
+  /// recibe la obra como opcional; sin ella se cae a "esta obra", que es lo que decía antes.
+  final String? nombreObra;
   // Vínculo Cómputo -> APU (ver PresupuestosScreen._abrirComposicionDesdeComputo, docs/
   // factor_k_apu_decisiones.md) -- si viene provisto, _abrirComposicion se hace pop de esta
   // pantalla y lo llama en vez de pushear ComposicionApuScreen acá mismo, para que la composición
@@ -44,6 +51,7 @@ class SubitemsScreen extends StatefulWidget {
     required this.puedeEditarComputo,
     required this.puedeVerMontosYAPU,
     required this.numeroPosicion,
+    this.nombreObra,
     this.onAbrirComposicion,
   }) : super(key: key);
 
@@ -267,6 +275,31 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
     return '${widget.numeroPosicion}.$siguiente';
   }
 
+  /// El nombre de la obra recortado para que entre en un ítem de menú.
+  ///
+  /// Dos cortes, en este orden:
+  ///
+  ///  1. **Si el nombre tiene un separador " - ", se queda con la primera parte.** Los nombres
+  ///     reales suelen ser "GALPON MIX - Emilio Frey 536": lo que identifica la obra es lo de
+  ///     adelante, la dirección es la aclaración. No es una regla universal, pero cuando acierta da
+  ///     un nombre mucho mejor que cortar por caracteres, y cuando no acierta el paso 2 lo resuelve
+  ///     igual.
+  ///  2. **Tope de 24 caracteres con puntos suspensivos.** Sin esto un nombre largo estira el menú
+  ///     hasta el ancho de la pantalla. El `overflow: ellipsis` del Text queda igual como red por
+  ///     si el usuario tiene la fuente del sistema agrandada.
+  ///
+  /// Sin obra (RubrosTab la recibe como opcional) vuelve "esta obra", que es lo que decía antes.
+  String _nombreObraCorto() {
+    final nombre = widget.nombreObra?.trim();
+    if (nombre == null || nombre.isEmpty) return 'esta obra';
+
+    final corte = nombre.indexOf(' - ');
+    final base = corte > 2 ? nombre.substring(0, corte).trim() : nombre;
+
+    if (base.length <= 24) return base;
+    return '${base.substring(0, 23).trimRight()}…';
+  }
+
   /// Tanda 6 -- copiar este rubro de la carpeta de la obra a mi catálogo personal.
   ///
   /// Crea un rubro propio, así que va con el mismo gate PRO que "Nuevo Rubro"/"Nuevo subítem": Free
@@ -282,9 +315,9 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
     }
 
     final confirma = await _confirmar(
-      titulo: 'Copiar a mi catálogo',
-      cuerpo: '"${widget.rubro.nombre}" y sus partidas quedan en tu catálogo, disponibles para '
-          'todas tus obras.\n\nEl rubro de esta obra no se toca: es una copia.',
+      titulo: 'Guardar para todas mis obras',
+      cuerpo: '"${widget.rubro.nombre}" y sus partidas quedan en tu catálogo, y vas a poder '
+          'usarlo en cualquier obra.\n\nEl rubro de esta obra no se toca: es una copia.',
       accion: 'Copiar',
     );
     if (!confirma) return;
@@ -296,8 +329,8 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
       setState(() => _copiando = false);
       // El código va en el mensaje porque puede no ser el del original: si ya tenías uno con ese
       // código, la base renumera. Enterarse después es buscar un número que no existe.
-      _avisar('Copiado a tu catálogo como "${r.codigo}", con ${r.partidas} '
-          '${r.partidas == 1 ? "partida" : "partidas"}.');
+      _avisar('Guardado en tu catálogo como "${r.codigo}", con ${r.partidas} '
+          '${r.partidas == 1 ? "partida" : "partidas"}. Ya está disponible en todas tus obras.');
     } catch (e) {
       if (!mounted) return;
       setState(() => _copiando = false);
@@ -329,8 +362,8 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
 
     final usaApu = widget.rubro.usaApu;
     final aviso = StringBuffer(
-      '"${widget.rubro.nombre}" y sus partidas se copian a esta obra. El rubro del catálogo no se '
-      'toca: sigue igual para tus otras obras.',
+      '"${widget.rubro.nombre}" y sus partidas se copian a ${_nombreObraCorto()}. El rubro del '
+      'catálogo no se toca: sigue igual para tus otras obras.',
     );
     if (cargadas > 0) {
       aviso.write('\n\nEsta obra tiene $cargadas '
@@ -344,7 +377,7 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
     }
 
     final confirma = await _confirmar(
-      titulo: 'Copiar a esta obra',
+      titulo: 'Copiar a ${_nombreObraCorto()}',
       cuerpo: aviso.toString(),
       accion: 'Copiar',
     );
@@ -358,7 +391,7 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
       );
       if (!mounted) return;
       setState(() => _copiando = false);
-      _avisar('Copiado a esta obra como "${r.codigo}"'
+      _avisar('Copiado a ${_nombreObraCorto()} como "${r.codigo}"'
           '${r.partidasMovidas > 0 ? ", con ${r.partidasMovidas} ${r.partidasMovidas == 1 ? "partida cargada" : "partidas cargadas"}" : ""}.');
       // Se vuelve a Cómputo: el rubro nuevo está allá, y esta pantalla quedó mostrando el del
       // catálogo, que para esta obra ya no tiene nada. `true` le dice a RubrosTab que recargue el
@@ -1109,20 +1142,30 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
                     dense: true,
                     contentPadding: EdgeInsets.zero,
                     leading: Icon(Icons.bookmark_add_outlined, size: 20),
-                    title: Text('Copiar a mi catálogo', style: TextStyle(fontSize: 13)),
-                    subtitle: Text('Para reusarlo en otras obras',
+                    // "Guardar para todas mis obras" y no "Copiar a mi catálogo": lo que el usuario
+                    // quiere saber es dónde va a poder usarlo, no en qué tabla queda. El destino se
+                    // nombra por lo que habilita.
+                    title: Text('Guardar para todas mis obras', style: TextStyle(fontSize: 13)),
+                    subtitle: Text('Queda en tu catálogo, listo para reusar',
                         style: TextStyle(fontSize: 11)),
                   ),
                 )
               else if (widget.puedeEditarComputo)
-                const PopupMenuItem(
+                PopupMenuItem(
                   value: 'a_la_obra',
                   child: ListTile(
                     dense: true,
                     contentPadding: EdgeInsets.zero,
-                    leading: Icon(Icons.content_copy_outlined, size: 20),
-                    title: Text('Copiar a esta obra', style: TextStyle(fontSize: 13)),
-                    subtitle: Text('Para modificarlo sin tocar el original',
+                    leading: const Icon(Icons.content_copy_outlined, size: 20),
+                    // La obra por su nombre, no "esta obra": yendo y viniendo entre las dos
+                    // carpetas, "esta obra" no dice adónde va (Seba).
+                    title: Text(
+                      'Copiar a ${_nombreObraCorto()}',
+                      style: const TextStyle(fontSize: 13),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    subtitle: const Text('Para modificarlo sin tocar el original',
                         style: TextStyle(fontSize: 11)),
                   ),
                 ),

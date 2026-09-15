@@ -726,6 +726,7 @@ class _RubrosTabState extends State<RubrosTab> {
                     puedeEditarComputo: widget.puedeEditarComputo,
                     puedeVerMontosYAPU: widget.puedeVerMontosYAPU,
                     numeroPosicion: numeroMostrado,
+                    nombreObra: widget.obra?.nombre,
                     onAbrirComposicion: widget.onAbrirComposicion,
                   ),
                 ),
