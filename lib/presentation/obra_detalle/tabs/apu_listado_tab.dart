@@ -9,7 +9,7 @@ import '../../../services/obra_subitems_repository.dart';
 import '../../../services/rubros_repository.dart';
 import '../../../services/subitems_repository.dart';
 import '../screens/composicion_apu_screen.dart';
-import '../widgets/vista_previa_atenuada.dart';
+import '../widgets/cartel_vista_previa.dart';
 
 /// Listado de la Solapa APU — "cuánto cuesta". Corrige la decisión original de esta pieza (ver
 /// `docs/factor_k_apu_decisiones.md`, sección agregada 2026-09-07): se había decidido no armar un
@@ -59,7 +59,7 @@ class _ApuListadoTabState extends State<ApuListadoTab> {
   Map<String, ApuPrecioSubitem> _precios = {};
 
   /// `true` cuando lo que se está listando NO son las partidas de esta obra sino las del catálogo,
-  /// para mostrar la pantalla atenuada (ver `vista_previa_atenuada.dart`). Los grupos y los
+  /// para atenuarlas y explicar por qué (ver `cartel_vista_previa.dart`). Los grupos y los
   /// builders son los mismos -- lo único que cambia es de dónde salieron las partidas y que la fila
   /// no muestra precio, porque una partida que no está en la obra no tiene ninguno todavía.
   bool _vitrina = false;
@@ -240,32 +240,43 @@ class _ApuListadoTabState extends State<ApuListadoTab> {
         ),
       );
     }
-    final lista = RefreshIndicator(
+    // **Se bloquea la edición, no el desplazamiento.** La versión anterior envolvía todo en un
+    // `IgnorePointer` y eso también se comía el scroll: se veía la primera pantalla del catálogo y
+    // no se podía bajar, que es justo lo contrario de "recorrer el catálogo para ver qué trae la
+    // app". Ahora el cartel es un ítem más de la lista, cada grupo se atenúa con `Opacity` (que no
+    // toca el hit-test) y lo que no se puede tocar es el `onTap` de cada fila, apagado en
+    // `_buildFila`.
+    //
+    // De paso desaparece el `Column` + `Expanded` que envolvía la lista, que era el desborde de 6.2
+    // píxeles al pie: el alto de la lista ya no compite con el del cartel.
+    final total = _grupos.fold<int>(0, (n, g) => n + g.subitems.length);
+
+    return RefreshIndicator(
       onRefresh: _cargarDatos,
       child: ListView.builder(
         padding: const EdgeInsets.all(12),
-        itemCount: _grupos.length,
-        itemBuilder: (context, index) => _buildGrupo(_grupos[index]),
+        // +1 por el cartel cuando corresponde. El cartel se descarta solo (devuelve un
+        // SizedBox.shrink si ya lo cerraron), así que acá no hay que saber si está visible.
+        itemCount: _grupos.length + (_vitrina ? 1 : 0),
+        itemBuilder: (context, index) {
+          if (_vitrina && index == 0) {
+            return CartelVistaPrevia(
+              obraId: widget.obraId,
+              scope: 'apu',
+              mensaje: 'Así se va a ver esta solapa. Estas son las partidas del catálogo que ya '
+                  'tienen su análisis cargado: qué insumos llevan y en qué rendimiento. Tildá una '
+                  'en la solapa Cómputo y aparece acá con su precio, desglosado paso a paso.',
+              detalle: total > 0 ? '$total partidas con análisis, listas para usar.' : null,
+              notaPro: 'Editar el análisis de una partida y crear los tuyos es una función PRO.',
+            );
+          }
+          final grupo = _grupos[index - (_vitrina ? 1 : 0)];
+          if (!_vitrina) return _buildGrupo(grupo);
+          // `Opacity` sin `IgnorePointer`: atenúa sin bloquear el gesto de desplazar.
+          return Opacity(opacity: 0.55, child: _buildGrupo(grupo));
+        },
       ),
     );
-
-    // **La pantalla real atenuada, no una vitrina aparte** (ver `vista_previa_atenuada.dart`): el
-    // árbol que se envuelve es exactamente el mismo que se muestra con las partidas de la obra.
-    // Cuando el usuario tilde su primera partida con análisis, lo que aparece es esto mismo en
-    // color y tocable.
-    if (_vitrina) {
-      final total = _grupos.fold<int>(0, (n, g) => n + g.subitems.length);
-      return VistaPreviaAtenuada(
-        mensaje: 'Así se va a ver esta solapa. Estas son las partidas del catálogo que ya tienen '
-            'su análisis cargado: qué insumos llevan y en qué rendimiento. Tildá una en la solapa '
-            'Cómputo y aparece acá con su precio, desglosado paso a paso.',
-        detalle: total > 0 ? '$total partidas con análisis, listas para usar.' : null,
-        notaPro: 'Editar el análisis de una partida y crear los tuyos es una función PRO.',
-        child: lista,
-      );
-    }
-
-    return lista;
   }
 
   Widget _buildGrupo(_GrupoRubro grupo) {
@@ -295,8 +306,8 @@ class _ApuListadoTabState extends State<ApuListadoTab> {
     final completo = resultado?.completo ?? false;
     return InkWell(
       // En vitrina no hay a dónde ir: la partida no está en esta obra, así que no hay una
-      // composición de esta obra que abrir. El IgnorePointer de VistaPreviaAtenuada ya lo bloquea;
-      // esto es el cinturón además del tirante.
+      // composición de esta obra que abrir. **Y acá es donde se bloquea de verdad**: no hay ningún
+      // IgnorePointer por encima, justamente para que la lista se pueda seguir desplazando.
       onTap: (resultado != null && !_vitrina) ? () => _abrirComposicion(subitem, resultado) : null,
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 6),

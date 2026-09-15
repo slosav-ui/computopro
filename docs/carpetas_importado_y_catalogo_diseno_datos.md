@@ -591,11 +591,32 @@ no una vitrina aparte"*. La diferencia no es estética:
    justamente la que nadie mira.
 
 Implementación: cada solapa carga el catálogo en **su propio estado** (`_grupos` en APU, `_insumos`
-en Mat y MO) con un flag `_vitrina`, y envuelve su árbol de siempre en `VistaPreviaAtenuada`
-(`widgets/vista_previa_atenuada.dart`), que solo pone el cartel arriba y aplica `Opacity` +
-`IgnorePointer`. **Las dos capas, no una**: atenuar sin bloquear deja botones grises que se tocan y
-no hacen nada; bloquear sin atenuar deja una pantalla que parece activa y no responde. Cualquiera de
-las dos sola se lee como una pantalla rota, que es de lo que veníamos escapando.
+en Mat y MO) con un flag `_vitrina`, y atenúa sus propios ítems con `Opacity`.
+
+**Quinta corrección — se bloquea la edición, no el desplazamiento.** La primera implementación
+envolvía la pantalla entera en `Opacity` + `IgnorePointer`. Seba la probó:
+
+> *"Quedaron frías, no se pueden recorrer. El IgnorePointer bloquea todo el toque, incluido el
+> deslizar, así que veo la primera pantalla y no puedo bajar. Y la gracia es justamente poder
+> recorrer el catálogo para ver qué trae la app."*
+
+**`IgnorePointer` no distingue entre editar y desplazar**: bloquea el gesto, y el scroll es un
+gesto. Atenuar una pantalla para mostrarla y de paso impedir recorrerla es peor que no mostrarla —
+se ve la primera pantalla de un catálogo de 174 insumos y ahí termina.
+
+La regla que queda: **`Opacity` sí (no toca el hit-test), `IgnorePointer` nunca**, y la edición se
+apaga donde vive — en el `onTap` de cada control, con el flag de vitrina. En APU es el tap de la
+fila; en Mat y MO son el lápiz de precio y el enlace "Volver".
+
+**Y no todo lo que está en una solapa vacía es una muestra.** En Mat y MO el bloque de costo de mano
+de obra —cargas sociales, valor hora, los 7 parámetros— es dato real de esa obra y se edita aunque
+no haya un solo insumo cargado. Queda **en color y funcionando**: atenuarlo lo haría parecer
+inactivo cuando es lo único que sí sirve ahí.
+
+**El cartel se descarta** (`widgets/cartel_vista_previa.dart`), con el mismo mecanismo que
+`CartelAvisoLegalLibro`: `SharedPreferences` por obra y por dispositivo, con `scope` separando APU de
+Mat y MO. Y en Mat y MO va **debajo** del bloque de mano de obra, no arriba de todo: arriba tapaba
+justamente lo único editable de la pantalla.
 
 Dos adaptaciones mínimas, cada una con su motivo:
 

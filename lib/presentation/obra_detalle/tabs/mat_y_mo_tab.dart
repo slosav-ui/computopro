@@ -10,7 +10,7 @@ import '../../../services/obra_insumos_repository.dart';
 import '../../../services/obra_presupuesto_config_repository.dart';
 import '../../../services/valor_hora_mano_obra_repository.dart';
 import '../../../services/insumos_repository.dart';
-import '../widgets/vista_previa_atenuada.dart';
+import '../widgets/cartel_vista_previa.dart';
 import 'cartel_costo_mano_obra.dart';
 import 'panel_valor_hora_mano_obra.dart';
 
@@ -78,7 +78,7 @@ class _MatYMoTabState extends State<MatYMoTab> {
   List<InsumoConsolidadoObra> _insumos = [];
 
   /// `true` cuando lo que se está listando NO son los insumos de esta obra sino el catálogo, para
-  /// mostrar la pantalla atenuada (ver `vista_previa_atenuada.dart`). Las secciones y las tarjetas
+  /// atenuarlo y explicar por qué (ver `cartel_vista_previa.dart`). Las secciones y las tarjetas
   /// son las mismas -- lo único que cambia es de dónde salieron los insumos y que la tarjeta no
   /// muestra la cantidad, porque una obra sin nada tildado no necesita ninguna.
   bool _vitrina = false;
@@ -274,17 +274,19 @@ class _MatYMoTabState extends State<MatYMoTab> {
             : '${_insumos.length} insumos — $sinPrecioIncide sin precio (frenan el cálculo)'
                 '${sinPrecioPendiente > 0 ? ' · $sinPrecioPendiente sin precio (cantidad en 0, todavía no cargada)' : ''}.';
 
-    final cuerpo = RefreshIndicator(
+    return RefreshIndicator(
       onRefresh: _cargarConsolidado,
       child: ListView(
         padding: const EdgeInsets.all(12),
         physics: const AlwaysScrollableScrollPhysics(),
         children: [
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.inventory, color: Color(0xFF1B365D)),
-              title: const Text('Consolidado de Insumos', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-              subtitle: Text(subtitulo, style: const TextStyle(fontSize: 11)),
+          _atenuar(
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.inventory, color: Color(0xFF1B365D)),
+                title: const Text('Consolidado de Insumos', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                subtitle: Text(subtitulo, style: const TextStyle(fontSize: 11)),
+              ),
             ),
           ),
           const SizedBox(height: 8),
@@ -294,6 +296,11 @@ class _MatYMoTabState extends State<MatYMoTab> {
             // que _buildSeccion: sin banner sobre una lista vacía). onCambio sigue apuntando a
             // _cargarConsolidado, que ahora también recarga config y valor hora por categoría —
             // el cartel no se tocó, solo lo que ese callback hace por dentro.
+            //
+            // **NO se atenúa ni en vitrina**, y es la corrección de Seba: el costo de mano de obra
+            // es dato real de ESTA obra (cargas sociales, valor hora, los 7 parámetros) y se edita
+            // aunque no haya un solo insumo cargado. Atenuarlo lo haría parecer inactivo cuando es
+            // lo único que sí funciona en esta pantalla.
             if (seccion.titulo == 'Mano de obra' &&
                 _insumos.any(seccion.predicado) &&
                 widget.puedeVerMontosYAPU)
@@ -302,34 +309,27 @@ class _MatYMoTabState extends State<MatYMoTab> {
                 onCambio: _cargarConsolidado,
                 puedeEditar: widget.puedeEditarPrecios,
               ),
-            ..._buildSeccion(seccion),
+            ..._buildSeccion(seccion).map(_atenuar),
+            // El cartel va DEBAJO del bloque de mano de obra, no arriba de todo: arriba tapaba
+            // justamente lo único editable de la pantalla (Seba). Acá explica lo que sigue -- el
+            // catálogo de materiales -- que es lo que efectivamente es una muestra.
+            if (_vitrina && seccion.titulo == 'Mano de obra')
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: CartelVistaPrevia(
+                  obraId: widget.obraId,
+                  scope: 'mat_y_mo',
+                  mensaje: 'Así se va a ver esta solapa. Los materiales y la mano de obra salen del '
+                      'análisis de cada partida: tildá una del catálogo en la solapa Cómputo y sus '
+                      'insumos aparecen acá, con cantidades y precios.',
+                  detalle: _detalleVitrina(),
+                  notaPro: 'Editar el análisis de una partida y crear los tuyos es una función PRO.',
+                ),
+              ),
           ],
         ],
       ),
     );
-
-    // **La pantalla real atenuada, no una vitrina aparte** (ver `vista_previa_atenuada.dart`): el
-    // árbol que se envuelve es el mismo que se muestra con los insumos de la obra -- las mismas
-    // secciones, las mismas tarjetas, hasta el cartel de costo de mano de obra. Cuando el usuario
-    // tilde su primera partida con análisis, lo que aparece es esto mismo en color y tocable.
-    if (_vitrina) {
-      final materiales = _insumos.where((i) => i.tipo != 'mano_obra').length;
-      final conPrecio = _insumos.where((i) => i.tipo != 'mano_obra' && i.tienePrecio).length;
-      final categorias = _insumos.length - materiales;
-      return VistaPreviaAtenuada(
-        mensaje: 'Así se va a ver esta solapa. Los materiales y la mano de obra salen del análisis '
-            'de cada partida: tildá una del catálogo en la solapa Cómputo y sus insumos aparecen '
-            'acá, con cantidades y precios.',
-        detalle: widget.puedeVerMontosYAPU
-            ? '$conPrecio de $materiales materiales con precio de corralón · $categorias '
-                'categorías de mano de obra por convenio.'
-            : '$materiales materiales · $categorias categorías de mano de obra.',
-        notaPro: 'Editar el análisis de una partida y crear los tuyos es una función PRO.',
-        child: cuerpo,
-      );
-    }
-
-    return cuerpo;
   }
 
   Widget _buildInsumoCard(InsumoConsolidadoObra insumo) {
@@ -428,6 +428,21 @@ class _MatYMoTabState extends State<MatYMoTab> {
     ];
   }
 
+  /// `Opacity` sin `IgnorePointer`: atenúa sin bloquear el gesto de desplazar. Lo que no se puede
+  /// tocar se apaga en cada control (el lápiz, el "Volver"), no con una manta por encima -- un
+  /// `IgnorePointer` sobre la lista se come el scroll y deja el catálogo imposible de recorrer.
+  Widget _atenuar(Widget hijo) => _vitrina ? Opacity(opacity: 0.55, child: hijo) : hijo;
+
+  String _detalleVitrina() {
+    final materiales = _insumos.where((i) => i.tipo != 'mano_obra').length;
+    final conPrecio = _insumos.where((i) => i.tipo != 'mano_obra' && i.tienePrecio).length;
+    final categorias = _insumos.length - materiales;
+    return widget.puedeVerMontosYAPU
+        ? '$conPrecio de $materiales materiales con precio de corralón · $categorias categorías de '
+            'mano de obra por convenio.'
+        : '$materiales materiales · $categorias categorías de mano de obra.';
+  }
+
   List<Widget> _buildSeccion(_SeccionInsumos seccion) {
     final insumos = _insumos.where(seccion.predicado).toList();
     if (insumos.isEmpty) return [];
@@ -485,7 +500,7 @@ class _MatYMoTabState extends State<MatYMoTab> {
                 const SizedBox(height: 4),
                 _buildBadgeManual(),
               ],
-              if (muestraVolver && widget.puedeEditarPrecios) ...[
+              if (muestraVolver && widget.puedeEditarPrecios && !_vitrina) ...[
                 const SizedBox(height: 2),
                 InkWell(
                   onTap: () => _onVolverDesdeFila(insumo),
@@ -501,7 +516,8 @@ class _MatYMoTabState extends State<MatYMoTab> {
           )
         else
           _buildFaltaPrecio(),
-        if (widget.puedeEditarPrecios)
+        // En vitrina no hay lápiz: el insumo no está en la obra, no hay precio de obra que fijar.
+        if (widget.puedeEditarPrecios && !_vitrina)
           InkWell(
             onTap: () => _onTocarLapiz(insumo),
             child: const Padding(
