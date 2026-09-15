@@ -5,6 +5,7 @@ import '../../../data/models/rubro_catalogo.dart';
 import '../../../data/models/subitem_catalogo.dart';
 import '../../../data/models/obra_subitem.dart';
 import '../../../data/models/apu_precio_subitem.dart';
+import '../../../services/rubros_repository.dart';
 import '../../../services/subitems_repository.dart';
 import '../../../services/obra_subitems_repository.dart';
 import '../../../services/apu_composiciones_repository.dart';
@@ -52,6 +53,7 @@ class SubitemsScreen extends StatefulWidget {
 
 class _SubitemsScreenState extends State<SubitemsScreen> {
   final SubitemsRepository _subitemsRepository = SubitemsRepository();
+  final RubrosRepository _rubrosRepository = RubrosRepository();
   final ObraSubitemsRepository _obraSubitemsRepository = ObraSubitemsRepository();
   final ApuComposicionesRepository _apuComposicionesRepository = ApuComposicionesRepository();
   final AuthService _authService = AuthService();
@@ -60,6 +62,9 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
   List<SubitemCatalogo> _subitems = [];
   Map<String, ObraSubitem> _obraSubitemsPorSubitemId = {};
   bool _cargando = true;
+  // Una copia en vuelo: apaga el menú para que no se dispare dos veces (la segunda crearía un
+  // rubro renumerado sin que nadie lo haya pedido).
+  bool _copiando = false;
   String? _error;
   // Paso 1 de la vinculación con APU: solo existencia, sin precio todavía
   // (ver ApuComposicionesRepository). Solo se carga para rubros con
@@ -260,6 +265,137 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
       }
     }
     return '${widget.numeroPosicion}.$siguiente';
+  }
+
+  /// Tanda 6 -- copiar este rubro de la carpeta de la obra a mi catálogo personal.
+  ///
+  /// Crea un rubro propio, así que va con el mismo gate PRO que "Nuevo Rubro"/"Nuevo subítem": Free
+  /// ve el diálogo de función PRO, no se le esconde la opción.
+  Future<void> _onCopiarAlCatalogo() async {
+    if (!_esPro) {
+      mostrarDialogoFuncionPro(
+        context,
+        mensaje: 'Quedarte con un rubro importado para reusarlo en tus otras obras es una '
+            'función PRO.',
+      );
+      return;
+    }
+
+    final confirma = await _confirmar(
+      titulo: 'Copiar a mi catálogo',
+      cuerpo: '"${widget.rubro.nombre}" y sus partidas quedan en tu catálogo, disponibles para '
+          'todas tus obras.\n\nEl rubro de esta obra no se toca: es una copia.',
+      accion: 'Copiar',
+    );
+    if (!confirma) return;
+
+    setState(() => _copiando = true);
+    try {
+      final r = await _rubrosRepository.copiarAlCatalogo(widget.rubro.id);
+      if (!mounted) return;
+      setState(() => _copiando = false);
+      // El código va en el mensaje porque puede no ser el del original: si ya tenías uno con ese
+      // código, la base renumera. Enterarse después es buscar un número que no existe.
+      _avisar('Copiado a tu catálogo como "${r.codigo}", con ${r.partidas} '
+          '${r.partidas == 1 ? "partida" : "partidas"}.');
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _copiando = false);
+      _avisar('No se pudo copiar el rubro. Probá de nuevo.');
+    }
+  }
+
+  /// Tanda 7 -- bajar este rubro del catálogo a la carpeta de esta obra.
+  ///
+  /// **El aviso no es un "¿estás seguro?".** Dice los dos efectos que la palabra "copiar" no
+  /// anuncia, con el número real: que el cómputo ya cargado pasa a la copia (b.1) y que el precio
+  /// deja de seguir al APU para esta obra (b.2). Ver §6.1 del doc.
+  Future<void> _onCopiarALaObra() async {
+    setState(() => _copiando = true);
+    int cargadas = 0;
+    try {
+      cargadas = await _rubrosRepository.partidasDeLaObraEnRubro(
+        rubroId: widget.rubro.id,
+        obraId: widget.obraId,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _copiando = false);
+      _avisar('No se pudo consultar el estado del rubro. Probá de nuevo.');
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _copiando = false);
+
+    final usaApu = widget.rubro.usaApu;
+    final aviso = StringBuffer(
+      '"${widget.rubro.nombre}" y sus partidas se copian a esta obra. El rubro del catálogo no se '
+      'toca: sigue igual para tus otras obras.',
+    );
+    if (cargadas > 0) {
+      aviso.write('\n\nEsta obra tiene $cargadas '
+          '${cargadas == 1 ? "partida cargada" : "partidas cargadas"} en este rubro: '
+          '${cargadas == 1 ? "pasa" : "pasan"} a la copia, con '
+          '${cargadas == 1 ? "su cantidad y su avance" : "sus cantidades y su avance"}.');
+    }
+    if (usaApu) {
+      aviso.write('\n\nLa copia queda con precio fijo, tomado del análisis de hoy. En esta obra '
+          'ese precio deja de actualizarse solo cuando cambian los insumos.');
+    }
+
+    final confirma = await _confirmar(
+      titulo: 'Copiar a esta obra',
+      cuerpo: aviso.toString(),
+      accion: 'Copiar',
+    );
+    if (!confirma) return;
+
+    setState(() => _copiando = true);
+    try {
+      final r = await _rubrosRepository.copiarALaObra(
+        rubroId: widget.rubro.id,
+        obraId: widget.obraId,
+      );
+      if (!mounted) return;
+      setState(() => _copiando = false);
+      _avisar('Copiado a esta obra como "${r.codigo}"'
+          '${r.partidasMovidas > 0 ? ", con ${r.partidasMovidas} ${r.partidasMovidas == 1 ? "partida cargada" : "partidas cargadas"}" : ""}.');
+      // Se vuelve a Cómputo: el rubro nuevo está allá, y esta pantalla quedó mostrando el del
+      // catálogo, que para esta obra ya no tiene nada. `true` le dice a RubrosTab que recargue el
+      // catálogo entero y no solo los conteos.
+      if (mounted) Navigator.of(context).pop(true);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _copiando = false);
+      _avisar('No se pudo copiar el rubro. Probá de nuevo.');
+    }
+  }
+
+  Future<bool> _confirmar({
+    required String titulo,
+    required String cuerpo,
+    required String accion,
+  }) async {
+    final r = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(titulo,
+            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1B365D))),
+        content: SingleChildScrollView(
+          child: Text(cuerpo, style: const TextStyle(fontSize: 13, height: 1.35)),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancelar')),
+          ElevatedButton(onPressed: () => Navigator.of(ctx).pop(true), child: Text(accion)),
+        ],
+      ),
+    );
+    return r == true;
+  }
+
+  void _avisar(String mensaje) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(mensaje)));
   }
 
   void _onNuevoSubitem() {
@@ -950,6 +1086,47 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
             icon: const Icon(Icons.add),
             tooltip: 'Nuevo subítem',
             onPressed: _cargando ? null : _onNuevoSubitem,
+          ),
+          // Copiar el rubro de una carpeta a la otra (tandas 6 y 7, migraciones 0154/0155).
+          //
+          // **Acá y no en la tarjeta de RubrosTab**: en la tarjeta habría que sumar un tercer
+          // elemento al trailing, que ya tiene el badge N/M y compite por ancho en pantalla angosta
+          // (ver el barrido de overflow). Y además es contextual -- se decide copiar un rubro
+          // mirando lo que tiene adentro, que es justo esta pantalla.
+          //
+          // Un menú y no un botón suelto: la acción depende de en qué carpeta está el rubro, y son
+          // dos operaciones distintas con dos avisos distintos. Un ícono que cambia de significado
+          // según el contexto es peor que un menú que las nombra.
+          PopupMenuButton<String>(
+            tooltip: 'Más acciones',
+            enabled: !_cargando && !_copiando,
+            onSelected: (v) => v == 'al_catalogo' ? _onCopiarAlCatalogo() : _onCopiarALaObra(),
+            itemBuilder: (context) => [
+              if (widget.rubro.obraId != null)
+                const PopupMenuItem(
+                  value: 'al_catalogo',
+                  child: ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(Icons.bookmark_add_outlined, size: 20),
+                    title: Text('Copiar a mi catálogo', style: TextStyle(fontSize: 13)),
+                    subtitle: Text('Para reusarlo en otras obras',
+                        style: TextStyle(fontSize: 11)),
+                  ),
+                )
+              else if (widget.puedeEditarComputo)
+                const PopupMenuItem(
+                  value: 'a_la_obra',
+                  child: ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(Icons.content_copy_outlined, size: 20),
+                    title: Text('Copiar a esta obra', style: TextStyle(fontSize: 13)),
+                    subtitle: Text('Para modificarlo sin tocar el original',
+                        style: TextStyle(fontSize: 11)),
+                  ),
+                ),
+            ],
           ),
         ],
       ),

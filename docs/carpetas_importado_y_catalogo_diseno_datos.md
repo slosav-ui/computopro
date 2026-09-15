@@ -355,6 +355,17 @@ silencio: el número es lo que el usuario reconoce.
 
 ---
 
+**Dónde vive la acción**: en el menú del AppBar de `SubitemsScreen`, no en la tarjeta de
+`RubrosTab`. Dos motivos: en la tarjeta habría que sumar un tercer elemento al trailing, que ya
+tiene el badge N/M y compite por ancho en pantalla angosta; y la decisión de copiar un rubro se toma
+mirando lo que tiene adentro, que es justamente esa pantalla. Un menú y no un botón: la acción
+depende de en qué carpeta está el rubro, y son dos operaciones distintas con dos avisos distintos.
+
+**El aviso de la dirección B no es un "¿estás seguro?"**: dice los dos efectos que la palabra
+"copiar" no anuncia, con el número real de partidas que se mueven, y la frase del precio congelado
+solo aparece si el rubro usa APU. Con 0 partidas cargadas, esa parte del aviso no aparece — no hay
+nada que advertir.
+
 Las dos direcciones **no tienen el mismo tamaño**, y por eso son dos tandas (§7).
 
 **Dirección A — obra → catálogo ("adoptar"). Es la simple.** Los rubros de una carpeta son siempre
@@ -473,8 +484,8 @@ el default mande siempre al catálogo personal, que es el comportamiento de hoy 
 | 3 | **Las dos carpetas en Cómputo**: el toggle y elegir carpeta al crear (§6.3). | **hecha y verificada en emulador 2026-09-15** |
 | 4 | **Los agujeros de miembros**: carga de avance (§5.1) y nombres de rubro en el certificado. | **hecha 2026-09-15, sin probar en emulador** |
 | 5 | **El importador escribe en la carpeta importada.** Acá se reescribe el seed de Galpón Mix. | **hecha 2026-09-15, sin probar** |
-| 6 | **Copiar obra → catálogo** ("adoptar lo bueno de lo importado"). §6.1, dirección A. | por hacer |
-| 7 | **Copiar catálogo → obra** ("bajarlo para modificarlo"). §6.1, dirección B, con b.1 y b.2 ya cerradas. | por hacer |
+| 6 | **Copiar obra → catálogo** ("adoptar lo bueno de lo importado"). §6.1, dirección A. | **`0154` escrita, pendiente de aplicar** |
+| 7 | **Copiar catálogo → obra** ("bajarlo para modificarlo"). §6.1, dirección B, con b.1 y b.2 ya cerradas. | **`0155` escrita, pendiente de aplicar** |
 | 8 | **0150 — el precio manual gana sobre la cascada de APU.** | **escrita, marcada para no aplicar** |
 
 **La tanda 2 es la única con riesgo real; las demás son consecuencia.** Es también la que decide

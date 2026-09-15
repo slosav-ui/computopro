@@ -713,7 +713,11 @@ class _RubrosTabState extends State<RubrosTab> {
                 ? _buildTrailingPropio(rubro, numeroMostrado)
                 : _buildConteoBadge(rubro),
             onTap: () async {
-              await Navigator.push(
+              // El `bool?` de vuelta: `true` significa que adentro se copió el rubro a esta obra
+              // (tanda 7) y ahora hay un rubro NUEVO en la carpeta. Los conteos solos no alcanzan
+              // -- hay que recargar el catálogo entero o el rubro nuevo no aparece hasta el próximo
+              // pull-to-refresh.
+              final huboRubroNuevo = await Navigator.push<bool>(
                 context,
                 MaterialPageRoute(
                   builder: (context) => SubitemsScreen(
@@ -726,7 +730,11 @@ class _RubrosTabState extends State<RubrosTab> {
                   ),
                 ),
               );
-              await _cargarConteos();
+              if (huboRubroNuevo == true) {
+                await _cargarCatalogo();
+              } else {
+                await _cargarConteos();
+              }
             },
           ),
         );

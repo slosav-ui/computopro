@@ -118,6 +118,62 @@ class RubrosRepository {
     return _fromRow(inserted);
   }
 
+  /// Copia un rubro de la carpeta de una obra a mi catálogo personal -- RPC a
+  /// `copiar_rubro_al_catalogo` (migración 0154, tanda 6).
+  ///
+  /// **Es una copia, no una mudanza**: el original queda en la obra y `obra_subitems` no se toca,
+  /// así que el monto de la obra no se puede mover por esto.
+  ///
+  /// Devuelve el `codigo` que le tocó, que **no siempre es el del original**: si ya tenías un rubro
+  /// con ese código, la base renumera con sufijo. La pantalla lo muestra -- renumerar en silencio
+  /// deja al usuario buscando un número que ya no existe.
+  Future<({String id, String codigo, int partidas})> copiarAlCatalogo(String rubroId) async {
+    final data = await _client.rpc('copiar_rubro_al_catalogo', params: {'p_rubro_id': rubroId});
+    final row = (data as List).first as Map<String, dynamic>;
+    return (
+      id: row['rubro_id'].toString(),
+      codigo: row['codigo']?.toString() ?? '',
+      partidas: (row['partidas'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  /// Copia un rubro del catálogo a la carpeta de una obra -- RPC a `copiar_rubro_a_la_obra`
+  /// (migración 0155, tanda 7).
+  ///
+  /// **Esta sí toca `obra_subitems`**: las partidas que la obra tenía cargadas en el rubro del
+  /// catálogo pasan a la copia, con su cantidad y su avance (decisión b.1), y su precio queda
+  /// congelado en el que el APU daba en ese momento (decisión b.2). El original del catálogo no se
+  /// toca. Ver `docs/carpetas_importado_y_catalogo_diseno_datos.md` §6.1.
+  ///
+  /// `partidasMovidas` es lo que hay que confirmarle al usuario ANTES de llamar acá -- para eso
+  /// está `partidasDeLaObraEnRubro`.
+  Future<({String id, String codigo, int partidas, int partidasMovidas})> copiarALaObra({
+    required String rubroId,
+    required String obraId,
+  }) async {
+    final data = await _client.rpc('copiar_rubro_a_la_obra', params: {
+      'p_rubro_id': rubroId,
+      'p_obra_id': obraId,
+    });
+    final row = (data as List).first as Map<String, dynamic>;
+    return (
+      id: row['rubro_id'].toString(),
+      codigo: row['codigo']?.toString() ?? '',
+      partidas: (row['partidas'] as num?)?.toInt() ?? 0,
+      partidasMovidas: (row['partidas_movidas'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  /// Cuántas partidas de esta obra están cargadas en ese rubro -- para el aviso previo a
+  /// `copiarALaObra`. Con 0 el aviso no aparece: no hay nada que advertir.
+  Future<int> partidasDeLaObraEnRubro({required String rubroId, required String obraId}) async {
+    final data = await _client.rpc('partidas_de_la_obra_en_rubro', params: {
+      'p_rubro_id': rubroId,
+      'p_obra_id': obraId,
+    });
+    return (data as num?)?.toInt() ?? 0;
+  }
+
   /// Borra un rubro propio. La política RLS `rubros_delete` (0015_rubros.sql)
   /// ya restringe esto a `creador_usuario_id = auth.uid()` — un intento de
   /// borrar un rubro ajeno o el catálogo oficial no encuentra fila para
