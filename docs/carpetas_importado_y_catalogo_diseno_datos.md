@@ -287,14 +287,24 @@ _rubrosConTildados = rubros.where((r) => (conteo[r.id] ?? 0) > 0).toList();
 ```
 
 Un rubro que no está en *su* catálogo desaparece de la pantalla de carga de avance: **no se puede
-cargar avance de esas partidas**. Hoy es un caso raro (rubro propio de otra persona en una obra
-compartida); con esta pieza pasa a ser el caso normal apenas haya dos personas en la obra. Se
-arregla solo al pasar `obraId` a la consulta (§4.4). Tanda 5.
+cargar avance de esas partidas**. Antes de esta pieza era un caso raro (rubro propio de otra persona
+en una obra compartida); con las carpetas pasaba a ser el caso normal apenas hubiera dos personas en
+la obra.
 
-**Y uno cosmético, ya previsto en el código.** `panel_avance_obra.dart:81`,
-`desglose_certificado.dart:99` y `vista_previa_certificado_screen.dart:153` resuelven el nombre
-contra el catálogo del usuario y caen a un `'Rubro'` genérico si no lo encuentran. El total cierra;
-el nombre no aparece. Mismo arreglo, misma tanda.
+**Cerrado en la tanda 4 (2026-09-15)**, pasando `obraId` en los seis lugares que leían el catálogo
+dentro de una obra: `carga_avance_rubros_screen`, `carga_avance_subitems_screen`,
+`quitas_demasias_screen`, `vista_previa_certificado_screen`, `gestion_obra_tab` (que es de donde
+`panel_avance_obra` saca los nombres) y `desglose_certificado`. El único que queda a propósito sin
+`obraId` es `revisar_importacion_screen`, que es la tanda 5.
+
+**Y uno cosmético, ya previsto en el código.** `panel_avance_obra.dart`,
+`desglose_certificado.dart` y `vista_previa_certificado_screen.dart` resuelven el nombre contra el
+catálogo del usuario y caen a un `'Rubro'` genérico si no lo encuentran. El total cierra; el nombre
+no aparece. Cerrado en la misma tanda 4.
+
+**Lo que ese fallback sigue tapando, y queda así por diseño**: un rubro propio de *otra persona*,
+en su catálogo personal, usado en una obra compartida. No es de esta pieza — el catálogo personal de
+cada uno es suyo, y resolverlo pediría una consulta aparte por membresía.
 
 ### 5.2 El monto de la obra suma las dos carpetas
 
@@ -351,37 +361,48 @@ de precio manual (vienen del importador o del alta a mano, las dos ramas crean `
 así que la copia es un `insert` de rubro + N subítems y nada más. Sin APU que arrastrar, sin cómputo
 que reacomodar.
 
-**Dirección B — catálogo → obra ("bajarlo para modificarlo"). Tiene dos nudos, y ninguno es obvio.**
+**Dirección B — catálogo → obra ("bajarlo para modificarlo"). Tenía dos nudos; los dos cerrados el
+2026-09-15.**
 
-**b.1) ¿Qué pasa con el cómputo ya cargado?** Si la obra ya tiene partidas tildadas en el rubro del
-catálogo y se lo baja a la carpeta, quedan **dos rubros con el mismo nombre en la misma obra**: el
-del catálogo con el cómputo cargado, y la copia vacía. Inútil y confuso.
+**b.1) El cómputo ya cargado pasa a la copia, y el diálogo lo dice con el número concreto.**
 
-Lo que haría falta para que la función sirva es que las partidas de *esta obra* pasen a apuntar a la
-copia — un `update` de `obra_subitems.rubro_id`/`subitem_id`, conservando el `obra_subitems.id`. Eso
-no toca el original (sigue en el catálogo, intacto para las demás obras) y **no invalida nada
-aguas abajo**: `certificado_subitems_avance` y `presupuesto_subitems_congelado` apuntan a
-`obra_subitems.id`, que no cambia, y ni la cantidad ni el precio se mueven.
+Si la obra ya tiene partidas tildadas en el rubro del catálogo y se lo baja a la carpeta sin más,
+quedan **dos rubros con el mismo nombre en la misma obra**: el del catálogo con el cómputo, y la
+copia vacía. Seba: *"Sin eso la función no sirve."*
 
-Pero es un efecto que la palabra "copiar" no anuncia, así que **tiene que decirlo el diálogo**:
-*"Esta obra tiene 6 partidas cargadas en este rubro. Pasan a la copia, con sus cantidades y su
-avance."*
+Así que las partidas de *esta obra* pasan a apuntar a la copia — un `update` de
+`obra_subitems.rubro_id`/`subitem_id` **conservando el `obra_subitems.id`**. Es un `update`, no un
+`delete` + `insert`, y esa distinción es todo: `certificado_subitems_avance` y
+`presupuesto_subitems_congelado` apuntan a `obra_subitems.id`, que no cambia, así que **el avance
+certificado y el monto congelado sobreviven intactos**. La cantidad y el precio tampoco se mueven.
+Y el original sigue en el catálogo, intacto para las demás obras — la copia sigue siendo copia.
 
-**b.2) ¿Y el APU?** Un rubro del catálogo puede tener `usa_apu = true` y sus subítems, composición
-cargada. Los subítems de la copia son filas nuevas **sin `apu_composiciones`**, así que si la copia
-naciera con `usa_apu = true` sus partidas quedarían sin precio — cero, en silencio. Tres salidas:
+Es un efecto que la palabra "copiar" no anuncia, así que **el diálogo lo dice antes de confirmar,
+con el número real**: *"Esta obra tiene 6 partidas cargadas en este rubro. Pasan a la copia, con sus
+cantidades y su avance."* Con cero partidas cargadas la frase no aparece: no hay nada que advertir.
 
-1. **La copia nace de precio manual**, y al copiar se escribe en `precio_unitario_manual` el precio
-   final que el APU da hoy. Es congelar el precio al bajarlo, que es coherente con lo que el usuario
-   está pidiendo: sacar ese rubro de la cascada *para esta obra*. **Es la recomendada**: no arrastra
-   recetas, no toca la propiedad del APU de nadie, y no necesita la `0150`.
-2. **Copiar también `apu_composiciones`.** Mantiene la receta viva y editable, pero duplica el APU y
-   mete la pieza de lleno en la propiedad del APU por persona (`docs/etapa3_roles_permisos_diseno_datos.md`),
-   que es otra conversación.
-3. **No permitir bajar rubros con APU**, y decir por qué. La más chica y la más pobre: el rubro que
-   más ganas da de modificar es justamente uno de terminaciones, que usa APU.
+**b.2) La copia nace de precio manual, con el precio que el APU da hoy congelado.**
 
-Sin decidir esto, la dirección B no se puede construir.
+Un rubro del catálogo puede tener `usa_apu = true` y sus subítems, composición cargada. Los subítems
+de la copia son filas nuevas **sin `apu_composiciones`**, así que una copia con `usa_apu = true`
+dejaría sus partidas sin precio — **cero, en silencio**, que es el mismo modo de falla que ya mordió
+una vez con el mapeo del PDF.
+
+Entonces la copia nace `usa_apu = false` / `tipo_precio_manual = 'unitario'`, y al copiar se escribe
+en `obra_subitems.precio_unitario_manual` el `precio_final` que `calcular_precio_final_apu_subitems`
+da **en ese momento**. Seba: *"Es lo que estoy pidiendo cuando bajo un rubro a la obra — sacarlo de
+la cascada para esta obra puntual."*
+
+Tres consecuencias que conviene tener a la vista:
+
+- **El precio deja de seguir a los insumos** para ese rubro en esa obra. Es el punto, no un efecto
+  lateral, pero el diálogo lo dice igual.
+- **No hace falta la `0150`.** La copia es un rubro de precio manual de verdad, no un rubro con APU
+  al que se le mete un precio a mano. Por eso la 8 no bloquea a la 7.
+- **La receta no se duplica.** Descartadas las otras dos salidas que se habían escrito acá: copiar
+  `apu_composiciones` metía la pieza en la propiedad del APU por persona
+  (`docs/etapa3_roles_permisos_diseno_datos.md`), que es otra conversación; y prohibir bajar rubros
+  con APU dejaba afuera justo los que más ganas dan de modificar, que son los de terminaciones.
 
 ### 6.2 Reimportar reemplaza (decisión 3.3) — la parte con filo
 
@@ -449,10 +470,10 @@ el default mande siempre al catálogo personal, que es el comportamiento de hoy 
 | 1 | **0149 — redondeo en los agregados.** Independiente de todo esto. | **APLICADA 2026-09-15** |
 | 2 | **`obra_id` en `rubros`/`subitems`** + índices de §4.3 + RLS de §4.4 + `obraId` en las consultas del repositorio. Sin UI, sin cambio visible. | **`0151` APLICADA y verificada 2026-09-15** |
 | 3 | **Las dos carpetas en Cómputo**: el toggle y elegir carpeta al crear (§6.3). | **hecha y verificada en emulador 2026-09-15** |
-| 4 | **Los agujeros de miembros**: carga de avance (§5.1) y nombres de rubro en el certificado. | por hacer |
+| 4 | **Los agujeros de miembros**: carga de avance (§5.1) y nombres de rubro en el certificado. | **hecha 2026-09-15, sin probar en emulador** |
 | 5 | **El importador escribe en la carpeta importada.** Acá se reescribe el seed de Galpón Mix. | por hacer |
 | 6 | **Copiar obra → catálogo** ("adoptar lo bueno de lo importado"). §6.1, dirección A. | por hacer |
-| 7 | **Copiar catálogo → obra** ("bajarlo para modificarlo"). §6.1, dirección B — necesita las dos decisiones de b.1 y b.2 antes de empezar. | por hacer |
+| 7 | **Copiar catálogo → obra** ("bajarlo para modificarlo"). §6.1, dirección B, con b.1 y b.2 ya cerradas. | por hacer |
 | 8 | **0150 — el precio manual gana sobre la cascada de APU.** | **escrita, marcada para no aplicar** |
 
 **La tanda 2 es la única con riesgo real; las demás son consecuencia.** Es también la que decide
@@ -484,18 +505,13 @@ los tres casos de aviso).
 
 Nada de esto bloquea la tanda 2.
 
-1. **Dirección B, b.1 — ¿el cómputo ya cargado pasa a la copia?** Mi recomendación es que sí, con el
-   diálogo diciéndolo. Sin esto la función no sirve: quedan dos rubros con el mismo nombre y las
-   partidas en el viejo.
-2. **Dirección B, b.2 — ¿qué pasa con el APU al bajar un rubro?** Mi recomendación es la salida 1
-   (la copia nace de precio manual, con el precio de hoy congelado en `precio_unitario_manual`).
-3. **¿Se puede copiar un subítem suelto**, sin su rubro? Las dos direcciones de §6.1 copian el rubro
+1. **¿Se puede copiar un subítem suelto**, sin su rubro? Las dos direcciones de §6.1 copian el rubro
    entero. Copiar una partida sola al catálogo tiene sentido ("esta me sirve siempre") y no está
    resuelto dónde cae si su rubro no existe del otro lado.
-4. **El presupuesto impreso**, cuando exista: con dos carpetas conviviendo, cómo se numeran los
+2. **El presupuesto impreso**, cuando exista: con dos carpetas conviviendo, cómo se numeran los
    ítems en el papel. Es el motivo original del índice único global de la 0025, y sigue sin
    documento que lo obligue.
-5. **Las solapas vacías** (APU y Mat y MO en una obra 100% importada). Pieza chica y aparte: el
+3. **Las solapas vacías** (APU y Mat y MO en una obra 100% importada). Pieza chica y aparte: el
    vacío tiene que explicar por qué está vacío *en esta obra* en vez de dar una instrucción genérica
    imposible de seguir.
 

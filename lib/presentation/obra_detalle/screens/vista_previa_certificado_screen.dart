@@ -149,9 +149,11 @@ class _VistaPreviaCertificadoScreenState extends State<VistaPreviaCertificadoScr
       final obraSubitemsFuture = _obraSubitemsRepository.getPorIds(obraSubitemIds);
       final totalesFuture = _avanceRepository.getTotalesCertificado(_cert.id);
       final excesosFuture = _avanceRepository.getExcesosCertificado(_cert.id);
+      // `obraId` (tanda 4): sin esto una partida de la carpeta sale sin nombre de rubro en la
+      // vista previa, que es lo último que se mira antes de emitir.
       final rubrosFuture = usuarioId == null
           ? _rubrosRepository.getCatalogoOficial()
-          : _rubrosRepository.getCatalogoCompleto(usuarioId);
+          : _rubrosRepository.getCatalogoCompleto(usuarioId, obraId: widget.obraId);
 
       final obraSubitems = await obraSubitemsFuture;
       final subitemIds = obraSubitems

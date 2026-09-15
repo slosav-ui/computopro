@@ -112,9 +112,12 @@ class _CargaAvanceRubrosScreenState extends State<CargaAvanceRubrosScreen> {
     try {
       final usuarioId = _authService.usuarioActual?.id;
       final conteoFuture = _obraSubitemsRepository.getConteoTildadosPorObra(widget.obraId);
+      // `obraId` (tanda 4). **Este era el agujero real, no cosmético**: abajo se filtra el catálogo
+      // por los rubros con partidas tildadas, así que un rubro que no estuviera en el catálogo del
+      // usuario desaparecía de esta pantalla y no había forma de cargarle avance. Ver §5.1 del doc.
       final rubrosFuture = usuarioId == null
           ? _rubrosRepository.getCatalogoOficial()
-          : _rubrosRepository.getCatalogoCompleto(usuarioId);
+          : _rubrosRepository.getCatalogoCompleto(usuarioId, obraId: widget.obraId);
       final avancesFuture = _avanceRepository.getAvancesDeCertificado(_cert.id);
       // El resumen es puro monto — no tiene sentido pedirlo si el usuario no lo puede ver.
       final resumenFuture = _puedeVerMontos ? _avanceRepository.getResumen(widget.obraId) : null;

@@ -78,8 +78,15 @@ class _PanelAvanceObraState extends State<PanelAvanceObra> {
     for (final r in widget.catalogoRubros) {
       if (r.id == rubroId) return '${r.codigo} · ${r.nombre}';
     }
-    // Un rubro que no está en el catálogo del usuario (propio de otra persona en la misma obra): se
-    // muestra igual, sin nombre, en vez de esconder el renglón y que el total no cierre con la suma.
+    // Un rubro que no está en el catálogo del usuario: se muestra igual, sin nombre, en vez de
+    // esconder el renglón y que el total no cierre con la suma.
+    //
+    // **El caso se achicó con la tanda 4** (docs/carpetas_importado_y_catalogo_diseno_datos.md
+    // §5.1): desde que GestionObraTab pasa `obraId` a getCatalogoCompleto, los rubros de la carpeta
+    // de esta obra SÍ vienen en el catálogo y se resuelven bien. Lo que queda cayendo acá es el
+    // caso original: un rubro propio de OTRA persona, en el catálogo personal de ella, usado en una
+    // obra compartida. Ese sigue sin resolverse por diseño -- el catálogo personal de cada uno es
+    // suyo, y taparlo pediría una consulta aparte por membresía.
     return 'Rubro';
   }
 

@@ -106,7 +106,13 @@ class _CargaAvanceSubitemsScreenState extends State<CargaAvanceSubitemsScreen> {
         obraId: widget.obraId,
         rubroId: widget.rubro.id,
       );
-      final subitemsCatalogoFuture = _subitemsRepository.getSubitemsDeRubro(widget.rubro.id, usuarioId: usuarioId);
+      // `obraId` (tanda 4): el equivalente de CargaAvanceRubrosScreen un nivel más abajo -- sin
+      // esto se entra al rubro y no hay ninguna partida que tildar.
+      final subitemsCatalogoFuture = _subitemsRepository.getSubitemsDeRubro(
+        widget.rubro.id,
+        usuarioId: usuarioId,
+        obraId: widget.obraId,
+      );
       final montosFuture = _avanceRepository.getMontoObraSubitems(widget.obraId);
       final avancesFuture = _avanceRepository.getAvancesDeCertificado(widget.certificado.id);
       final ajusteCacFuture = _obrasRepository.getMontoCongeladoAjustado(widget.obraId);

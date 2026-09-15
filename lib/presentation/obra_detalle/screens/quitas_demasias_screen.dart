@@ -176,7 +176,8 @@ class _QuitasDemasiasScreenState extends State<QuitasDemasiasScreen> {
       final subitemsCatalogo = await _subitemsRepository.getPorIds(subitemIds);
       subitemsPorId = {for (final s in subitemsCatalogo) s.id: s};
       if (usuarioId != null) {
-        final rubros = await RubrosRepository().getCatalogoCompleto(usuarioId);
+        // `obraId` (tanda 4): acá el rubro se usa para agrupar y nombrar las partidas de la quita.
+        final rubros = await RubrosRepository().getCatalogoCompleto(usuarioId, obraId: widget.obraId);
         rubrosPorId = {for (final r in rubros) r.id: r};
       }
     } catch (e) {

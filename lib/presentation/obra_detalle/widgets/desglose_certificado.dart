@@ -95,9 +95,11 @@ class _DesgloseCertificadoState extends State<DesgloseCertificado> {
         obraSubitems.where((os) => os.subitemId != null).map((os) => os.subitemId!).toList(),
       );
       final usuarioId = _authService.usuarioActual?.id;
+      // `obraId` (tanda 4): el desglose de un certificado ya emitido agrupa por rubro, y una
+      // partida de la carpeta salía sin nombre.
       final rubros = usuarioId == null
           ? await _rubrosRepository.getCatalogoOficial()
-          : await _rubrosRepository.getCatalogoCompleto(usuarioId);
+          : await _rubrosRepository.getCatalogoCompleto(usuarioId, obraId: widget.obraId);
       // Silencioso ante error: el desglose del período sigue sirviendo sin el acumulado, y es
       // preferible mostrarlo incompleto a no mostrar nada.
       final acumulado = await _avanceRepository

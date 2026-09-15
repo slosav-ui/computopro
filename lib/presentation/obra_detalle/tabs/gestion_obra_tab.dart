@@ -160,9 +160,11 @@ class _GestionObraTabState extends State<GestionObraTab> {
       final rubrosFuture = _avanceRepository.getAvancePonderadoRubros(widget.obraId);
       // Mismo par de llamadas que usa CargaAvanceRubrosScreen para los nombres: el catálogo completo
       // si hay usuario (incluye sus rubros propios), el oficial si no.
+      // `obraId` (tanda 4): este catálogo es el que PanelAvanceObra usa para ponerle nombre a cada
+      // rubro del desglose de avance. Sin él, los de la carpeta salían con el fallback 'Rubro'.
       final catalogoFuture = usuarioId == null
           ? _rubrosRepository.getCatalogoOficial()
-          : _rubrosRepository.getCatalogoCompleto(usuarioId);
+          : _rubrosRepository.getCatalogoCompleto(usuarioId, obraId: widget.obraId);
       final avance = await avanceFuture;
       final porRubro = await rubrosFuture;
       final catalogo = await catalogoFuture;
