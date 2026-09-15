@@ -96,31 +96,99 @@ void main() {
       expect(textos, contains('CERRAMIENTO EXTERIOR E INTERIOR'));
     });
 
-    test('Hotel Milan: de COMPUTO salen partidas', () {
-      final partidas = ExcelParser.procesarFilas(leer(milan), ['COMPUTO']);
-      expect(partidas, isNotEmpty);
-      expect(partidas.first['descripcion_texto'], isA<String>());
+    test('Bocián: de GLOVAL salen las 15 partidas ya interpretadas', () {
+      // Estuvo saltado hasta que se pudo tocar el reconocimiento de encabezados: la fila 7 de esta
+      // planilla dice "Un.", "Cant. Total" y "Precio uni Mano de Obra", y ninguno de los tres
+      // figuraba entre los sinónimos.
+      final partidas = ExcelParser.procesarFilas(leer(bocian), ['GLOVAL']);
+      expect(partidas, hasLength(15));
+
+      // Los rubros son filas de sección, sin número ni precio: su nombre vale para las partidas
+      // que vienen abajo, hasta el próximo.
+      expect(partidas.first['rubro_texto'], 'VARIOS');
+      expect(partidas[1]['rubro_texto'], 'CERRAMIENTO EXTERIOR E INTERIOR');
+      expect(partidas.last['rubro_texto'], 'ABERTURAS');
+      expect(
+        partidas.map((p) => p['rubro_texto']).toSet(),
+        {
+          'VARIOS',
+          'CERRAMIENTO EXTERIOR E INTERIOR',
+          'REVESTIMIENTOS INTERIORES',
+          'CUBIERTA',
+          'PINTURA',
+          'PISOS Y CONTRAPISOS',
+          'ABERTURAS',
+        },
+      );
+
+      // Ninguna partida se lleva el número de la planilla en el campo de rubro. Era el bug: cada
+      // fila llegaba a la revisión con "1", "2", "3" ahí, y había que reescribir el rubro a mano.
+      final numeroComoRubro = RegExp(r'^\d+(\.\d+)*\.?$');
+      expect(
+        partidas.where((p) => numeroComoRubro.hasMatch('${p['rubro_texto']}')),
+        isEmpty,
+      );
+
+      // El número no se pierde: queda de respaldo en datos_originales.
+      expect(partidas.first['datos_originales']['codigo_planilla'], '1');
+      expect(partidas.last['datos_originales']['codigo_planilla'], '15');
     });
 
-    test('Bocián: de GLOVAL salen las 15 partidas ya interpretadas', () {
-      // PENDIENTE, y no es del lector: GLOVAL **abre bien** -- 49 filas, 12 columnas, acentos
-      // correctos, y el test de arriba encuentra las 15 partidas y los rubros en la grilla.
-      //
-      // Lo que falla es el reconocimiento de encabezados, que exige coincidencia exacta contra una
-      // lista de sinónimos. La fila 7 de esta planilla dice:
-      //
-      //     Rubro | Descripción | Un. | Cant. Total | Precio uni Mano de Obra | Precio item
-      //
-      // "Un." no es "un", "Cant. Total" no es "cant.", y "Precio uni Mano de Obra" no figura. Como
-      // se exige descripción + (cantidad o precio), no se detecta encabezado y no sale ninguna
-      // partida.
-      //
-      // Arreglarlo es cambiar cómo el importador INTERPRETA la planilla, que quedó explícitamente
-      // fuera de esta tanda ("esto es solo poder abrir el archivo"). Cuando se decida, se saca el
-      // skip y esto tiene que dar 15.
-      markTestSkipped(
-        'Pendiente de decisión: los encabezados de GLOVAL no coinciden con los sinónimos actuales.',
-      );
+    test('Bocián: la unidad sale de la planilla, no se le pide al usuario', () {
+      final partidas = ExcelParser.procesarFilas(leer(bocian), ['GLOVAL']);
+      // Las 15 traen unidad en la planilla: ninguna se le pregunta al usuario.
+      expect(partidas.where((p) => p['unidad_texto'] != null), hasLength(15));
+      expect(partidas.first['unidad_texto'], 'GL.');
+      expect(partidas[1]['unidad_texto'], 'm2');
+      expect(partidas.last['unidad_texto'], 'UND');
+    });
+
+    test('Hotel Milan: de COMPUTO salen partidas', () {
+      final partidas = ExcelParser.procesarFilas(leer(milan), ['COMPUTO']);
+      expect(partidas, hasLength(31));
+      expect(partidas.first['descripcion_texto'], 'Replanteo');
+      // "1 - TAREAS PRELIMINARES" es una fila sola, sin descripción ni precio, arriba de sus
+      // partidas. "UND." no estaba entre los sinónimos de unidad y por eso se le pedía al usuario.
+      expect(partidas.first['rubro_texto'], '1 - TAREAS PRELIMINARES');
+      expect(partidas.first['unidad_texto'], 'Gl.');
+      expect(partidas[1]['unidad_texto'], 'MES');
+    });
+
+    test('Hotel Milan: los números entran con dos decimales', () {
+      // Excel no guarda lo que se ve: "286.839,00" en pantalla es 286839.00000000006 en el
+      // archivo, y así entraban al Cómputo -- los diez decimales que Seba vio en el teléfono.
+      final partidas = ExcelParser.procesarFilas(leer(milan), ['COMPUTO']);
+      for (final p in partidas) {
+        for (final campo in ['cantidad', 'precio_unitario']) {
+          final v = p[campo] as double?;
+          if (v == null) continue;
+          expect(
+            v,
+            double.parse(v.toStringAsFixed(2)),
+            reason: '$campo de "${p['descripcion_texto']}" trae más de dos decimales',
+          );
+        }
+      }
+      expect(partidas.first['precio_unitario'], 286839.0);
+      expect(partidas[3]['precio_unitario'], 148.25); // 148.25135111111112 en el archivo
+    });
+
+    test('El total del ítem no se carga como precio unitario', () {
+      // "Precio item" y "P. TOTAL ITEM" son cantidad x unitario. Ponerlos en la columna del
+      // unitario multiplica la obra por la cantidad, en silencio.
+      final partidas = ExcelParser.procesarFilas(leer(bocian), ['GLOVAL']);
+      final pared = partidas[1];
+      expect(pared['cantidad'], 49.4);
+      expect(pared['precio_unitario'], 4350.0);
+      expect(pared['datos_originales']['precio_total_planilla'], 214890.0);
+    });
+
+    test('Una cantidad chica de verdad no se redondea a cero', () {
+      // 0,008 tn de hierro por m2 es un rendimiento real de un análisis de precios. Redondearlo a
+      // 0,01 exagera; redondearlo a 0,00 deja la partida valiendo nada, sin avisar.
+      final partidas = ExcelParser.procesarFilas(leer(milan), ['Hoja7']);
+      final ceros = partidas.where((p) => p['cantidad'] == 0.0);
+      expect(ceros, isEmpty, reason: 'Ninguna cantidad real quedó en cero por el redondeo');
     });
   });
 }

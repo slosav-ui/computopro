@@ -965,11 +965,27 @@ class _RubrosTabState extends State<RubrosTab> {
       );
       return;
     }
-    await Navigator.push(
+    final aplicado = await Navigator.push<bool>(
       context,
       MaterialPageRoute(builder: (context) => ImportarPresupuestoScreen(obraId: widget.obraId)),
     );
-    await _cargarConteos();
+    if (!mounted) return;
+    if (aplicado != true) {
+      // Se subió algo pero no se aplicó (o se salió antes): los conteos pueden haber cambiado,
+      // los rubros no.
+      await _cargarConteos();
+      return;
+    }
+
+    // Recarga completa, no solo los conteos. Lo importado nace como rubros NUEVOS en la carpeta de
+    // esta obra, y `_cargarConteos` solo actualiza los números de partidas de los rubros que ya
+    // estaban en pantalla -- por eso hacía falta salir de la solapa y volver: recién ahí corría
+    // `_cargarCatalogo` y aparecían.
+    await _cargarCatalogo();
+    if (!mounted) return;
+    // Y se muestra la carpeta donde acaba de caer el presupuesto. Quedarse en el catálogo después
+    // de importar es mostrar la pantalla de antes: lo importado está, pero en la otra solapa.
+    if (_carpetaObra.isNotEmpty) setState(() => _verCarpetaDeObra = true);
   }
 
   void _onNuevoRubro() {

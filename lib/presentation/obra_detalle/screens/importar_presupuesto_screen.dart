@@ -233,7 +233,7 @@ class _ImportarPresupuestoScreenState extends State<ImportarPresupuestoScreen> {
         tipoArchivo: 'excel',
       );
       await _repository.insertarItems(importacion.id, filas);
-      _irARevisar(importacion.id);
+      await _irARevisar(importacion.id);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -270,7 +270,7 @@ class _ImportarPresupuestoScreenState extends State<ImportarPresupuestoScreen> {
       importacionId = importacion.id;
       await _repository.leerConIa(importacion.id);
       await _cargarCupo();
-      _irARevisar(importacion.id);
+      await _irARevisar(importacion.id);
     } on CupoAgotadoException catch (e) {
       if (!mounted) return;
       setState(() {
@@ -291,16 +291,28 @@ class _ImportarPresupuestoScreenState extends State<ImportarPresupuestoScreen> {
     }
   }
 
-  void _irARevisar(String importacionId) {
+  /// Abre la revisión y devuelve, a quien abrió el importador, **si la importación se aplicó**.
+  ///
+  /// Antes era un `pushReplacement`, y ahí estaba el bug de "hay que salir de la solapa y volver
+  /// para ver lo importado": `pushReplacement` cierra la ruta anterior en el acto, así que el
+  /// `await` de la solapa Cómputo terminaba acá -- con el usuario todavía revisando fila por fila,
+  /// mucho antes de que existiera nada que mostrar. La solapa refrescaba en el momento equivocado
+  /// y nunca más.
+  ///
+  /// Con `push` + `pop`, la solapa espera de verdad hasta que la revisión termina, y recibe `true`
+  /// solo si el presupuesto entró. El motivo original del `pushReplacement` se mantiene: al cerrar
+  /// la revisión esta pantalla se cierra sola, así que nadie vuelve atrás a un formulario de
+  /// subida ya completado.
+  Future<void> _irARevisar(String importacionId) async {
     if (!mounted) return;
-    // pushReplacement: volver atrás desde la revisión dejaría al usuario en un formulario de subida
-    // ya completado.
-    Navigator.of(context).pushReplacement(
+    final aplicado = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (context) =>
             RevisarImportacionScreen(obraId: widget.obraId, importacionId: importacionId),
       ),
     );
+    if (!mounted) return;
+    Navigator.of(context).pop(aplicado ?? false);
   }
 
   // ==========================================================================
