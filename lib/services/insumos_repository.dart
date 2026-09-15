@@ -13,10 +13,6 @@ import '../data/models/insumo_del_catalogo.dart';
 class InsumosRepository {
   final SupabaseClient _client = Supabase.instance.client;
 
-  /// `tipo`: `'material'` o `'equipo'` — agregar/quitar de esta pieza está acotado a esos dos, no a
-  /// mano de obra (decisión explícita de Seba; mano de obra ya tiene sus 5 categorías siempre
-  /// visibles, no se agregan/quitan líneas ahí). `texto` vacío no dispara ninguna consulta, devuelve
-  /// lista vacía directo -- evita pedir "todo el catálogo de ese tipo" por accidente.
   /// El catálogo entero con su precio de referencia -- RPC a `catalogo_insumos_con_precio`
   /// (migración 0152).
   ///
@@ -39,22 +35,34 @@ class InsumosRepository {
     ];
   }
 
+  /// Busca un insumo del catálogo por nombre — RPC a `buscar_insumos_por_tipo` (migración 0153).
+  ///
+  /// `tipo`: `'material'` o `'equipo'` — agregar/quitar de esta pieza está acotado a esos dos, no a
+  /// mano de obra (decisión explícita de Seba; mano de obra ya tiene sus 5 categorías siempre
+  /// visibles, no se agregan/quitan líneas ahí). `texto` vacío no dispara ninguna consulta, devuelve
+  /// lista vacía directo -- evita pedir "todo el catálogo de ese tipo" por accidente.
+  ///
+  /// **Era un `ilike '%texto%'` armado acá y ese fue el origen de las tres grúas duplicadas**: no
+  /// ignoraba acentos, así que escribir "grua" no encontraba "GRÚA" y el usuario terminaba creando
+  /// un equipo nuevo. La función compara con `insumo_nombre_normalizado` -- la misma definición de
+  /// "el mismo nombre" que usa el alta y el índice único -- y además busca la subcadena en los dos
+  /// sentidos, así que "grúas" encuentra "grúa".
+  ///
+  /// El filtro y el orden quedan del lado de la base a propósito: si vivieran acá volverían a
+  /// divergir del criterio del alta, que es exactamente lo que pasó.
   Future<List<InsumoBusqueda>> buscarPorTipo(String texto, String tipo) async {
     final termino = texto.trim();
     if (termino.isEmpty) return [];
-    final data = await _client
-        .from('insumos')
-        .select('id, nombre, unidad')
-        .eq('tipo', tipo)
-        .ilike('nombre', '%$termino%')
-        .order('nombre')
-        .limit(30);
+    final data = await _client.rpc('buscar_insumos_por_tipo', params: {
+      'p_texto': termino,
+      'p_tipo': tipo,
+    });
     return [
-      for (final row in data as List)
+      for (final row in (data as List).cast<Map<String, dynamic>>())
         InsumoBusqueda(
-          id: (row as Map<String, dynamic>)['id'].toString(),
-          nombre: row['nombre'] as String,
-          unidad: row['unidad'] as String,
+          id: row['id'].toString(),
+          nombre: row['nombre']?.toString() ?? '',
+          unidad: row['unidad']?.toString() ?? '',
         ),
     ];
   }
