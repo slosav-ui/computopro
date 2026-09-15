@@ -113,6 +113,32 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
   /// 'YYYY-MM-01' del mes en curso -- valor de `obras.mes_base_cac` (columna `date`) para una
   /// obra que se crea hoy. `DateTime(...).toIso8601String()` da 'YYYY-MM-01T00:00:00.000', el
   /// `substring` se queda solo con la parte de fecha que espera la columna.
+  /// Traduce el error de la base a algo que el usuario pueda entender, SIN detalles técnicos.
+  ///
+  /// Los códigos son los de PostgreSQL y son estables, a diferencia del texto del mensaje:
+  ///   * `42501` -- la política de RLS rechazó el alta. Hoy la de INSERT de `obras` exige que
+  ///     `id_admin_creador` sea el usuario de la sesión, así que este código casi siempre significa
+  ///     sesión vencida o a medias.
+  ///   * `23505` -- unicidad; `23503` -- una referencia que no existe; `23514` -- una restricción
+  ///     de la tabla. Los tres son "el dato no entra", no "no tenés permiso", y conviene que el
+  ///     usuario los distinga aunque no sepa cuál es.
+  ///
+  /// **Si algún día hay un tope de obras por plan, va acá**: hoy no existe ninguno, ni en la app ni
+  /// en la base (verificado el 2026-09-15), así que no se inventa un mensaje para algo que no pasa.
+  String _mensajeAltaObra(PostgrestException e) {
+    switch (e.code) {
+      case '42501':
+        return 'No se pudo crear la obra: tu sesión no está activa. Cerrá sesión y volvé a entrar.';
+      case '23505':
+        return 'Ya existe una obra con esos datos.';
+      case '23503':
+      case '23514':
+        return 'No se pudo crear la obra: hay un dato que la base no acepta. Quedó registrado el detalle.';
+      default:
+        return 'No se pudo crear la obra. El detalle quedó registrado; probá de nuevo en un momento.';
+    }
+  }
+
   String _primerDiaDelMesActual() {
     final hoy = DateTime.now();
     return DateTime(hoy.year, hoy.month, 1).toIso8601String().substring(0, 10);
@@ -1260,11 +1286,49 @@ class _ObrasListScreenState extends State<ObrasListScreen> {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(content: Text('Nueva obra registrada exitosamente.')),
                           );
-                        } catch (e) {
+                        } on ObraCreadaNoLegible catch (e) {
+                          // La obra SÍ se creó: el mensaje opuesto al de un alta fallida. Decirle
+                          // "no se pudo guardar" acá lo manda a crearla de nuevo y termina con dos.
+                          debugPrint('crearObra: $e');
+                          if (!context.mounted) return;
+                          setModalState(() => guardando = false);
+                          Navigator.pop(ctx);
+                          await _cargarObras();
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'La obra se creó, pero no se pudo mostrar todavía. Bajá para '
+                                'refrescar la lista.',
+                              ),
+                            ),
+                          );
+                        } on PostgrestException catch (e) {
+                          // El error real al log SIEMPRE, con el code, que es lo que distingue una
+                          // violación de permiso de una de constraint. Sin esto, un alta que falla
+                          // no deja ningún rastro de por qué -- fue exactamente el problema del
+                          // 2026-09-15: el cartel genérico se comió la causa durante dos semanas.
+                          debugPrint(
+                            'crearObra rechazada -- code=${e.code} message=${e.message} '
+                            'details=${e.details} hint=${e.hint}',
+                          );
                           if (!context.mounted) return;
                           setModalState(() => guardando = false);
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('No se pudo guardar la obra. Intente nuevamente.')),
+                            SnackBar(content: Text(_mensajeAltaObra(e))),
+                          );
+                        } catch (e, st) {
+                          debugPrint('crearObra falló: $e');
+                          debugPrint('$st');
+                          if (!context.mounted) return;
+                          setModalState(() => guardando = false);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'No se pudo crear la obra. El detalle quedó registrado; probá de '
+                                'nuevo en un momento.',
+                              ),
+                            ),
                           );
                         }
                       },

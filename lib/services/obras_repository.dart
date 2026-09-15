@@ -9,6 +9,16 @@ import '../data/models/certificado_subitem_avance.dart';
 /// No incluye `montoEstimadoArs`/`montoEstimadoUsd`: esos son valores de
 /// visualización que calcula la pantalla a partir de `montoTotal` + la
 /// cotización activa, no se persisten.
+/// La obra se grabó, pero la app no la puede leer de vuelta. No es un alta fallida: la obra existe.
+///
+/// Se distingue a propósito de cualquier otro error, porque el mensaje al usuario tiene que ser el
+/// opuesto -- decirle "no se pudo guardar" sobre una obra que sí se guardó lo manda a crearla otra
+/// vez y termina con dos.
+class ObraCreadaNoLegible implements Exception {
+  @override
+  String toString() => 'La obra se creó pero no se pudo leer de vuelta.';
+}
+
 class ObrasRepository {
   final SupabaseClient _client = Supabase.instance.client;
 
@@ -52,13 +62,51 @@ class ObrasRepository {
     return row['obra_madre_id'] != null;
   }
 
+  /// Da de alta una obra.
+  ///
+  /// **Separa el grabar del volver a leer, y no es cosmético.** Antes era un solo
+  /// `insert().select().single()`: si la obra se grababa bien pero la lectura de vuelta no
+  /// encontraba la fila, la excepción era indistinguible de un alta rechazada, y quien llama
+  /// mostraba "no se pudo guardar" sobre una obra que SÍ existía.
+  ///
+  /// Esa lectura puede fallar por sí sola: la política de SELECT de `obras` es `is_obra_member(id)`,
+  /// y el creador queda como miembro recién cuando corre el trigger `on_obra_created_member`
+  /// (0033), que solo hace algo si `id_admin_creador` no es nulo. Sin ese dato, la obra entra y no
+  /// se puede leer.
+  ///
+  /// Con dos pasos, cada falla dice lo suyo: si falla el insert, el alta se rechazó; si falla la
+  /// lectura, se lanza `ObraCreadaNoLegible` y quien llama sabe que la obra quedó creada.
+  ///
+  /// Y el error real de Supabase se registra siempre con su `code`, que es el dato que distingue
+  /// una violación de permiso (`42501`) de una de constraint (`23xxx`) -- mismo patrón que ya usaba
+  /// `eliminarObra`. Sin eso, un alta que falla no deja rastro de por qué.
   Future<Map<String, dynamic>> crearObra(Map<String, dynamic> obra) async {
-    final inserted = await _client
-        .from('obras')
-        .insert(_toRow(obra))
-        .select()
-        .single();
-    return _fromRow(inserted);
+    final fila = _toRow(obra);
+
+    final List<dynamic> creadas;
+    try {
+      creadas = await _client.from('obras').insert(fila).select('id');
+    } on PostgrestException catch (e) {
+      debugPrint(
+        'ObrasRepository.crearObra -- el INSERT fue rechazado. '
+        'code=${e.code} message=${e.message} details=${e.details} hint=${e.hint} '
+        'columnas=${fila.keys.join(",")}',
+      );
+      rethrow;
+    }
+
+    if (creadas.isEmpty) {
+      // El insert entró pero la fila no se puede leer de vuelta (RLS de SELECT). La obra existe.
+      debugPrint(
+        'ObrasRepository.crearObra: la obra se grabó pero no se pudo leer de vuelta -- '
+        'id_admin_creador=${fila['id_admin_creador']}',
+      );
+      throw ObraCreadaNoLegible();
+    }
+
+    final id = (creadas.first as Map<String, dynamic>)['id'].toString();
+    final completa = await _client.from('obras').select().eq('id', id).single();
+    return _fromRow(completa);
   }
 
   /// Confirmado por Seba (2026-09-11): NO era un bug -- un usuario invitado con rol `profesional`
