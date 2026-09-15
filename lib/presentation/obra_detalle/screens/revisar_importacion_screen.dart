@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../data/models/importacion.dart';
 import '../../../data/models/importacion_item.dart';
+import '../../../data/models/reemplazo_importacion.dart';
 import '../../../data/models/rubro_catalogo.dart';
 import '../../../data/models/subitem_catalogo.dart';
 import '../../../services/auth_service.dart';
@@ -251,7 +252,16 @@ class _RevisarImportacionScreenState extends State<RevisarImportacionScreen> {
     setState(() => _descartados.add(item.id));
   }
 
-  Future<void> _confirmar() async {
+  /// Aplicar la importación sobre el cómputo de la obra.
+  ///
+  /// **Siempre pasa por el reemplazo** (`reemplazar_desde_importacion`, 0157), también en la
+  /// primera importación de una obra: ahí no hay nada que destildar y el resultado es idéntico al
+  /// de `confirmar_importacion` (0081), que queda como camino de compatibilidad. Una sola ruta
+  /// significa un solo lugar donde puede fallar.
+  ///
+  /// El orden es el criterio de la pieza: **primero se muestra qué cambia, después se decide.**
+  /// Seba: *"para que no pise y digas: uy, mirá, me perdí todo el trabajo"*.
+  Future<void> _aplicar() async {
     final resueltos = _items.where((i) => i.resuelta).length;
     if (resueltos == 0) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -263,46 +273,277 @@ class _RevisarImportacionScreenState extends State<RevisarImportacionScreen> {
       );
       return;
     }
-    final confirmar = await showDialog<bool>(
-      context: context,
-      builder: (dialogCtx) => AlertDialog(
-        title: const Text(
-          'Confirmar importación',
-          style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-        ),
-        content: Text(
-          '$resueltos de ${_items.length} filas se van a cargar en el cómputo de esta obra. '
-          'Las que quedaron sin resolver o descartadas no se cargan. Esta acción no se puede deshacer.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogCtx, false),
-            child: const Text('Cancelar'),
+
+    setState(() => _confirmando = true);
+    ResumenReemplazo resumen;
+    try {
+      resumen = await _importacionesRepository
+          .previsualizarReemplazo(widget.importacionId)
+          .timeout(const Duration(seconds: 20));
+    } catch (e, st) {
+      debugPrint('previsualizarReemplazo falló: $e');
+      debugPrint('$st');
+      if (!mounted) return;
+      setState(() => _confirmando = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No se pudo comparar con lo que ya está cargado: $e')),
+      );
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _confirmando = false);
+
+    // Regla 2: la obra ya certificó. Sin diálogo de confirmación, porque no hay nada que confirmar:
+    // se explica y se sale.
+    if (resumen.bloqueado) {
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('No se puede reimportar',
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+          content: Text(
+            '${resumen.motivoBloqueo ?? "Esta obra ya tiene certificados emitidos."} Para cambiar '
+            'el presupuesto, corregí las partidas a mano en la solapa Cómputo.',
+            style: const TextStyle(fontSize: 13, height: 1.35),
           ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(dialogCtx, true),
-            child: const Text('Confirmar'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Entendido')),
+          ],
+        ),
+      );
+      return;
+    }
+
+    final decision = await _mostrarDiferencias(resumen);
+    if (decision != _Decision.aplicar) {
+      // "Revisar antes" se queda en esta pantalla para poder corregir filas; "Ahora no" sale y deja
+      // la importación pendiente, para retomarla más tarde. Las dos dejan la obra intacta.
+      if (decision == _Decision.ahoraNo && mounted) Navigator.of(context).pop(false);
+      return;
+    }
+
+    setState(() => _confirmando = true);
+    try {
+      final r = await _importacionesRepository
+          .reemplazarDesdeImportacion(widget.importacionId)
+          .timeout(const Duration(seconds: 30));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_resultado(r))));
+      Navigator.of(context).pop(true);
+    } catch (e, st) {
+      debugPrint('reemplazarDesdeImportacion falló: $e');
+      debugPrint('$st');
+      if (!mounted) return;
+      setState(() => _confirmando = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No se pudo aplicar la importación: $e')),
+      );
+    }
+  }
+
+  String _resultado(({int actualizadas, int nuevas, int destildadas}) r) {
+    final partes = <String>[
+      if (r.nuevas > 0) '${r.nuevas} ${r.nuevas == 1 ? "partida nueva" : "partidas nuevas"}',
+      if (r.actualizadas > 0) '${r.actualizadas} actualizada${r.actualizadas == 1 ? "" : "s"}',
+      if (r.destildadas > 0) '${r.destildadas} destildada${r.destildadas == 1 ? "" : "s"}',
+    ];
+    return partes.isEmpty ? 'La importación no cambió nada.' : 'Listo: ${partes.join(", ")}.';
+  }
+
+  /// El aviso: **resumen primero, detalle si lo piden**. Con cincuenta diferencias nadie las mira
+  /// una por una, así que el detalle se le pide a la base recién al tocar "Ver el detalle".
+  Future<_Decision?> _mostrarDiferencias(ResumenReemplazo resumen) {
+    List<DiferenciaReemplazo>? detalle;
+    bool cargandoDetalle = false;
+
+    return showDialog<_Decision>(
+      context: context,
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (context, setModalState) {
+          Future<void> verDetalle() async {
+            setModalState(() => cargandoDetalle = true);
+            try {
+              final filas =
+                  await _importacionesRepository.diferenciasReemplazo(widget.importacionId);
+              setModalState(() {
+                detalle = filas;
+                cargandoDetalle = false;
+              });
+            } catch (e) {
+              setModalState(() => cargandoDetalle = false);
+            }
+          }
+
+          return AlertDialog(
+            title: const Text('Antes de aplicar',
+                style: TextStyle(
+                    fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1B365D))),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(resumen.titular,
+                        style: const TextStyle(
+                            fontSize: 13, height: 1.35, fontWeight: FontWeight.w600)),
+                    if (resumen.sinCambios > 0) ...[
+                      const SizedBox(height: 4),
+                      Text('Las otras ${resumen.sinCambios} quedan igual.',
+                          style: const TextStyle(fontSize: 12, color: Colors.black54)),
+                    ],
+
+                    // **La línea que justifica frenar.** Primera de los avisos y en rojo: es lo
+                    // único de todo esto que el usuario no puede recuperar de otro lado.
+                    if (resumen.editadasAMano > 0) ...[
+                      const SizedBox(height: 12),
+                      _buildAviso(
+                        Icons.warning_amber_rounded,
+                        Colors.red,
+                        '${resumen.editadasAMano} de esas partidas '
+                        '${resumen.editadasAMano == 1 ? "la editaste" : "las editaste"} vos después '
+                        'de importar. La planilla las va a pisar.',
+                      ),
+                    ],
+                    if (resumen.descartadas > 0) ...[
+                      const SizedBox(height: 8),
+                      _buildAviso(
+                        Icons.remove_circle_outline,
+                        Colors.orange.shade800,
+                        '${resumen.descartadas} '
+                        '${resumen.descartadas == 1 ? "partida ya no viene" : "partidas ya no vienen"} '
+                        'en la planilla: se destildan, no se borran. Las podés volver a tildar '
+                        'cuando quieras.',
+                      ),
+                    ],
+                    if (resumen.avancesBorrador > 0) ...[
+                      const SizedBox(height: 8),
+                      _buildAviso(
+                        Icons.description_outlined,
+                        Colors.orange.shade800,
+                        '${resumen.avancesBorrador} '
+                        '${resumen.avancesBorrador == 1 ? "avance cargado en un certificado en borrador se descarta" : "avances cargados en certificados en borrador se descartan"}.',
+                      ),
+                    ],
+                    if (resumen.descongela) ...[
+                      const SizedBox(height: 8),
+                      _buildAviso(
+                        Icons.lock_open_outlined,
+                        Colors.orange.shade800,
+                        'El presupuesto está congelado: aplicar lo descongela, y vas a tener que '
+                        'volver a congelarlo.',
+                      ),
+                    ],
+
+                    if (!resumen.sinDiferencias) ...[
+                      const SizedBox(height: 12),
+                      if (detalle == null)
+                        TextButton.icon(
+                          onPressed: cargandoDetalle ? null : verDetalle,
+                          icon: cargandoDetalle
+                              ? const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(strokeWidth: 2))
+                              : const Icon(Icons.list_alt, size: 18),
+                          label: const Text('Ver el detalle', style: TextStyle(fontSize: 12)),
+                        )
+                      else
+                        ...detalle!.map(_buildFilaDiferencia),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              // Las tres salidas que pidió Seba. "Revisar antes" se queda acá para corregir filas;
+              // "Ahora no" sale sin aplicar y deja la importación pendiente.
+              TextButton(
+                onPressed: () => Navigator.pop(dialogCtx, _Decision.ahoraNo),
+                child: const Text('Ahora no'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(dialogCtx, _Decision.revisar),
+                child: const Text('Revisar antes'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(dialogCtx, _Decision.aplicar),
+                child: const Text('Aplicar'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildAviso(IconData icono, Color color, String texto) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icono, size: 16, color: color),
+        const SizedBox(width: 6),
+        Expanded(child: Text(texto, style: TextStyle(fontSize: 12, color: color, height: 1.3))),
+      ],
+    );
+  }
+
+  Widget _buildFilaDiferencia(DiferenciaReemplazo d) {
+    final etiqueta = switch (d.tipo) {
+      'precio' => 'precio',
+      'cantidad' => 'cantidad',
+      'nueva' => 'nueva',
+      'descartada' => 'ya no viene',
+      'reactivada' => 'vuelve a entrar',
+      _ => d.tipo,
+    };
+    final valores = d.esCambioDeValor
+        ? '${_fmtValor(d.valorActual)} a ${_fmtValor(d.valorPlanilla)}'
+        : d.tipo == 'descartada'
+            ? 'cargada: ${_fmtValor(d.valorActual)}'
+            : 'planilla: ${_fmtValor(d.valorPlanilla)}';
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  d.codigo == null ? d.descripcion : '${d.codigo} - ${d.descripcion}',
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Text(etiqueta, style: const TextStyle(fontSize: 10, color: Colors.black54)),
+            ],
+          ),
+          Row(
+            children: [
+              Text(valores, style: const TextStyle(fontSize: 11, color: Colors.black54)),
+              if (d.editadaAMano && d.tipo != 'nueva') ...[
+                const SizedBox(width: 6),
+                Text('- lo editaste vos',
+                    style: TextStyle(
+                        fontSize: 10,
+                        color: Colors.red.shade700,
+                        fontWeight: FontWeight.w600)),
+              ],
+            ],
           ),
         ],
       ),
     );
-    if (confirmar != true) return;
+  }
 
-    setState(() => _confirmando = true);
-    try {
-      await _importacionesRepository
-          .confirmarImportacion(widget.importacionId)
-          .timeout(const Duration(seconds: 20));
-      if (!mounted) return;
-      Navigator.of(context).pop(true);
-    } catch (e, st) {
-      debugPrint('_confirmar falló: $e\n$st');
-      if (!mounted) return;
-      setState(() => _confirmando = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('No se pudo confirmar la importación: $e')),
-      );
-    }
+  String _fmtValor(double? v) {
+    if (v == null) return '--';
+    return v == v.roundToDouble() ? v.toInt().toString() : v.toStringAsFixed(2).replaceAll('.', ',');
   }
 
   @override
@@ -351,7 +592,7 @@ class _RevisarImportacionScreenState extends State<RevisarImportacionScreen> {
               child: Padding(
                 padding: const EdgeInsets.all(12),
                 child: ElevatedButton(
-                  onPressed: _confirmando ? null : _confirmar,
+                  onPressed: _confirmando ? null : _aplicar,
                   style: ElevatedButton.styleFrom(
                     minimumSize: const Size.fromHeight(44),
                   ),
@@ -664,6 +905,9 @@ class _RevisarImportacionScreenState extends State<RevisarImportacionScreen> {
 
 /// Buscador de subítem existente (acción "elegir del catálogo") -- catálogo ya cargado por
 /// RevisarImportacionScreen, filtro local, sin ida al servidor por cada letra tipeada.
+/// Las tres salidas del aviso previo (Seba): aplicar, no aplicar, o revisar antes.
+enum _Decision { aplicar, revisar, ahoraNo }
+
 class _DialogoBuscarSubitem extends StatefulWidget {
   final List<SubitemCatalogo> subitems;
   final List<RubroCatalogo> rubros;

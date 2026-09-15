@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../data/models/importacion.dart';
 import '../data/models/importacion_item.dart';
 import '../core/utils/filas_afectadas.dart';
+import '../data/models/reemplazo_importacion.dart';
 
 /// Acceso a `importaciones`/`importaciones_items` + el bucket de Storage `importaciones` + la
 /// función `confirmar_importacion`. Ver supabase/migrations/0080_importaciones.sql /
@@ -200,8 +201,60 @@ class ImportacionesRepository {
     return null;
   }
 
+  /// `confirmar_importacion` (0081) -- upsert simple, sin diff ni aviso.
+  ///
+  /// **Ya no lo usa ninguna pantalla desde la 0157**: `reemplazarDesdeImportacion` hace lo mismo y
+  /// además compara, así que la revisión pasa siempre por ahí, también en la primera importación.
+  /// Se conserva el método porque la función sigue existiendo en la base y es el camino de
+  /// compatibilidad si alguna vez hace falta aplicar sin comparar.
   Future<void> confirmarImportacion(String importacionId) async {
     await _client.rpc('confirmar_importacion', params: {'p_importacion_id': importacionId});
+  }
+
+  /// El resumen del diff entre la planilla y lo que ya está cargado -- RPC a
+  /// `previsualizar_reemplazo_importacion` (0157). **No toca nada**: es lo que abre el aviso.
+  Future<ResumenReemplazo> previsualizarReemplazo(String importacionId) async {
+    final data = await _client.rpc('previsualizar_reemplazo_importacion', params: {
+      'p_importacion_id': importacionId,
+    });
+    final filas = (data as List).cast<Map<String, dynamic>>();
+    if (filas.isEmpty) {
+      throw StateError('La vista previa del reemplazo no devolvió nada');
+    }
+    return ResumenReemplazo.fromMap(filas.first);
+  }
+
+  /// El detalle, una fila por diferencia -- RPC a `diferencias_reemplazo_importacion` (0157).
+  ///
+  /// Se pide **solo cuando el usuario toca "ver el detalle"**: con cincuenta diferencias nadie las
+  /// mira una por una, así que el diálogo abre con el resumen y esto llega después. El resumen se
+  /// calcula agregando sobre estas mismas filas, así que no pueden desviarse.
+  Future<List<DiferenciaReemplazo>> diferenciasReemplazo(String importacionId) async {
+    final data = await _client.rpc('diferencias_reemplazo_importacion', params: {
+      'p_importacion_id': importacionId,
+    });
+    return [
+      for (final row in (data as List).cast<Map<String, dynamic>>())
+        DiferenciaReemplazo.fromMap(row),
+    ];
+  }
+
+  /// Aplica la planilla entera -- RPC a `reemplazar_desde_importacion` (0157).
+  ///
+  /// La planilla gana en todo, cantidad incluida: **la decisión de qué aplicar se tomó en el aviso**,
+  /// no acá. Lo que la planilla ya no trae se **destilda**, no se borra, así que es reversible.
+  Future<({int actualizadas, int nuevas, int destildadas})> reemplazarDesdeImportacion(
+    String importacionId,
+  ) async {
+    final data = await _client.rpc('reemplazar_desde_importacion', params: {
+      'p_importacion_id': importacionId,
+    });
+    final row = (data as List).first as Map<String, dynamic>;
+    return (
+      actualizadas: (row['actualizadas'] as num?)?.toInt() ?? 0,
+      nuevas: (row['nuevas'] as num?)?.toInt() ?? 0,
+      destildadas: (row['destildadas'] as num?)?.toInt() ?? 0,
+    );
   }
 
   String _sufijoAleatorio() {

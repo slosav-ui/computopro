@@ -459,8 +459,41 @@ choque.** El flujo tiene que decidir antes:
    perder, con cuánta cantidad y monto cargados, y cuántos borradores de avance se descartan. El
    aviso dice qué se pierde, no "¿estás seguro?".
 
-**Y la regla que lo hace tolerable, cerrada por Seba el 2026-09-15: lo que coincida por código Y
-descripción se conserva tildado, con su cantidad.**
+**CAMBIO DE CRITERIO 2026-09-15, después de escribir la `0156`.** La primera versión resolvía por
+regla quién ganaba cuando la planilla traía un número distinto. Seba lo corrigió, y la corrección
+cambia la forma de la pieza:
+
+> *"Tenemos que tirar una alerta de que los datos no se corresponden, de que se han modificado, y
+> que si querés dejarlos modificados, o se corrige la planilla que ya está en la aplicación, o
+> querés revisarla antes de ejecutarla."* — y el miedo concreto detrás: *"para que no pise y digas:
+> uy, mirá, me perdí todo el trabajo"*.
+
+**Ninguna de las dos fuentes gana por regla: la app muestra qué cambia y el usuario decide.** La
+regla se muda del código al aviso. Construido en la `0157`:
+
+- **El diff se calcula en un solo lugar.** `diferencias_reemplazo_importacion` devuelve las filas y
+  `previsualizar_reemplazo_importacion` agrega sobre ellas — el resumen no puede desviarse del
+  detalle porque sale del detalle.
+- **`editada_a_mano` es lo que hace que el aviso no sea ruido.** Con cincuenta diferencias, cincuenta
+  iguales no dicen nada. Se puede distinguir "la planilla se corrigió" de "vas a pisar lo que
+  cargaste a mano" porque las importaciones anteriores no se borran nunca: se compara lo cargado hoy
+  contra lo que trajo la última importación confirmada. Sin importación previa que lo respalde, se
+  asume que el número es del usuario — avisar de más, nunca de menos.
+- **Resumen primero, detalle después.** El titular ("cambian 3 precios y 1 cantidad") abre el
+  diálogo; las filas se le piden a la base recién al tocar "Ver el detalle".
+- **Tres salidas**: aplicar, revisar antes (se queda en la revisión para corregir filas) y ahora no
+  (sale dejando la importación pendiente).
+- **Todo o nada, no partida por partida.** Elegir de a una no es una versión intermedia de aplicar:
+  **crea un tercer estado** que no corresponde ni a la planilla ni a lo anterior, y la próxima
+  reimportación compara contra algo que no es ningún documento. Contradice la regla de Seba de que
+  *"no conviven dos versiones"*. La salida para eso es "revisar antes": se corrige la planilla y se
+  reimporta.
+- **Lo descartado se destilda, no se borra.** Más barato que lo que reemplaza: no se pierde la
+  cantidad, el total de la obra no las cuenta, **el reemplazo pasa a ser reversible dentro de la
+  app**, una reimportación posterior las re-tilda con su cantidad intacta, y desaparece el `delete`
+  sobre `obra_subitems` con todo el riesgo del cascade de la `0028`.
+
+**La regla original, que sigue valiendo para decidir qué es "la misma partida":**
 
 > *"Si no, corregir tres precios obliga a volver a tildar 24 partidas, y eso es empezar de nuevo en
 > vez de corregir — que es justo lo contrario de lo que pedí."*
@@ -546,12 +579,13 @@ Nada de esto bloquea la tanda 2.
 2. **¿Se puede copiar un subítem suelto**, sin su rubro? Las dos direcciones de §6.1 copian el rubro
    entero. Copiar una partida sola al catálogo tiene sentido ("esta me sirve siempre") y no está
    resuelto dónde cae si su rubro no existe del otro lado.
-3. **Reimportar reemplaza avisando (§6.2) está DECIDIDO y SIN CONSTRUIR.** Es lo más grande que
-   queda de la pieza. Hoy el importador escribe en la carpeta (tanda 5), pero nada implementa el
-   reemplazo: ni los tres casos de aviso, ni conservar tildado lo que coincide por código y
-   descripción, ni el rechazo cuando hay certificados emitidos. Y tiene filo, porque
-   `obra_subitems.rubro_id/subitem_id` cascadean desde la `0028`: un borrado descuidado se lleva las
-   cantidades sin avisar.
+3. **Exportar el cómputo antes de reemplazarlo** -- la red para lo que pasa fuera de la app.
+   Relevado: el proyecto ya tiene `excel: ^4.0.6` (hoy solo para leer) y `path_provider`, así que
+   **conviene .xlsx y no CSV**: cuesta lo mismo, y el archivo lo puede volver a leer el propio
+   importador, que es la propiedad que importa en una copia de seguridad. Lo que falta es **cómo se
+   le entrega el archivo al usuario**: no hay `share_plus` ni `open_file`, así que o entra una
+   dependencia o se sube a Storage y se comparte el link. Esa decisión es todo el costo real; armar
+   las filas es trivial.
 4. **El presupuesto impreso**, cuando exista: con dos carpetas conviviendo, cómo se numeran los
    ítems en el papel. Es el motivo original del índice único global de la 0025, y sigue sin
    documento que lo obligue.
