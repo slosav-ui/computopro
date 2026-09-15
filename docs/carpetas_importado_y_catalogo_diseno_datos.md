@@ -530,46 +530,70 @@ Nada de esto bloquea la tanda 2.
 
 ## 9. Las solapas vacías — resuelto 2026-09-15
 
-Era el punto 5 de la primera lista de la pieza y quedó cerrado con una corrección de Seba que vale
-anotar, porque la primera propuesta se quedaba corta.
+Era el punto 5 de la primera lista de la pieza. Se cerró en dos pasos, y el segundo cambió el
+propósito de la pantalla, no su redacción.
 
-**Lo que había:** APU y Mat y MO, en una obra 100% importada, mostraban un cartel suelto. Y el
-cartel daba una instrucción imposible de seguir — *"tildá subítems con APU en el Cómputo"* — en una
-obra donde **todo está tildado y ninguna partida tiene composición**. Explicaba la mecánica de la
-app en vez de explicar esta obra.
+**Lo que había:** APU y Mat y MO, en una obra 100% importada, mostraban un cartel suelto con una
+instrucción imposible de seguir — *"tildá subítems con APU en el Cómputo"* — en una obra donde
+**todo está tildado y ninguna partida tiene composición**.
 
-**Lo primero que propuse fue cambiar el texto del cartel. No alcanzaba:**
+**Primer intento, insuficiente:** cambiar el texto del cartel. Seba:
 
-> *"En la solapa APU las partidas tienen que verse igual, en gris o atenuadas, con el cartel
-> explicando que el análisis de precios aparece cuando esa partida se arma desde sus insumos. (...)
-> Una solapa vacía parece rota; una con las partidas a la vista en gris se entiende sola y además
-> muestra qué va a haber ahí."* (Seba)
+> *"Una solapa vacía parece rota; una con las partidas a la vista en gris se entiende sola y además
+> muestra qué va a haber ahí."*
 
-**El criterio, que es general y no de estas dos pantallas:** un vacío no se arregla explicándolo
-mejor, se arregla **mostrando la estructura de lo que va a haber ahí**. El texto dice por qué falta;
-la estructura en gris dice qué es lo que falta, y de paso confirma que la app conoce la obra.
+**Segundo intento, también equivocado, y la corrección es la que importa.** Mostré en gris las
+partidas **de la obra**:
 
-Implementado en `lib/presentation/obra_detalle/widgets/partidas_atenuadas.dart`, en dos piezas
-porque las dos solapas llegan con distinto equipaje:
+> *"Muestra en gris las partidas importadas, que nunca van a tener APU. Eso no muestra nada. Lo que
+> tiene que aparecer en gris es el catálogo de la app —las partidas oficiales con sus recetas— y las
+> propias del PRO. **Porque el punto no es explicar un vacío: es mostrar el potencial de la app. El
+> que abre APU tiene que ver qué puede hacer.**"* (Seba, 2026-09-15)
 
-- `ListaPartidasAtenuadas` — presentacional, para la solapa APU, que ya tiene las partidas y los
-  rubros en memoria;
-- `PartidasAtenuadasDeLaObra` — se trae los datos sola, para Mat y MO, cuyo consolidado son insumos
-  y no partidas.
+**El criterio, que es general:** un estado vacío no es un problema de redacción ni de honestidad, es
+una oportunidad desperdiciada. La pregunta correcta no es *"¿cómo explico que esto está vacío?"*
+sino *"¿qué puede hacer esta pantalla que el usuario todavía no usó?"*.
+
+Mostrar las partidas de la obra importada era honesto y **completamente inútil**: son justamente las
+que nunca van a tener composición, porque su precio ya viene cerrado del presupuesto. En Mat y MO
+era peor todavía — **los insumos salen de las recetas, no de un precio cerrado**, así que apuntaba
+al lado contrario del que genera insumos.
+
+**Lo que se muestra:** el catálogo de partidas que tienen receta cargada, oficiales y propias del
+usuario, agrupado por rubro y en gris. Implementado en
+`lib/presentation/obra_detalle/widgets/catalogo_con_recetas.dart`, usado por las dos solapas.
+
+**Cuándo desaparece: solo, y sin lógica nueva.** Las dos solapas muestran esto cuando su listado
+real está vacío. En cuanto el usuario tilda en Cómputo una partida del catálogo con receta, esa
+partida entra en APU con su precio desglosado y sus insumos aparecen en Mat y MO.
 
 Tres detalles con su motivo:
 
-- **Las partidas van inertes, no tocables.** No hay a dónde ir; un gris que se toca y no hace nada
-  es peor que un gris que se ve inerte.
-- **La nota de función PRO aparece solo para un usuario Free.** A un PRO decirle que algo es PRO es
-  ruido. Lo que es PRO es *armar* la composición — el listado y el precio unitario los ve Free
-  igual, que es el criterio que ya regía en `ComposicionApuScreen`.
-- **Una obra sin ninguna partida tildada muestra otro mensaje.** Ahí el vacío no es explicable: es
-  una obra sin cómputo, y mandar a Cómputo sí corresponde.
+- **Las filas van inertes.** Esas partidas no están en la obra: no hay una composición *de esta
+  obra* que abrir. Un gris que se toca y no hace nada es peor que uno que se ve inerte.
+- **La nota de función PRO aparece solo para un usuario Free.** Lo que es PRO es *editar* una receta
+  y crear las propias; el listado y el precio unitario los ve Free igual, que es el criterio que ya
+  regía en `ComposicionApuScreen`.
+- **Las recetas propias se marcan con un chip "tu receta"**, y el cartel cuenta cuántas son. Una
+  receta propia es un clon por persona de la oficial (`0071_personalizacion_apu_pro.sql`), así que
+  vive sobre el mismo subítem oficial: sin el chip, lo que el usuario ajustó se vería igual que lo
+  que nunca tocó.
 
-Y una dependencia que no era obvia: las dos solapas tuvieron que pasar de `getCatalogoOficial()` a
-`getCatalogoCompleto(usuarioId, obraId:)`. Sin eso los rubros de la carpeta no resuelven y **la obra
-importada seguiría mostrando un vacío mudo** — justo el caso que esto viene a resolver.
+### 9.1 Cómo crece el catálogo — criterio anotado, sin construir
+
+Salió de la misma conversación y da el marco de por qué el catálogo es "el potencial de la app" y no
+un dato estático:
+
+> *"El PRO edita las recetas y crea las suyas, y una receta propia que se repita entre varios
+> usuarios se evalúa para sumarla al catálogo oficial, siempre con revisión previa."* (Seba)
+
+O sea que el catálogo oficial **se alimenta del uso**, con dos condiciones que conviene no perder:
+la señal es la **repetición entre usuarios distintos** (no que a alguien le guste su receta), y la
+incorporación es **con revisión previa**, nunca automática.
+
+No hay nada construido de esto: hoy `apu_composiciones.creador_usuario_id` ya distingue la receta
+oficial de la propia de cada persona, que es la mitad del dato que haría falta. Lo que no existe es
+ninguna forma de detectar la repetición ni de promover una receta. **Pieza aparte, sin diseño.**
 
 ---
 

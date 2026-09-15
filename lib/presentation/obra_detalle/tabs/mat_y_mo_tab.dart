@@ -8,7 +8,7 @@ import '../../../services/auth_service.dart';
 import '../../../services/obra_insumos_repository.dart';
 import '../../../services/obra_presupuesto_config_repository.dart';
 import '../../../services/valor_hora_mano_obra_repository.dart';
-import '../widgets/partidas_atenuadas.dart';
+import '../widgets/catalogo_con_recetas.dart';
 import 'cartel_costo_mano_obra.dart';
 import 'panel_valor_hora_mano_obra.dart';
 
@@ -243,27 +243,20 @@ class _MatYMoTabState extends State<MatYMoTab> {
       );
     }
 
-    // Sin insumos: la solapa muestra la estructura de la obra en gris en vez de un cartel suelto
-    // (ver `partidas_atenuadas.dart`). El cartel que había daba una instrucción imposible de seguir
-    // -- "tildá subítems con APU en el Cómputo" -- en una obra donde todo está tildado y ninguna
-    // partida tiene composición, que es el caso de cualquier obra traída de una planilla.
+    // Sin insumos: la solapa muestra EL CATÁLOGO con recetas en gris, no esta obra (ver
+    // `catalogo_con_recetas.dart`). Acá el argumento es más fuerte todavía que en APU: **los
+    // insumos salen de la receta de cada partida**, así que mostrar las partidas de un presupuesto
+    // importado -- que tienen precio cerrado y ninguna receta -- apuntaba al lado contrario del que
+    // genera insumos.
     //
     // Se sale ACÁ y no se arma la tarjeta de "Consolidado de Insumos" con secciones vacías: un
-    // encabezado sobre una lista vacía es lo que hacía parecer rota la pantalla.
-    //
-    // A diferencia de la solapa APU, esta se trae los datos sola: su consolidado son insumos, no
-    // partidas -- acá no hay nada cargado que reusar.
+    // encabezado sobre una lista vacía es parte de lo que hacía parecer rota la pantalla.
     if (_insumos.isEmpty) {
-      return PartidasAtenuadasDeLaObra(
-        obraId: widget.obraId,
-        mensaje: 'Estas son las partidas de la obra. Los materiales y la mano de obra se '
-            'consolidan acá a partir de la composición de cada partida: qué insumos lleva y en qué '
-            'rendimiento. Las que tienen un precio cerrado a mano —como las que vienen de un '
-            'presupuesto importado— no aportan insumos, porque no tienen composición.',
-        mensajeSinPartidas: 'Esta obra todavía no tiene partidas tildadas. Se eligen en la solapa '
-            'Cómputo, y los insumos aparecen acá cuando esas partidas se arman desde su '
-            'composición.',
-        notaPro: 'Armar la composición de una partida es una función PRO.',
+      return const CatalogoConRecetas(
+        mensaje: 'Los materiales y la mano de obra salen de la receta de cada partida. Estas son '
+            'las del catálogo que ya la tienen cargada: tildá una en la solapa Cómputo y sus '
+            'insumos aparecen acá, con cantidades y precios.',
+        notaPro: 'Editar una receta y crear las tuyas es una función PRO.',
       );
     }
 

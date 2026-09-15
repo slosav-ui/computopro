@@ -43,6 +43,24 @@ class ApuComposicionesRepository {
     };
   }
 
+  /// Los subítems cuya receta la escribió ESTE usuario (`apu_composiciones.creador_usuario_id`),
+  /// no la oficial. Una receta propia es un clon por persona de la oficial -- ver
+  /// `0071_personalizacion_apu_pro.sql`: el PRO cambia un rendimiento o reemplaza un insumo sin
+  /// tocar la receta de nadie más.
+  ///
+  /// Se usa para distinguir en el listado del catálogo cuáles ya tienen la versión del usuario.
+  /// Consulta aparte y no una columna más en `getSubitemIdsConComposicion` porque esa se llama en
+  /// caminos donde el dato no hace falta, y es la que corre en cada apertura de la solapa APU.
+  Future<Set<String>> getSubitemIdsConRecetaPropia(String usuarioId) async {
+    final data = await _client
+        .from('apu_composiciones')
+        .select('subitem_id')
+        .eq('creador_usuario_id', usuarioId);
+    return {
+      for (final row in data as List) (row as Map<String, dynamic>)['subitem_id'].toString(),
+    };
+  }
+
   /// Paso 3: precio derivado de la composición, batch (una sola llamada para todos los subitemIds
   /// de la pantalla, ver `calcular_precio_final_apu_subitems` en
   /// 0090_precio_final_apu_subitems_respeta_selector.sql). Solo tiene sentido llamarlo con
