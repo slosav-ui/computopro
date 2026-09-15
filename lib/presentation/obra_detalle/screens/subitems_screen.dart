@@ -606,6 +606,25 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
     return valor == valor.roundToDouble() ? valor.toInt().toString() : valor.toString();
   }
 
+  /// Igual que _formatearCantidad pero para el campo de precio, que es plata:
+  /// tope de 2 decimales y coma como separador decimal.
+  ///
+  /// No es cosmético. `_formatearCantidad` termina en `valor.toString()`, y un
+  /// precio derivado (el de la obra real sale de `total / cantidad`, con toda
+  /// la precisión a propósito) se mostraba con diez decimales adentro del campo
+  /// editable — Seba lo vio en el teléfono en "Platea de fundación".
+  ///
+  /// Coma y no punto: el campo se vuelve a leer con `ParserNumeroAr`, que con
+  /// coma no tiene ambigüedad posible ("15769396,94"). Con punto y tres dígitos
+  /// a la derecha lo interpretaría como separador de miles.
+  ///
+  /// El valor guardado NO se toca: sigue con toda su precisión en
+  /// `obra_subitems.precio_unitario_manual`. Esto es solo lo que se ve.
+  String _formatearPrecio(double valor) {
+    if (valor == valor.roundToDouble()) return valor.toInt().toString();
+    return valor.toStringAsFixed(2).replaceAll('.', ',');
+  }
+
   /// Se dispara al perder el foco el campo de cantidad de un subítem.
   Future<void> _guardarCantidad(SubitemCatalogo subitem) async {
     final existente = _obraSubitemsPorSubitemId[subitem.id];
@@ -728,7 +747,7 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
     final nuevoPrecio = _parsearPrecio(texto);
     if (nuevoPrecio == null) {
       controller.text = existente.precioUnitarioManual != null
-          ? _formatearCantidad(existente.precioUnitarioManual!)
+          ? _formatearPrecio(existente.precioUnitarioManual!)
           : '';
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -765,7 +784,7 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
       });
     } catch (e) {
       controller?.text = existente.precioUnitarioManual != null
-          ? _formatearCantidad(existente.precioUnitarioManual!)
+          ? _formatearPrecio(existente.precioUnitarioManual!)
           : '';
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -779,7 +798,7 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
   TextEditingController _controllerPrecioPara(SubitemCatalogo subitem) {
     return _preciosControllers.putIfAbsent(subitem.id, () {
       final precio = _obraSubitemsPorSubitemId[subitem.id]?.precioUnitarioManual;
-      return TextEditingController(text: precio != null ? _formatearCantidad(precio) : '');
+      return TextEditingController(text: precio != null ? _formatearPrecio(precio) : '');
     });
   }
 

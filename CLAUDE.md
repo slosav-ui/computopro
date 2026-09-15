@@ -46,6 +46,19 @@ firmados son sumas/restas de esos valores históricos (nada se recalcula a hoy).
 una moneda distinta a la de la obra — eso es el Nivel 2 del relevamiento
 (`docs/adicionales_quitas_demasias_diagnostico.md` §15), pospuesto a propósito.
 
+**Dos carpetas en Cómputo: lo importado y el catálogo** — `docs/carpetas_importado_y_catalogo_diseno_datos.md`.
+Diseño de datos cerrado el 2026-09-15, **sin implementar**. El presupuesto importado entra *tal cual*
+(sus rubros, su numeración, sus descripciones) en una carpeta propia de la obra, y el catálogo queda
+intacto al lado; se alterna entre las dos y no se mezclan. Nace de un hallazgo estructural: **`rubros`
+y `subitems` no tienen `obra_id`** — pertenecen al usuario, no a la obra, así que hoy todo lo que se
+importa o se crea cae en el catálogo personal y aparece en todas las obras de esa persona. Es la causa
+de raíz de las partidas duplicadas, y ninguna rutina de limpieza la resolvía. También reemplaza el
+intento de *mapear* cada partida del PDF contra el catálogo: un solo bloque de un presupuesto real se
+repartía en tres rubros distintos y 12 de 24 partidas no tenían equivalente oficial. De paso cierra un
+bug multi-inquilino vigente (`rubros_codigo_unique`, 0025, es único **global**: hoy dos PRO no pueden
+tener cada uno su rubro "21"). El corte en 6 tandas está en §7 del doc; la tanda 2 (`obra_id` + índices
++ RLS) es la única con riesgo real.
+
 **La documentación de la obra — tres circuitos** (los libros; el avance fotográfico con fecha y
 secuencia descargable; el archivo de documentación: remitos, facturas de corralón, presupuestos de
 subcontratos) — `docs/documentacion_obra_tres_circuitos.md`. Material que Seba tenía trabajado de la
