@@ -50,7 +50,10 @@ limpieza que buscaba por prefijo de código), pero el fondo es otro:
 numeración original, exactamente como vienen del Excel o el PDF. Textual: *"que se copie literal
 como viene del Excel"*.
 
-**Y el catálogo de la app queda intacto al lado.**
+**Y el catálogo de la app queda intacto al lado.** Los rubros que trae el importador van **a la
+carpeta de la obra, nunca al catálogo** — es la mitad que evita que se mezclen, y la que la tanda 5
+tiene que implementar: hoy `RevisarImportacionScreen` llama a `crearPersonalizado` sin `obraId`, así
+que sigue escribiendo en el catálogo personal.
 
 En la solapa Cómputo hay **dos carpetas**: los rubros importados por un lado, los del catálogo por
 otro. Se alterna con un toque y no se mezclan. Al crear un rubro o una partida nueva, se elige en
@@ -72,9 +75,19 @@ intacta — las APU siguen acompañando a los rubros y subítems del catálogo c
 
 Cerradas el 2026-09-15.
 
-**3.1 — Un rubro importado se puede adoptar al catálogo.** *"Si el usuario ve que le sirve siempre,
-tiene que poder quedárselo: importás, trabajás, y lo bueno se queda."* Por lo tanto **`obra_id` es
-editable, no inmutable**. Consecuencias en §6.1.
+**3.1 — Un rubro se copia de una carpeta a la otra, en los dos sentidos.** *"Si el usuario ve que le
+sirve siempre, tiene que poder quedárselo: importás, trabajás, y lo bueno se queda."*
+
+**Ampliada y corregida el 2026-09-15**: el primer borrador decía "adoptar", en una sola dirección y
+cambiando `obra_id`. Ahora son dos direcciones y es una copia:
+
+> *"Copiar, no mover — el original se queda donde está. Adoptar uno de la obra al catálogo para
+> reusarlo en otras obras, o bajar uno del catálogo a esta obra para modificarlo sin tocar el
+> original."* (Seba)
+
+**Eso cambia la mecánica**: no es editar `obra_id`, es **duplicar la fila con el `obra_id` nuevo**,
+con renumeración cuando el código choca. `obra_id` sigue siendo una columna editable en el schema,
+pero ningún flujo la edita. Consecuencias en §6.1.
 
 **3.2 — Las dos numeraciones conviven.** La carpeta importada mantiene su numeración original, que
 es el sentido de "tal cual viene". **La unicidad de código va por obra y por carpeta, no global.**
@@ -308,23 +321,67 @@ solapa APU no tiene por qué ver la carpeta importada — es justamente lo que �
 
 ## 6. Los flujos nuevos
 
-### 6.1 Adoptar un rubro al catálogo (decisión 3.1)
+### 6.1 Copiar un rubro de una carpeta a la otra (decisión 3.1)
 
-Adoptar = `obra_id = null` + `creador_usuario_id = <el usuario>`. Dos cosas que hay que resolver, y
-no son cosméticas:
+**Es una copia profunda: el rubro y sus subítems.** Un rubro sin partidas no sirve de nada, y
+dejarlas atrás rompería la regla de §4.2. Filas nuevas, ids nuevos; el original queda intacto.
 
-**a) El código puede chocar.** El rubro importado "1" convive con el oficial "1" mientras está en la
-carpeta de obra (§4.3), pero al adoptarlo pasa al catálogo personal, donde
-`rubros_codigo_propio_unique` puede rechazarlo. **La adopción tiene que renumerar**, proponiendo el
-siguiente libre del catálogo personal y mostrándolo antes de confirmar. Nunca renumerar en silencio:
-el número es lo que el usuario reconoce.
+**`obra_subitems` no se toca en ningún caso.** Las partidas cargadas siguen apuntando a los ids
+originales, así que **el monto de la obra no se mueve por copiar**. Es la propiedad que hace que
+esto sea seguro de ofrecer.
 
-**b) Los subítems van con él.** Adoptar un rubro adopta su contenido, o la regla de §4.2 se rompe.
-Queda por decidir si se puede adoptar un subítem suelto dejando el rubro en la obra — ver §8.
+**La renumeración, dirección por dirección.** Los índices de §4.3 no aprietan igual en las dos:
 
-**Lo que la adopción NO hace**: no toca `obra_subitems`. Las partidas de la obra siguen apuntando a
-los mismos `rubro_id`/`subitem_id`; lo único que cambió es en qué carpeta vive el catálogo. El monto
-de la obra no se mueve.
+| Al copiar | Índice que puede chocar | Cuándo |
+|---|---|---|
+| obra → catálogo, el rubro | `rubros_codigo_propio_unique (creador_usuario_id, codigo)` | solo si ese mismo usuario ya tiene un rubro propio con ese código. **No choca contra los oficiales**: el índice del catálogo oficial es otro |
+| obra → catálogo, los subítems | ninguno | los propios no tienen índice de unicidad (el de la 0016 es parcial sobre los oficiales) |
+| catálogo → obra, el rubro | `rubros_codigo_obra_unique (obra_id, codigo)` | si la carpeta ya tiene ese código — probable al bajar un oficial ("14") a una carpeta importada que numera igual |
+| catálogo → obra, los subítems | `subitems_codigo_obra_unique (obra_id, codigo)` | mismo caso, y es el más frecuente de los cuatro |
+
+Cuando choca se renumera al siguiente libre, **y se muestra antes de confirmar**. Nunca en
+silencio: el número es lo que el usuario reconoce.
+
+---
+
+Las dos direcciones **no tienen el mismo tamaño**, y por eso son dos tandas (§7).
+
+**Dirección A — obra → catálogo ("adoptar"). Es la simple.** Los rubros de una carpeta son siempre
+de precio manual (vienen del importador o del alta a mano, las dos ramas crean `usa_apu = false`),
+así que la copia es un `insert` de rubro + N subítems y nada más. Sin APU que arrastrar, sin cómputo
+que reacomodar.
+
+**Dirección B — catálogo → obra ("bajarlo para modificarlo"). Tiene dos nudos, y ninguno es obvio.**
+
+**b.1) ¿Qué pasa con el cómputo ya cargado?** Si la obra ya tiene partidas tildadas en el rubro del
+catálogo y se lo baja a la carpeta, quedan **dos rubros con el mismo nombre en la misma obra**: el
+del catálogo con el cómputo cargado, y la copia vacía. Inútil y confuso.
+
+Lo que haría falta para que la función sirva es que las partidas de *esta obra* pasen a apuntar a la
+copia — un `update` de `obra_subitems.rubro_id`/`subitem_id`, conservando el `obra_subitems.id`. Eso
+no toca el original (sigue en el catálogo, intacto para las demás obras) y **no invalida nada
+aguas abajo**: `certificado_subitems_avance` y `presupuesto_subitems_congelado` apuntan a
+`obra_subitems.id`, que no cambia, y ni la cantidad ni el precio se mueven.
+
+Pero es un efecto que la palabra "copiar" no anuncia, así que **tiene que decirlo el diálogo**:
+*"Esta obra tiene 6 partidas cargadas en este rubro. Pasan a la copia, con sus cantidades y su
+avance."*
+
+**b.2) ¿Y el APU?** Un rubro del catálogo puede tener `usa_apu = true` y sus subítems, composición
+cargada. Los subítems de la copia son filas nuevas **sin `apu_composiciones`**, así que si la copia
+naciera con `usa_apu = true` sus partidas quedarían sin precio — cero, en silencio. Tres salidas:
+
+1. **La copia nace de precio manual**, y al copiar se escribe en `precio_unitario_manual` el precio
+   final que el APU da hoy. Es congelar el precio al bajarlo, que es coherente con lo que el usuario
+   está pidiendo: sacar ese rubro de la cascada *para esta obra*. **Es la recomendada**: no arrastra
+   recetas, no toca la propiedad del APU de nadie, y no necesita la `0150`.
+2. **Copiar también `apu_composiciones`.** Mantiene la receta viva y editable, pero duplica el APU y
+   mete la pieza de lleno en la propiedad del APU por persona (`docs/etapa3_roles_permisos_diseno_datos.md`),
+   que es otra conversación.
+3. **No permitir bajar rubros con APU**, y decir por qué. La más chica y la más pobre: el rubro que
+   más ganas da de modificar es justamente uno de terminaciones, que usa APU.
+
+Sin decidir esto, la dirección B no se puede construir.
 
 ### 6.2 Reimportar reemplaza (decisión 3.3) — la parte con filo
 
@@ -391,10 +448,12 @@ el default mande siempre al catálogo personal, que es el comportamiento de hoy 
 |---|---|---|
 | 1 | **0149 — redondeo en los agregados.** Independiente de todo esto. | **APLICADA 2026-09-15** |
 | 2 | **`obra_id` en `rubros`/`subitems`** + índices de §4.3 + RLS de §4.4 + `obraId` en las consultas del repositorio. Sin UI, sin cambio visible. | **`0151` APLICADA y verificada 2026-09-15** |
-| 3 | **Las dos carpetas en Cómputo**: el toggle y elegir carpeta al crear (§6.3). | **hecha 2026-09-15, sin probar en emulador** |
+| 3 | **Las dos carpetas en Cómputo**: el toggle y elegir carpeta al crear (§6.3). | **hecha y verificada en emulador 2026-09-15** |
 | 4 | **Los agujeros de miembros**: carga de avance (§5.1) y nombres de rubro en el certificado. | por hacer |
 | 5 | **El importador escribe en la carpeta importada.** Acá se reescribe el seed de Galpón Mix. | por hacer |
-| 6 | **0150 — el precio manual gana sobre la cascada de APU.** | **escrita, marcada para no aplicar** |
+| 6 | **Copiar obra → catálogo** ("adoptar lo bueno de lo importado"). §6.1, dirección A. | por hacer |
+| 7 | **Copiar catálogo → obra** ("bajarlo para modificarlo"). §6.1, dirección B — necesita las dos decisiones de b.1 y b.2 antes de empezar. | por hacer |
+| 8 | **0150 — el precio manual gana sobre la cascada de APU.** | **escrita, marcada para no aplicar** |
 
 **La tanda 2 es la única con riesgo real; las demás son consecuencia.** Es también la que decide
 todo: si `obra_id` queda bien puesto, el resto es UI y consultas.
@@ -406,8 +465,18 @@ aparecen en la pantalla de carga de avance** (`carga_avance_rubros_screen.dart:1
 catálogo del usuario, §5.1). Con las carpetas vacías no se nota; con una obra cargada y compartida,
 sí. **La regla general: los agujeros que una pieza destapa se tapan antes de llenarla, no después.**
 
-La **adopción** (§6.1) y el **reemplazo al reimportar** (§6.2) no están en el corte a propósito:
-dependen de que exista la carpeta y merecen su propia tanda cada una, después de la 4.
+**Las dos direcciones de copia son dos tandas y no una** (6 y 7), y el motivo no es el tamaño del
+código —la mecánica de copiar es la misma— sino que la dirección B arrastra dos decisiones de
+producto que la A no tiene (§6.1, b.1 y b.2). Partirlas deja salir la mitad que ya está resuelta en
+vez de trabarla contra la que no.
+
+**Las dos van después de la 5** porque las dos necesitan una carpeta con algo adentro para probarse,
+y la carpeta la llena el importador. La 6 es además la que el usuario va a querer apenas importe
+algo que le sirva.
+
+El **reemplazo al reimportar** (§6.2) sigue fuera del corte: es parte de la 5 en su forma mínima
+(reimportar y que no se duplique) y merece tanda propia en su forma completa (conservar lo tildado,
+los tres casos de aviso).
 
 ---
 
@@ -415,12 +484,18 @@ dependen de que exista la carpeta y merecen su propia tanda cada una, después d
 
 Nada de esto bloquea la tanda 2.
 
-1. **¿Se puede adoptar un subítem suelto**, dejando su rubro en la carpeta de obra? §4.2 lo permite
-   al revés (subítem de obra bajo rubro de catálogo), no en esta dirección.
-2. **El presupuesto impreso**, cuando exista: con dos carpetas conviviendo, cómo se numeran los
+1. **Dirección B, b.1 — ¿el cómputo ya cargado pasa a la copia?** Mi recomendación es que sí, con el
+   diálogo diciéndolo. Sin esto la función no sirve: quedan dos rubros con el mismo nombre y las
+   partidas en el viejo.
+2. **Dirección B, b.2 — ¿qué pasa con el APU al bajar un rubro?** Mi recomendación es la salida 1
+   (la copia nace de precio manual, con el precio de hoy congelado en `precio_unitario_manual`).
+3. **¿Se puede copiar un subítem suelto**, sin su rubro? Las dos direcciones de §6.1 copian el rubro
+   entero. Copiar una partida sola al catálogo tiene sentido ("esta me sirve siempre") y no está
+   resuelto dónde cae si su rubro no existe del otro lado.
+4. **El presupuesto impreso**, cuando exista: con dos carpetas conviviendo, cómo se numeran los
    ítems en el papel. Es el motivo original del índice único global de la 0025, y sigue sin
    documento que lo obligue.
-3. **Las solapas vacías** (APU y Mat y MO en una obra 100% importada). Pieza chica y aparte: el
+5. **Las solapas vacías** (APU y Mat y MO en una obra 100% importada). Pieza chica y aparte: el
    vacío tiene que explicar por qué está vacío *en esta obra* en vez de dar una instrucción genérica
    imposible de seguir.
 
