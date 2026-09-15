@@ -1,5 +1,5 @@
 import 'dart:typed_data';
-import 'package:excel/excel.dart' as xlsx;
+import 'excel_lector_xlsx.dart';
 
 /// Parser determinístico de un Excel de cómputo, sin IA — corre en el cliente, no en un servidor.
 ///
@@ -52,8 +52,7 @@ class ExcelParser {
   /// subirlo a ningún lado), para que el usuario elija cuál leer (Capa 1, decisión D: la IA/el
   /// parser no adivina cuál es la relevante).
   static List<String> listarHojas(Uint8List bytes) {
-    final libro = xlsx.Excel.decodeBytes(bytes);
-    return libro.tables.keys.toList();
+    return LibroXlsx.desdeBytes(bytes).nombresDeHojas;
   }
 
   /// Filas reconocidas de las hojas elegidas, listas para insertar en `importaciones_items` (sin
@@ -63,16 +62,14 @@ class ExcelParser {
   /// fila sin descripción se salta (encabezado de sección, subtotal, fila vacía) sin cortar el
   /// resto -- el usuario decide qué hacer con lo que sí se extrajo en la pantalla de revisión.
   static List<Map<String, dynamic>> procesarFilas(Uint8List bytes, List<String> hojas) {
-    final libro = xlsx.Excel.decodeBytes(bytes);
+    final libro = LibroXlsx.desdeBytes(bytes);
     final filas = <Map<String, dynamic>>[];
     var orden = 0;
 
     for (final nombreHoja in hojas) {
-      final hoja = libro.tables[nombreHoja];
-      if (hoja == null) continue; // hoja elegida que ya no está en el archivo -- se ignora sola
-
+      // Hoja elegida que ya no está en el archivo: `filasDe` devuelve vacío y el for no itera.
       Map<String, int>? encabezados;
-      for (final fila in hoja.rows) {
+      for (final fila in libro.filasDe(nombreHoja)) {
         if (encabezados == null) {
           encabezados = _detectarEncabezados(fila);
           continue;
@@ -97,15 +94,15 @@ class ExcelParser {
     return filas;
   }
 
-  static xlsx.CellValue? _valorEn(List<xlsx.Data?> fila, int? indice) {
+  static Object? _valorEn(List<Object?> fila, int? indice) {
     if (indice == null || indice >= fila.length) return null;
-    return fila[indice]?.value;
+    return fila[indice];
   }
 
-  static Map<String, int>? _detectarEncabezados(List<xlsx.Data?> fila) {
+  static Map<String, int>? _detectarEncabezados(List<Object?> fila) {
     final mapa = <String, int>{};
     for (var i = 0; i < fila.length; i++) {
-      final texto = _normalizar(fila[i]?.value);
+      final texto = _normalizar(fila[i]);
       if (texto.isEmpty) continue;
       for (final campo in _campos.keys) {
         if (mapa.containsKey(campo)) continue;
@@ -122,16 +119,15 @@ class ExcelParser {
     return valor.toString().trim().toLowerCase();
   }
 
-  static String? _aTexto(xlsx.CellValue? valor) {
+  static String? _aTexto(Object? valor) {
     if (valor == null) return null;
     final texto = valor.toString().trim();
     return texto.isEmpty ? null : texto;
   }
 
-  static double? _aNumero(xlsx.CellValue? valor) {
+  static double? _aNumero(Object? valor) {
     if (valor == null) return null;
-    if (valor is xlsx.IntCellValue) return valor.value.toDouble();
-    if (valor is xlsx.DoubleCellValue) return valor.value;
+    if (valor is num) return valor.toDouble();
     final texto = valor.toString().trim();
     if (texto.isEmpty) return null;
     // Convención argentina (punto de miles, coma decimal) primero -- mismo criterio que

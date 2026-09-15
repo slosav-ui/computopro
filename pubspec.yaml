@@ -25,6 +25,12 @@ dependencies:
   # Excel/PDF": decisión explícita de no sumar infraestructura de servidor para esta ronda (sin IA,
   # sin límite de Free que aplicar, un solo desarrollador sosteniendo el proyecto).
   excel: ^4.0.6
+  # Para LEER un .xlsx no se usa `excel` (ver services/excel_lector_xlsx.dart): un .xlsx es un zip
+  # con XML adentro, y estas dos alcanzan. `excel` queda para escribirlos.
+  # Ya estaban resueltas como dependencias transitivas de `excel`; se declaran explícitas porque
+  # ahora hay código propio que las importa.
+  archive: ^3.6.1
+  xml: ^6.5.0
 
   # Libro de obra, tanda 3 (docs/libro_obra_horizonte.md §D decisión 3): adjuntar una foto y una
   # nota de voz a una entrada. Los tres son plugins NATIVOS -- piden permisos en el manifest de
