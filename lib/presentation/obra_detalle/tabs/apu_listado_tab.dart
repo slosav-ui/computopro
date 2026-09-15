@@ -7,7 +7,10 @@ import '../../../services/apu_composiciones_repository.dart';
 import '../../../services/obra_subitems_repository.dart';
 import '../../../services/rubros_repository.dart';
 import '../../../services/subitems_repository.dart';
+import '../../../services/auth_service.dart';
+import '../../../services/perfil_repository.dart';
 import '../screens/composicion_apu_screen.dart';
+import '../widgets/partidas_atenuadas.dart';
 
 /// Listado de la Solapa APU — "cuánto cuesta". Corrige la decisión original de esta pieza (ver
 /// `docs/factor_k_apu_decisiones.md`, sección agregada 2026-09-07): se había decidido no armar un
@@ -49,11 +52,19 @@ class _ApuListadoTabState extends State<ApuListadoTab> {
   final SubitemsRepository _subitemsRepository = SubitemsRepository();
   final RubrosRepository _rubrosRepository = RubrosRepository();
   final ApuComposicionesRepository _apuComposicionesRepository = ApuComposicionesRepository();
+  final PerfilRepository _perfilRepository = PerfilRepository();
+  final AuthService _authService = AuthService();
 
   bool _cargando = true;
   String? _error;
   List<_GrupoRubro> _grupos = [];
   Map<String, ApuPrecioSubitem> _precios = {};
+
+  /// Las tildadas que NO tienen composición, para el vacío explicado (ver `partidas_atenuadas.dart`).
+  /// Se calculan en la misma carga: los datos ya están acá y pedirlos de nuevo sería un viaje al
+  /// servidor por nada.
+  List<GrupoAtenuado> _atenuadas = [];
+  bool _esPro = true; // fail-safe: sin dato, no se muestra la nota PRO
 
   @override
   void initState() {
@@ -77,15 +88,25 @@ class _ApuListadoTabState extends State<ApuListadoTab> {
         setState(() {
           _grupos = [];
           _precios = {};
+          _atenuadas = [];
           _cargando = false;
         });
         return;
       }
 
+      final usuarioId = _authService.usuarioActual?.id;
       final subitemsFuture = _subitemsRepository.getPorIds(subitemIds);
-      final rubrosFuture = _rubrosRepository.getCatalogoOficial();
+      // `getCatalogoCompleto` con `obraId` y ya no `getCatalogoOficial`: para LISTAR alcanzaba con
+      // los oficiales (solo ellos tienen composición), pero el vacío explicado necesita nombrar el
+      // rubro de cada partida atenuada -- y en una obra traída de una planilla esos rubros están en
+      // la carpeta. Sin esto, la obra importada seguiría mostrando un vacío mudo.
+      final rubrosFuture = usuarioId == null
+          ? _rubrosRepository.getCatalogoOficial()
+          : _rubrosRepository.getCatalogoCompleto(usuarioId, obraId: widget.obraId);
+      final esProFuture = usuarioId == null ? Future.value(true) : _perfilRepository.esPro(usuarioId);
       final subitems = await subitemsFuture;
       final rubros = await rubrosFuture;
+      final esPro = await esProFuture;
       final rubrosPorId = {for (final r in rubros) r.id: r};
 
       // Solo oficiales (los propios siempre son precio manual, nunca composición) de un rubro que
@@ -127,6 +148,13 @@ class _ApuListadoTabState extends State<ApuListadoTab> {
       setState(() {
         _grupos = grupos;
         _precios = precios;
+        // Todo lo tildado que no quedó listado: las de rubros de precio manual, las propias y las
+        // de la carpeta importada. Ninguna tiene composición, y por eso ninguna tiene precio acá.
+        _atenuadas = agruparPorRubro(
+          subitems.where((s) => !conComposicion.contains(s.id)).toList(),
+          rubros,
+        );
+        _esPro = esPro;
         _cargando = false;
       });
     } catch (e) {
@@ -183,22 +211,21 @@ class _ApuListadoTabState extends State<ApuListadoTab> {
         ),
       );
     }
+    // El vacío, con la estructura de la obra a la vista en gris (ver `partidas_atenuadas.dart`).
+    // Antes era un cartel suelto que además daba una instrucción imposible: "tildá partidas de un
+    // rubro con composición de APU", en una obra donde todo está tildado y nada tiene composición.
     if (_grupos.isEmpty) {
-      return RefreshIndicator(
+      return ListaPartidasAtenuadas(
+        mensaje: _atenuadas.isEmpty
+            ? 'Esta obra todavía no tiene partidas tildadas. Se eligen en la solapa Cómputo y '
+                'aparecen acá con su precio cuando se arman desde sus insumos.'
+            : 'Estas son las partidas de la obra. El análisis de precios de una partida aparece '
+                'acá cuando se arma desde sus insumos: materiales, mano de obra y rendimientos. '
+                'Las que tienen un precio cerrado a mano —como las que vienen de un presupuesto '
+                'importado— no tienen composición que desglosar.',
+        notaPro: _esPro ? null : 'Armar la composición de una partida es una función PRO.',
+        grupos: _atenuadas,
         onRefresh: _cargarDatos,
-        child: ListView(
-          children: const [
-            Padding(
-              padding: EdgeInsets.all(24),
-              child: Text(
-                'Todavía no hay partidas con precio de APU cargado. Tildá partidas en la solapa '
-                'Cómputo (de un rubro con composición de APU) para que aparezcan acá.',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.black54, fontSize: 13),
-              ),
-            ),
-          ],
-        ),
       );
     }
     return RefreshIndicator(

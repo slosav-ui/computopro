@@ -526,13 +526,54 @@ Nada de esto bloquea la tanda 2.
 3. **El presupuesto impreso**, cuando exista: con dos carpetas conviviendo, cómo se numeran los
    ítems en el papel. Es el motivo original del índice único global de la 0025, y sigue sin
    documento que lo obligue.
-4. **Las solapas vacías** (APU y Mat y MO en una obra 100% importada). Pieza chica y aparte: el
-   vacío tiene que explicar por qué está vacío *en esta obra* en vez de dar una instrucción genérica
-   imposible de seguir.
+---
+
+## 9. Las solapas vacías — resuelto 2026-09-15
+
+Era el punto 5 de la primera lista de la pieza y quedó cerrado con una corrección de Seba que vale
+anotar, porque la primera propuesta se quedaba corta.
+
+**Lo que había:** APU y Mat y MO, en una obra 100% importada, mostraban un cartel suelto. Y el
+cartel daba una instrucción imposible de seguir — *"tildá subítems con APU en el Cómputo"* — en una
+obra donde **todo está tildado y ninguna partida tiene composición**. Explicaba la mecánica de la
+app en vez de explicar esta obra.
+
+**Lo primero que propuse fue cambiar el texto del cartel. No alcanzaba:**
+
+> *"En la solapa APU las partidas tienen que verse igual, en gris o atenuadas, con el cartel
+> explicando que el análisis de precios aparece cuando esa partida se arma desde sus insumos. (...)
+> Una solapa vacía parece rota; una con las partidas a la vista en gris se entiende sola y además
+> muestra qué va a haber ahí."* (Seba)
+
+**El criterio, que es general y no de estas dos pantallas:** un vacío no se arregla explicándolo
+mejor, se arregla **mostrando la estructura de lo que va a haber ahí**. El texto dice por qué falta;
+la estructura en gris dice qué es lo que falta, y de paso confirma que la app conoce la obra.
+
+Implementado en `lib/presentation/obra_detalle/widgets/partidas_atenuadas.dart`, en dos piezas
+porque las dos solapas llegan con distinto equipaje:
+
+- `ListaPartidasAtenuadas` — presentacional, para la solapa APU, que ya tiene las partidas y los
+  rubros en memoria;
+- `PartidasAtenuadasDeLaObra` — se trae los datos sola, para Mat y MO, cuyo consolidado son insumos
+  y no partidas.
+
+Tres detalles con su motivo:
+
+- **Las partidas van inertes, no tocables.** No hay a dónde ir; un gris que se toca y no hace nada
+  es peor que un gris que se ve inerte.
+- **La nota de función PRO aparece solo para un usuario Free.** A un PRO decirle que algo es PRO es
+  ruido. Lo que es PRO es *armar* la composición — el listado y el precio unitario los ve Free
+  igual, que es el criterio que ya regía en `ComposicionApuScreen`.
+- **Una obra sin ninguna partida tildada muestra otro mensaje.** Ahí el vacío no es explicable: es
+  una obra sin cómputo, y mandar a Cómputo sí corresponde.
+
+Y una dependencia que no era obvia: las dos solapas tuvieron que pasar de `getCatalogoOficial()` a
+`getCatalogoCompleto(usuarioId, obraId:)`. Sin eso los rubros de la carpeta no resuelven y **la obra
+importada seguiría mostrando un vacío mudo** — justo el caso que esto viene a resolver.
 
 ---
 
-## 9. Verificación de la tanda 2
+## 10. Verificación de la tanda 2
 
 Lo que tiene que dar antes de seguir a la 3:
 

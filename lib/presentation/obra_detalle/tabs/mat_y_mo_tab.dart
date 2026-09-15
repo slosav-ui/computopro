@@ -8,6 +8,7 @@ import '../../../services/auth_service.dart';
 import '../../../services/obra_insumos_repository.dart';
 import '../../../services/obra_presupuesto_config_repository.dart';
 import '../../../services/valor_hora_mano_obra_repository.dart';
+import '../widgets/partidas_atenuadas.dart';
 import 'cartel_costo_mano_obra.dart';
 import 'panel_valor_hora_mano_obra.dart';
 
@@ -242,15 +243,38 @@ class _MatYMoTabState extends State<MatYMoTab> {
       );
     }
 
+    // Sin insumos: la solapa muestra la estructura de la obra en gris en vez de un cartel suelto
+    // (ver `partidas_atenuadas.dart`). El cartel que había daba una instrucción imposible de seguir
+    // -- "tildá subítems con APU en el Cómputo" -- en una obra donde todo está tildado y ninguna
+    // partida tiene composición, que es el caso de cualquier obra traída de una planilla.
+    //
+    // Se sale ACÁ y no se arma la tarjeta de "Consolidado de Insumos" con secciones vacías: un
+    // encabezado sobre una lista vacía es lo que hacía parecer rota la pantalla.
+    //
+    // A diferencia de la solapa APU, esta se trae los datos sola: su consolidado son insumos, no
+    // partidas -- acá no hay nada cargado que reusar.
+    if (_insumos.isEmpty) {
+      return PartidasAtenuadasDeLaObra(
+        obraId: widget.obraId,
+        mensaje: 'Estas son las partidas de la obra. Los materiales y la mano de obra se '
+            'consolidan acá a partir de la composición de cada partida: qué insumos lleva y en qué '
+            'rendimiento. Las que tienen un precio cerrado a mano —como las que vienen de un '
+            'presupuesto importado— no aportan insumos, porque no tienen composición.',
+        mensajeSinPartidas: 'Esta obra todavía no tiene partidas tildadas. Se eligen en la solapa '
+            'Cómputo, y los insumos aparecen acá cuando esas partidas se arman desde su '
+            'composición.',
+        notaPro: 'Armar la composición de una partida es una función PRO.',
+      );
+    }
+
     // Separado a propósito: sin precio y con cantidad > 0 frena un cálculo real; sin precio y con
     // cantidad 0 todavía no incide en nada (subitem tildado sin cantidad cargada todavía). Ver
     // memoria "mat_y_mo_fuentes_precio" — mezclar los dos en un solo número no es una señal
     // honesta de cuánto falta de verdad.
     final sinPrecioIncide = _insumos.where((i) => !i.tienePrecio && i.cantidadTotal > 0).length;
     final sinPrecioPendiente = _insumos.where((i) => !i.tienePrecio && i.cantidadTotal == 0).length;
-    final String subtitulo = _insumos.isEmpty
-        ? 'Todavía no hay insumos: tildá subítems con APU en el Cómputo para verlos acá.'
-        : (sinPrecioIncide == 0 && sinPrecioPendiente == 0)
+    // Sin la rama de lista vacía: a esta altura `_insumos` nunca está vacía (se sale arriba).
+    final String subtitulo = (sinPrecioIncide == 0 && sinPrecioPendiente == 0)
             ? '${_insumos.length} insumos, según las composiciones de APU tildadas en esta obra.'
             : '${_insumos.length} insumos — $sinPrecioIncide sin precio (frenan el cálculo)'
                 '${sinPrecioPendiente > 0 ? ' · $sinPrecioPendiente sin precio (cantidad en 0, todavía no cargada)' : ''}.';
@@ -269,30 +293,22 @@ class _MatYMoTabState extends State<MatYMoTab> {
             ),
           ),
           const SizedBox(height: 8),
-          if (_insumos.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 32),
-              child: Center(
-                child: Text('Sin insumos todavía.', style: TextStyle(color: Colors.black45, fontSize: 12)),
+          for (final seccion in _secciones) ...[
+            // Cartel de costo de mano de obra + tilde de cargas sociales (Paso 5, tanda 1) —
+            // arriba de la sección, solo cuando esa sección va a tener filas (mismo criterio
+            // que _buildSeccion: sin banner sobre una lista vacía). onCambio sigue apuntando a
+            // _cargarConsolidado, que ahora también recarga config y valor hora por categoría —
+            // el cartel no se tocó, solo lo que ese callback hace por dentro.
+            if (seccion.titulo == 'Mano de obra' &&
+                _insumos.any(seccion.predicado) &&
+                widget.puedeVerMontosYAPU)
+              CartelCostoManoObra(
+                obraId: widget.obraId,
+                onCambio: _cargarConsolidado,
+                puedeEditar: widget.puedeEditarPrecios,
               ),
-            )
-          else
-            for (final seccion in _secciones) ...[
-              // Cartel de costo de mano de obra + tilde de cargas sociales (Paso 5, tanda 1) —
-              // arriba de la sección, solo cuando esa sección va a tener filas (mismo criterio
-              // que _buildSeccion: sin banner sobre una lista vacía). onCambio sigue apuntando a
-              // _cargarConsolidado, que ahora también recarga config y valor hora por categoría —
-              // el cartel no se tocó, solo lo que ese callback hace por dentro.
-              if (seccion.titulo == 'Mano de obra' &&
-                  _insumos.any(seccion.predicado) &&
-                  widget.puedeVerMontosYAPU)
-                CartelCostoManoObra(
-                  obraId: widget.obraId,
-                  onCambio: _cargarConsolidado,
-                  puedeEditar: widget.puedeEditarPrecios,
-                ),
-              ..._buildSeccion(seccion),
-            ],
+            ..._buildSeccion(seccion),
+          ],
         ],
       ),
     );
