@@ -1068,6 +1068,28 @@ al usuario.
 nullable/estimación sin obra, fuzzy-matching automático del mapeo, conversión de moneda, límite de
 documentos/mes (ya no aplica, el gate es PRO exclusivo).
 
+**Lector de .xlsx propio (2026-09-15, `2a0777e`)**: leer la planilla ya no pasa por `package:excel`
+sino por `lib/services/excel_lector_xlsx.dart`, escrito acá. Dos planillas reales de arquitectos no
+abrían por cosas que el importador no necesita mirar (formatos de moneda, el ancho declarado de la
+hoja). Criterio de producto detrás, de Seba: *"el usuario sube la planilla tal como la tiene y la
+app la tiene que abrir. No se le pide que la modifique ni que pruebe con otra."* Las dos planillas
+viven en `docs/planillas_prueba/` y `test/excel_parser_planillas_test.dart` las abre en cada corrida
+— no son un diagnóstico de una vez, son la red para que no se vuelva a romper en silencio.
+
+**Cinco correcciones sobre lo que se vio importando de verdad (2026-09-15, `0af19f6`)**: la solapa
+se refresca sola al aplicar (iba con `pushReplacement`, que cerraba la ruta anterior en el acto y
+hacía refrescar antes de tiempo); cantidades y precios entran redondeados a dos decimales, con la
+excepción de no dejar en cero una cantidad chica real; el nombre del rubro sale de la fila de
+sección de la planilla y no del número de la partida; se reconocen las variantes reales de
+encabezado ("Un.", "Cant. Total", "Precio uni Mano de Obra") y se distinguen los totales del precio
+unitario; y la unidad sale de la columna de la planilla en vez de pedírsela al usuario.
+
+**Tres mejoras propuestas y no construidas** — `docs/importador_tres_mejoras_propuesta.md`
+(2026-09-15): crear las partidas de una sola vez en vez de confirmar una por una; sugerir la unidad
+según la descripción cuando la planilla no la trae; y actualizar precios viejos con el índice CAC.
+La tercera está bloqueada por un trabajo de datos, no de código: `indices_cac` tiene solo enero a
+julio de 2026, y un presupuesto de 2021 necesita la serie histórica cargada y verificada.
+
 **Corrección de arquitectura sobre la primera versión de esta pieza (2026-09-07): sin Edge
 Function.** La primera versión escrita acá usaba una Edge Function de Supabase para leer el Excel
 del lado servidor, siguiendo el mecanismo que Capa 1 §3.B ya había fijado ("Edge Function, nunca
