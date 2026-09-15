@@ -225,8 +225,8 @@ class _CatalogoConRecetasState extends State<CatalogoConRecetas> {
                 const SizedBox(height: 6),
                 Text(
                   propias > 0
-                      ? '$total partidas con receta, $propias con tu versión.'
-                      : '$total partidas con receta.',
+                      ? '$total partidas con análisis, $propias con tu versión.'
+                      : '$total partidas con análisis.',
                   style: const TextStyle(fontSize: 11, color: Colors.black54),
                 ),
                 if (!_esPro) ...[
@@ -310,7 +310,7 @@ class _CatalogoConRecetasState extends State<CatalogoConRecetas> {
                 borderRadius: BorderRadius.circular(4),
               ),
               child: Text(
-                'tu receta',
+                'tu análisis',
                 style: TextStyle(fontSize: 9, color: Colors.amber[900], fontWeight: FontWeight.w600),
               ),
             ),

@@ -196,10 +196,10 @@ class _ApuListadoTabState extends State<ApuListadoTab> {
     // deja de estar vacío y se muestra el listado real, con precio y editable.
     if (_grupos.isEmpty) {
       return const CatalogoConRecetas(
-        mensaje: 'Estas son las partidas del catálogo que ya tienen su receta cargada: qué insumos '
-            'llevan y en qué rendimiento. Tildá una en la solapa Cómputo y aparece acá con su '
-            'precio, desglosado paso a paso.',
-        notaPro: 'Editar una receta y crear las tuyas es una función PRO.',
+        mensaje: 'Estas son las partidas del catálogo que ya tienen su análisis cargado: qué '
+            'insumos llevan y en qué rendimiento. Tildá una en la solapa Cómputo y aparece acá con '
+            'su precio, desglosado paso a paso.',
+        notaPro: 'Editar el análisis de una partida y crear los tuyos es una función PRO.',
       );
     }
 

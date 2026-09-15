@@ -559,9 +559,31 @@ que nunca van a tener composición, porque su precio ya viene cerrado del presup
 era peor todavía — **los insumos salen de las recetas, no de un precio cerrado**, así que apuntaba
 al lado contrario del que genera insumos.
 
-**Lo que se muestra:** el catálogo de partidas que tienen receta cargada, oficiales y propias del
-usuario, agrupado por rubro y en gris. Implementado en
-`lib/presentation/obra_detalle/widgets/catalogo_con_recetas.dart`, usado por las dos solapas.
+**Tercera corrección, y es la que fija el criterio fino: cada solapa muestra SU materia prima.**
+Puse el mismo listado de partidas en las dos. Seba:
+
+> *"Mat y MO está mostrando las partidas de APU. Ahí no van partidas. Tienen que aparecer los
+> materiales y la mano de obra del catálogo en gris — los 174 insumos con sus precios de los
+> corralones, y las categorías de mano de obra con su valor hora. Eso es lo que muestra el potencial
+> de esa solapa: el que la abre tiene que ver que la app trae precios reales de la zona."*
+
+"Mostrar el potencial" no es un cartel reutilizable: **el potencial de cada pantalla es distinto.**
+El de APU son las partidas con su análisis; el de Mat y MO son los precios reales de la zona que la
+app ya tiene cargados. Poner partidas en Mat y MO repetía la solapa de al lado y no decía nada del
+valor propio de esa.
+
+**Lo que se muestra, entonces:**
+
+- **APU** — las partidas del catálogo que tienen análisis cargado, oficiales y propias del usuario,
+  agrupadas por rubro (`widgets/catalogo_con_recetas.dart`).
+- **Mat y MO** — los materiales del catálogo con su precio promedio de corralón, y las categorías
+  UOCRA con su valor hora de esta obra (`widgets/catalogo_de_insumos.dart`).
+
+**Los precios necesitaron una migración, y el motivo no era obvio:** `precios_select` (0013) es
+`is_corralon_owner(corralon_id)`, o sea que cada corralón ve solo los suyos. Consultar `precios`
+desde la app devuelve **cero filas, sin error** — parecería que no hay precios cargados. La `0152`
+agrega `catalogo_insumos_con_precio()`, `security definer`, que devuelve promedio y cantidad de
+precios por insumo, nunca el precio de un corralón puntual.
 
 **Cuándo desaparece: solo, y sin lógica nueva.** Las dos solapas muestran esto cuando su listado
 real está vacío. En cuanto el usuario tilda en Cómputo una partida del catálogo con receta, esa
@@ -574,10 +596,26 @@ Tres detalles con su motivo:
 - **La nota de función PRO aparece solo para un usuario Free.** Lo que es PRO es *editar* una receta
   y crear las propias; el listado y el precio unitario los ve Free igual, que es el criterio que ya
   regía en `ComposicionApuScreen`.
-- **Las recetas propias se marcan con un chip "tu receta"**, y el cartel cuenta cuántas son. Una
+- **Las recetas propias se marcan con un chip "tu análisis"**, y el cartel cuenta cuántas son. Una
   receta propia es un clon por persona de la oficial (`0071_personalizacion_apu_pro.sql`), así que
   vive sobre el mismo subítem oficial: sin el chip, lo que el usuario ajustó se vería igual que lo
   que nunca tocó.
+- **En Mat y MO los precios se ocultan para un rol sin montos** (`puedeVerMontosYAPU`), igual que en
+  el resto de la solapa: quedan los nombres y las unidades. Ocultos, no deshabilitados.
+
+### 9.2 "Receta" no va en la interfaz
+
+Corrección de Seba en la misma tanda, y es de vocabulario pero vale escribirla porque **ya se había
+corregido una vez y volvió**: *"receta" es jerga de cocina, no de presupuestos.* El término del
+rubro es **análisis**, que además coincide con el nombre de la solapa (Análisis de Precios).
+
+Rige para **todo texto visible al usuario**, no solo el cartel nuevo. En comentarios de código,
+nombres de clase, archivos y funciones "receta" se puede quedar: `CatalogoConRecetas`,
+`restaurar_receta_oficial_apu` y `getSubitemIdsConRecetaPropia` no los ve nadie.
+
+Barrido hecho sobre los literales de string de todo `lib/`: 0 casos restantes. Los únicos que había
+los había introducido yo en esta misma tanda — el resto de la app ya decía "APU" y "Volver a la
+oficial".
 
 ### 9.1 Cómo crece el catálogo — criterio anotado, sin construir
 

@@ -8,7 +8,7 @@ import '../../../services/auth_service.dart';
 import '../../../services/obra_insumos_repository.dart';
 import '../../../services/obra_presupuesto_config_repository.dart';
 import '../../../services/valor_hora_mano_obra_repository.dart';
-import '../widgets/catalogo_con_recetas.dart';
+import '../widgets/catalogo_de_insumos.dart';
 import 'cartel_costo_mano_obra.dart';
 import 'panel_valor_hora_mano_obra.dart';
 
@@ -243,20 +243,28 @@ class _MatYMoTabState extends State<MatYMoTab> {
       );
     }
 
-    // Sin insumos: la solapa muestra EL CATÁLOGO con recetas en gris, no esta obra (ver
-    // `catalogo_con_recetas.dart`). Acá el argumento es más fuerte todavía que en APU: **los
-    // insumos salen de la receta de cada partida**, así que mostrar las partidas de un presupuesto
-    // importado -- que tienen precio cerrado y ninguna receta -- apuntaba al lado contrario del que
-    // genera insumos.
+    // Sin insumos: la solapa muestra EL CATÁLOGO DE INSUMOS en gris -- materiales con su precio de
+    // corralón y categorías de mano de obra con su valor hora (ver `catalogo_de_insumos.dart`).
+    //
+    // La versión anterior mostraba acá las partidas del catálogo, igual que la solapa APU, y Seba
+    // lo corrigió: **en Mat y MO no van partidas**. Cada solapa tiene que mostrar SU materia prima,
+    // y la de esta es qué se compra y a quién se le paga. Mostrar partidas repetía la solapa de al
+    // lado y no decía nada del valor propio de esta -- que la app trae precios reales de la zona.
+    //
+    // `_valorHoraPorCategoria` ya está cargado por `_cargarConsolidado` aunque no haya un solo
+    // insumo: son tres consultas independientes. Se pasa por parámetro en vez de que el widget lo
+    // pida de nuevo.
     //
     // Se sale ACÁ y no se arma la tarjeta de "Consolidado de Insumos" con secciones vacías: un
     // encabezado sobre una lista vacía es parte de lo que hacía parecer rota la pantalla.
     if (_insumos.isEmpty) {
-      return const CatalogoConRecetas(
-        mensaje: 'Los materiales y la mano de obra salen de la receta de cada partida. Estas son '
-            'las del catálogo que ya la tienen cargada: tildá una en la solapa Cómputo y sus '
-            'insumos aparecen acá, con cantidades y precios.',
-        notaPro: 'Editar una receta y crear las tuyas es una función PRO.',
+      return CatalogoDeInsumos(
+        mensaje: 'Los materiales y la mano de obra salen del análisis de cada partida. Tildá una '
+            'del catálogo en la solapa Cómputo y sus insumos aparecen acá, con cantidades y '
+            'precios.',
+        notaPro: 'Editar el análisis de una partida y crear los tuyos es una función PRO.',
+        puedeVerMontos: widget.puedeVerMontosYAPU,
+        valorHoraPorCategoria: _valorHoraPorCategoria,
       );
     }
 
