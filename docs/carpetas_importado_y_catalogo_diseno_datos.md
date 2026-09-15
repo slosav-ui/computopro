@@ -575,9 +575,36 @@ valor propio de esa.
 **Lo que se muestra, entonces:**
 
 - **APU** — las partidas del catálogo que tienen análisis cargado, oficiales y propias del usuario,
-  agrupadas por rubro (`widgets/catalogo_con_recetas.dart`).
+  agrupadas por rubro.
 - **Mat y MO** — los materiales del catálogo con su precio promedio de corralón, y las categorías
-  UOCRA con su valor hora de esta obra (`widgets/catalogo_de_insumos.dart`).
+  UOCRA con su valor hora de esta obra.
+
+**Cuarta corrección: la pantalla real atenuada, no una vitrina aparte.** Las dos primeras versiones
+dibujaban tarjetas grises propias, con su layout y su tipografía. Seba: *"la pantalla real atenuada,
+no una vitrina aparte"*. La diferencia no es estética:
+
+1. **Lo que se ve es lo que va a haber.** Una vitrina con diseño propio muestra una aproximación de
+   la pantalla; la pantalla atenuada muestra la pantalla. Cuando el usuario tilda su primera
+   partida, lo que aparece es exactamente lo que estaba viendo, ahora en color y tocable.
+2. **No hay un segundo layout que mantener.** Un diseño paralelo se desactualiza solo: el día que la
+   fila real gana una columna, la vitrina queda vieja y nadie se entera, porque la pantalla vacía es
+   justamente la que nadie mira.
+
+Implementación: cada solapa carga el catálogo en **su propio estado** (`_grupos` en APU, `_insumos`
+en Mat y MO) con un flag `_vitrina`, y envuelve su árbol de siempre en `VistaPreviaAtenuada`
+(`widgets/vista_previa_atenuada.dart`), que solo pone el cartel arriba y aplica `Opacity` +
+`IgnorePointer`. **Las dos capas, no una**: atenuar sin bloquear deja botones grises que se tocan y
+no hacen nada; bloquear sin atenuar deja una pantalla que parece activa y no responde. Cualquiera de
+las dos sola se lee como una pantalla rota, que es de lo que veníamos escapando.
+
+Dos adaptaciones mínimas, cada una con su motivo:
+
+- **En APU la columna de precio queda vacía**, no en "Incompleto". Una partida del catálogo que no
+  está en la obra no tiene precio acá porque no fue tildada, no porque le falte algo: 97 renglones
+  en naranja diciendo "Incompleto" sería lo contrario de mostrar lo que la app puede hacer.
+- **En Mat y MO no se muestra la cantidad.** "Cantidad necesaria: 0" repetido 174 veces es ruido, no
+  información. El resto de la tarjeta —ícono, nombre, precio, marca de precio fijado a mano— queda
+  igual.
 
 **Los precios necesitaron una migración, y el motivo no era obvio:** `precios_select` (0013) es
 `is_corralon_owner(corralon_id)`, o sea que cada corralón ve solo los suyos. Consultar `precios`

@@ -2,13 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/utils/parser_numero_ar.dart';
 import '../../../data/models/insumo_consolidado_obra.dart';
+import '../../../data/models/insumo_del_catalogo.dart';
 import '../../../data/models/obra_presupuesto_config.dart';
 import '../../../data/models/valor_hora_categoria.dart';
 import '../../../services/auth_service.dart';
 import '../../../services/obra_insumos_repository.dart';
 import '../../../services/obra_presupuesto_config_repository.dart';
 import '../../../services/valor_hora_mano_obra_repository.dart';
-import '../widgets/catalogo_de_insumos.dart';
+import '../../../services/insumos_repository.dart';
+import '../widgets/vista_previa_atenuada.dart';
 import 'cartel_costo_mano_obra.dart';
 import 'panel_valor_hora_mano_obra.dart';
 
@@ -62,6 +64,7 @@ class _MatYMoTabState extends State<MatYMoTab> {
   final ObraInsumosRepository _obraInsumosRepository = ObraInsumosRepository();
   final ObraPresupuestoConfigRepository _configRepository = ObraPresupuestoConfigRepository();
   final ValorHoraManoObraRepository _valorHoraRepository = ValorHoraManoObraRepository();
+  final InsumosRepository _insumosRepository = InsumosRepository();
   final AuthService _authService = AuthService();
 
   // Sin sección propia de Equipos todavía (mismo criterio que el badge de presupuesto en firme:
@@ -73,6 +76,12 @@ class _MatYMoTabState extends State<MatYMoTab> {
   ];
 
   List<InsumoConsolidadoObra> _insumos = [];
+
+  /// `true` cuando lo que se está listando NO son los insumos de esta obra sino el catálogo, para
+  /// mostrar la pantalla atenuada (ver `vista_previa_atenuada.dart`). Las secciones y las tarjetas
+  /// son las mismas -- lo único que cambia es de dónde salieron los insumos y que la tarjeta no
+  /// muestra la cantidad, porque una obra sin nada tildado no necesita ninguna.
+  bool _vitrina = false;
   ObraPresupuestoConfig? _config;
   // Paso 5, tanda 2: valor hora por categoría UOCRA, para la línea "Volver" de cada fila con
   // override — ver docs/costo_mano_de_obra_decisiones.md §15. Independiente de la carga que hace
@@ -159,9 +168,16 @@ class _MatYMoTabState extends State<MatYMoTab> {
       final insumos = await insumosFuture;
       final config = await configFuture;
       final valorHora = await valorHoraFuture;
+      // Sin insumos propios se lista el catálogo, con la pantalla atenuada. Se resuelve acá y no en
+      // un widget aparte para que lo que se muestra sea ESTA pantalla, con las mismas secciones y
+      // las mismas tarjetas.
+      final vitrina = insumos.isEmpty;
+      final insumosFinales = vitrina ? await _insumosDelCatalogo(valorHora) : insumos;
+
       if (!mounted) return;
       setState(() {
-        _insumos = insumos;
+        _insumos = insumosFinales;
+        _vitrina = vitrina;
         _config = config;
         _valorHoraPorCategoria = {for (final v in valorHora) v.categoriaUocra: v};
         _cargando = false;
@@ -243,44 +259,22 @@ class _MatYMoTabState extends State<MatYMoTab> {
       );
     }
 
-    // Sin insumos: la solapa muestra EL CATÁLOGO DE INSUMOS en gris -- materiales con su precio de
-    // corralón y categorías de mano de obra con su valor hora (ver `catalogo_de_insumos.dart`).
-    //
-    // La versión anterior mostraba acá las partidas del catálogo, igual que la solapa APU, y Seba
-    // lo corrigió: **en Mat y MO no van partidas**. Cada solapa tiene que mostrar SU materia prima,
-    // y la de esta es qué se compra y a quién se le paga. Mostrar partidas repetía la solapa de al
-    // lado y no decía nada del valor propio de esta -- que la app trae precios reales de la zona.
-    //
-    // `_valorHoraPorCategoria` ya está cargado por `_cargarConsolidado` aunque no haya un solo
-    // insumo: son tres consultas independientes. Se pasa por parámetro en vez de que el widget lo
-    // pida de nuevo.
-    //
-    // Se sale ACÁ y no se arma la tarjeta de "Consolidado de Insumos" con secciones vacías: un
-    // encabezado sobre una lista vacía es parte de lo que hacía parecer rota la pantalla.
-    if (_insumos.isEmpty) {
-      return CatalogoDeInsumos(
-        mensaje: 'Los materiales y la mano de obra salen del análisis de cada partida. Tildá una '
-            'del catálogo en la solapa Cómputo y sus insumos aparecen acá, con cantidades y '
-            'precios.',
-        notaPro: 'Editar el análisis de una partida y crear los tuyos es una función PRO.',
-        puedeVerMontos: widget.puedeVerMontosYAPU,
-        valorHoraPorCategoria: _valorHoraPorCategoria,
-      );
-    }
-
     // Separado a propósito: sin precio y con cantidad > 0 frena un cálculo real; sin precio y con
     // cantidad 0 todavía no incide en nada (subitem tildado sin cantidad cargada todavía). Ver
     // memoria "mat_y_mo_fuentes_precio" — mezclar los dos en un solo número no es una señal
     // honesta de cuánto falta de verdad.
     final sinPrecioIncide = _insumos.where((i) => !i.tienePrecio && i.cantidadTotal > 0).length;
     final sinPrecioPendiente = _insumos.where((i) => !i.tienePrecio && i.cantidadTotal == 0).length;
-    // Sin la rama de lista vacía: a esta altura `_insumos` nunca está vacía (se sale arriba).
-    final String subtitulo = (sinPrecioIncide == 0 && sinPrecioPendiente == 0)
+    // En vitrina el subtítulo no puede hablar de "las composiciones tildadas en esta obra": no hay
+    // ninguna, y los contadores de "sin precio" medirían el catálogo en vez de la obra.
+    final String subtitulo = _vitrina
+        ? 'Catálogo disponible: materiales con precio de corralón y mano de obra por convenio.'
+        : (sinPrecioIncide == 0 && sinPrecioPendiente == 0)
             ? '${_insumos.length} insumos, según las composiciones de APU tildadas en esta obra.'
             : '${_insumos.length} insumos — $sinPrecioIncide sin precio (frenan el cálculo)'
                 '${sinPrecioPendiente > 0 ? ' · $sinPrecioPendiente sin precio (cantidad en 0, todavía no cargada)' : ''}.';
 
-    return RefreshIndicator(
+    final cuerpo = RefreshIndicator(
       onRefresh: _cargarConsolidado,
       child: ListView(
         padding: const EdgeInsets.all(12),
@@ -313,6 +307,29 @@ class _MatYMoTabState extends State<MatYMoTab> {
         ],
       ),
     );
+
+    // **La pantalla real atenuada, no una vitrina aparte** (ver `vista_previa_atenuada.dart`): el
+    // árbol que se envuelve es el mismo que se muestra con los insumos de la obra -- las mismas
+    // secciones, las mismas tarjetas, hasta el cartel de costo de mano de obra. Cuando el usuario
+    // tilde su primera partida con análisis, lo que aparece es esto mismo en color y tocable.
+    if (_vitrina) {
+      final materiales = _insumos.where((i) => i.tipo != 'mano_obra').length;
+      final conPrecio = _insumos.where((i) => i.tipo != 'mano_obra' && i.tienePrecio).length;
+      final categorias = _insumos.length - materiales;
+      return VistaPreviaAtenuada(
+        mensaje: 'Así se va a ver esta solapa. Los materiales y la mano de obra salen del análisis '
+            'de cada partida: tildá una del catálogo en la solapa Cómputo y sus insumos aparecen '
+            'acá, con cantidades y precios.',
+        detalle: widget.puedeVerMontosYAPU
+            ? '$conPrecio de $materiales materiales con precio de corralón · $categorias '
+                'categorías de mano de obra por convenio.'
+            : '$materiales materiales · $categorias categorías de mano de obra.',
+        notaPro: 'Editar el análisis de una partida y crear los tuyos es una función PRO.',
+        child: cuerpo,
+      );
+    }
+
+    return cuerpo;
   }
 
   Widget _buildInsumoCard(InsumoConsolidadoObra insumo) {
@@ -336,6 +353,10 @@ class _MatYMoTabState extends State<MatYMoTab> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(insumo.nombre, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                  // En vitrina no se muestra la cantidad: esta obra no necesita nada de
+                  // esto todavía, y 174 renglones diciendo "Cantidad necesaria: 0" es ruido, no
+                  // información. Lo demás de la tarjeta queda igual.
+                  if (!_vitrina)
                   Text(
                     'Cantidad necesaria: ${_fmtCantidad(insumo.cantidadTotal)} ${insumo.unidad}',
                     style: const TextStyle(fontSize: 10),
@@ -353,6 +374,60 @@ class _MatYMoTabState extends State<MatYMoTab> {
 
   /// Insumos de una sección + su encabezado — vacío (sin encabezado incluido) si el predicado no
   /// matchea ningún insumo, para no pintar un título flotando sobre una lista vacía.
+  /// El catálogo de insumos, mapeado a la misma forma que usa la grilla real.
+  ///
+  /// **Materiales** con su precio promedio de corralón, que viene de `catalogo_insumos_con_precio`
+  /// (migración 0152) y no de la tabla: `precios` tiene RLS por corralón, así que consultarla desde
+  /// la app devuelve cero filas **sin error** -- parecería que no hay precios cargados.
+  ///
+  /// **Mano de obra** de `valorHora` y no del catálogo de insumos: para el usuario la mano de obra
+  /// son las 5 categorías UOCRA con su valor hora, que sale del convenio con las cargas sociales
+  /// (docs/costo_mano_de_obra_decisiones.md) y no de ningún corralón. Es el mismo dato que la
+  /// solapa ya tiene cargado para esta obra.
+  ///
+  /// `cantidadTotal` en 0 es correcto y honesto: esta obra todavía no necesita nada de esto. La
+  /// tarjeta no la muestra en vitrina (ver `_buildInsumoCard`) justamente para no llenar la pantalla
+  /// de ceros.
+  Future<List<InsumoConsolidadoObra>> _insumosDelCatalogo(
+    List<ValorHoraCategoria> valorHora,
+  ) async {
+    // Try propio: si falla traer el catálogo, la solapa NO tiene que mostrar "no se pudo cargar el
+    // consolidado de esta obra". Es una obra vacía, no una obra rota -- se muestra lo que haya
+    // (las categorías de mano de obra, que ya están cargadas) y listo.
+    List<InsumoDelCatalogo> catalogo = [];
+    try {
+      catalogo = await _insumosRepository.getCatalogoConPrecio();
+    } catch (_) {
+      // Caso típico: la 0152 todavía no está aplicada.
+    }
+    return [
+      for (final v in valorHora)
+        InsumoConsolidadoObra(
+          insumoId: 'vitrina-mo-${v.categoriaUocra}',
+          nombre: v.categoriaUocra,
+          unidad: 'hs',
+          tipo: 'mano_obra',
+          categoriaUocra: v.categoriaUocra,
+          cantidadTotal: 0,
+          precio: v.valorHora,
+          tienePrecio: true,
+          origen: 'automatico',
+        ),
+      for (final i in catalogo.where((i) => !i.esManoDeObra))
+        InsumoConsolidadoObra(
+          insumoId: i.id,
+          nombre: i.nombre,
+          unidad: i.unidad,
+          tipo: i.tipo,
+          categoriaUocra: null,
+          cantidadTotal: 0,
+          precio: i.precioPromedio,
+          tienePrecio: i.precioPromedio != null,
+          origen: 'automatico',
+        ),
+    ];
+  }
+
   List<Widget> _buildSeccion(_SeccionInsumos seccion) {
     final insumos = _insumos.where(seccion.predicado).toList();
     if (insumos.isEmpty) return [];

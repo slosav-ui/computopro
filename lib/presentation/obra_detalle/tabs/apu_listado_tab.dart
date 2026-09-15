@@ -4,11 +4,12 @@ import '../../../data/models/apu_precio_subitem.dart';
 import '../../../data/models/rubro_catalogo.dart';
 import '../../../data/models/subitem_catalogo.dart';
 import '../../../services/apu_composiciones_repository.dart';
+import '../../../services/auth_service.dart';
 import '../../../services/obra_subitems_repository.dart';
 import '../../../services/rubros_repository.dart';
 import '../../../services/subitems_repository.dart';
 import '../screens/composicion_apu_screen.dart';
-import '../widgets/catalogo_con_recetas.dart';
+import '../widgets/vista_previa_atenuada.dart';
 
 /// Listado de la Solapa APU — "cuánto cuesta". Corrige la decisión original de esta pieza (ver
 /// `docs/factor_k_apu_decisiones.md`, sección agregada 2026-09-07): se había decidido no armar un
@@ -50,11 +51,18 @@ class _ApuListadoTabState extends State<ApuListadoTab> {
   final SubitemsRepository _subitemsRepository = SubitemsRepository();
   final RubrosRepository _rubrosRepository = RubrosRepository();
   final ApuComposicionesRepository _apuComposicionesRepository = ApuComposicionesRepository();
+  final AuthService _authService = AuthService();
 
   bool _cargando = true;
   String? _error;
   List<_GrupoRubro> _grupos = [];
   Map<String, ApuPrecioSubitem> _precios = {};
+
+  /// `true` cuando lo que se está listando NO son las partidas de esta obra sino las del catálogo,
+  /// para mostrar la pantalla atenuada (ver `vista_previa_atenuada.dart`). Los grupos y los
+  /// builders son los mismos -- lo único que cambia es de dónde salieron las partidas y que la fila
+  /// no muestra precio, porque una partida que no está en la obra no tiene ninguno todavía.
+  bool _vitrina = false;
 
   @override
   void initState() {
@@ -74,10 +82,14 @@ class _ApuListadoTabState extends State<ApuListadoTab> {
           if (t.subitemId != null) t.subitemId!,
       ];
       if (subitemIds.isEmpty) {
+        // Obra sin nada tildado: mismo tratamiento que obra con partidas pero sin análisis. Lo que
+        // falta es lo mismo y lo que hay para mostrar también.
+        final catalogo = await _gruposDelCatalogo();
         if (!mounted) return;
         setState(() {
-          _grupos = [];
+          _grupos = catalogo;
           _precios = {};
+          _vitrina = true;
           _cargando = false;
         });
         return;
@@ -127,10 +139,17 @@ class _ApuListadoTabState extends State<ApuListadoTab> {
           .toList()
         ..sort((a, b) => a.rubro.orden.compareTo(b.rubro.orden));
 
+      // Sin partidas propias con análisis, se lista el catálogo: las que SÍ tienen análisis
+      // cargado, oficiales y propias del usuario. Se resuelve acá y no en un widget aparte para
+      // que la pantalla que se muestra sea esta misma, con los mismos `_buildGrupo`/`_buildFila`.
+      final vitrina = grupos.isEmpty;
+      final gruposFinales = vitrina ? await _gruposDelCatalogo() : grupos;
+
       if (!mounted) return;
       setState(() {
-        _grupos = grupos;
+        _grupos = gruposFinales;
         _precios = precios;
+        _vitrina = vitrina;
         _cargando = false;
       });
     } catch (e) {
@@ -140,6 +159,40 @@ class _ApuListadoTabState extends State<ApuListadoTab> {
         _cargando = false;
       });
     }
+  }
+
+  /// Las partidas del CATÁLOGO que ya tienen análisis cargado -- oficiales y propias del usuario --
+  /// agrupadas por rubro igual que las de la obra.
+  ///
+  /// **Sin `obraId` en las dos consultas, a propósito**: acá se muestra el catálogo. La carpeta de
+  /// la obra (0151) queda afuera por definición, porque sus partidas tienen precio cerrado y nunca
+  /// tienen análisis -- listarlas sería mostrar justo lo que nunca va a llenar esta pantalla.
+  Future<List<_GrupoRubro>> _gruposDelCatalogo() async {
+    final usuarioId = _authService.usuarioActual?.id;
+    final subitems = await _subitemsRepository.getTodos(usuarioId: usuarioId);
+    if (subitems.isEmpty) return [];
+
+    final rubros = usuarioId == null
+        ? await _rubrosRepository.getCatalogoOficial()
+        : await _rubrosRepository.getCatalogoCompleto(usuarioId);
+    final rubrosPorId = {for (final r in rubros) r.id: r};
+
+    final conAnalisis = await _apuComposicionesRepository.getSubitemIdsConComposicion(
+      subitems.map((s) => s.id).toList(),
+    );
+
+    final porRubro = <String, List<SubitemCatalogo>>{};
+    for (final s in subitems.where((s) => conAnalisis.contains(s.id))) {
+      porRubro.putIfAbsent(s.rubroId, () => []).add(s);
+    }
+    return porRubro.entries
+        .where((e) => rubrosPorId.containsKey(e.key))
+        .map((e) {
+          final subs = [...e.value]..sort((a, b) => _compararCodigoNatural(a.codigo, b.codigo));
+          return _GrupoRubro(rubrosPorId[e.key]!, subs);
+        })
+        .toList()
+      ..sort((a, b) => a.rubro.orden.compareTo(b.rubro.orden));
   }
 
   int _compararCodigoNatural(String a, String b) {
@@ -187,23 +240,7 @@ class _ApuListadoTabState extends State<ApuListadoTab> {
         ),
       );
     }
-    // El vacío muestra EL CATÁLOGO, no esta obra (ver `catalogo_con_recetas.dart`). La primera
-    // versión mostraba las partidas de la obra en gris para explicar el vacío, y Seba lo corrigió:
-    // en una obra importada esas son justamente las que nunca van a tener APU. El punto no es
-    // explicar el vacío, es mostrar lo que la app puede hacer y el usuario todavía no usó.
-    //
-    // Desaparece solo: en cuanto se tilda en Cómputo una partida del catálogo con receta, `_grupos`
-    // deja de estar vacío y se muestra el listado real, con precio y editable.
-    if (_grupos.isEmpty) {
-      return const CatalogoConRecetas(
-        mensaje: 'Estas son las partidas del catálogo que ya tienen su análisis cargado: qué '
-            'insumos llevan y en qué rendimiento. Tildá una en la solapa Cómputo y aparece acá con '
-            'su precio, desglosado paso a paso.',
-        notaPro: 'Editar el análisis de una partida y crear los tuyos es una función PRO.',
-      );
-    }
-
-    return RefreshIndicator(
+    final lista = RefreshIndicator(
       onRefresh: _cargarDatos,
       child: ListView.builder(
         padding: const EdgeInsets.all(12),
@@ -211,6 +248,24 @@ class _ApuListadoTabState extends State<ApuListadoTab> {
         itemBuilder: (context, index) => _buildGrupo(_grupos[index]),
       ),
     );
+
+    // **La pantalla real atenuada, no una vitrina aparte** (ver `vista_previa_atenuada.dart`): el
+    // árbol que se envuelve es exactamente el mismo que se muestra con las partidas de la obra.
+    // Cuando el usuario tilde su primera partida con análisis, lo que aparece es esto mismo en
+    // color y tocable.
+    if (_vitrina) {
+      final total = _grupos.fold<int>(0, (n, g) => n + g.subitems.length);
+      return VistaPreviaAtenuada(
+        mensaje: 'Así se va a ver esta solapa. Estas son las partidas del catálogo que ya tienen '
+            'su análisis cargado: qué insumos llevan y en qué rendimiento. Tildá una en la solapa '
+            'Cómputo y aparece acá con su precio, desglosado paso a paso.',
+        detalle: total > 0 ? '$total partidas con análisis, listas para usar.' : null,
+        notaPro: 'Editar el análisis de una partida y crear los tuyos es una función PRO.',
+        child: lista,
+      );
+    }
+
+    return lista;
   }
 
   Widget _buildGrupo(_GrupoRubro grupo) {
@@ -239,7 +294,10 @@ class _ApuListadoTabState extends State<ApuListadoTab> {
     final resultado = _precios[subitem.id];
     final completo = resultado?.completo ?? false;
     return InkWell(
-      onTap: resultado != null ? () => _abrirComposicion(subitem, resultado) : null,
+      // En vitrina no hay a dónde ir: la partida no está en esta obra, así que no hay una
+      // composición de esta obra que abrir. El IgnorePointer de VistaPreviaAtenuada ya lo bloquea;
+      // esto es el cinturón además del tirante.
+      onTap: (resultado != null && !_vitrina) ? () => _abrirComposicion(subitem, resultado) : null,
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 6),
         child: Row(
@@ -253,7 +311,12 @@ class _ApuListadoTabState extends State<ApuListadoTab> {
               ),
             ),
             const SizedBox(width: 8),
-            completo
+            // En vitrina la columna de precio queda vacía, y no en "Incompleto": una partida del
+            // catálogo que no está en la obra no tiene precio acá porque no fue tildada, no porque
+            // le falte algo. Mostrar 97 renglones en naranja diciendo "Incompleto" sería lo
+            // contrario de mostrar lo que la app puede hacer.
+            if (!_vitrina)
+              completo
                 ? Text(
                     CurrencyFormatter.formatARS(resultado!.precioTotal),
                     style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF1B365D)),
