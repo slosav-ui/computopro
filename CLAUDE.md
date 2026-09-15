@@ -54,9 +54,9 @@ y `subitems` no tienen `obra_id`** — pertenecen al usuario, no a la obra, así
 importa o se crea cae en el catálogo personal y aparece en todas las obras de esa persona. Es la causa
 de raíz de las partidas duplicadas, y ninguna rutina de limpieza la resolvía. También reemplaza el
 intento de *mapear* cada partida del PDF contra el catálogo: un solo bloque de un presupuesto real se
-repartía en tres rubros distintos y 12 de 24 partidas no tenían equivalente oficial. De paso cierra un
-bug multi-inquilino vigente (`rubros_codigo_unique`, 0025, es único **global**: hoy dos PRO no pueden
-tener cada uno su rubro "21"). El corte en 6 tandas está en §7 del doc; la tanda 2 (`obra_id` + índices
+repartía en tres rubros distintos y 12 de 24 partidas no tenían equivalente oficial. También saca del medio el índice único **global**
+de `rubros.codigo` (0025), que hoy no molesta sólo porque la 0027 le puso un UUID de default y sacó
+el código de la UI — empieza a molestar con esta pieza, la primera que escribe códigos legibles. El corte en 6 tandas está en §7 del doc; la tanda 2 (`obra_id` + índices
 + RLS) es la única con riesgo real.
 
 **La documentación de la obra — tres circuitos** (los libros; el avance fotográfico con fecha y

@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../data/models/subitem_catalogo.dart';
+import 'rubros_repository.dart';
 
 /// Acceso a la tabla `subitems` de Supabase (catálogo por rubro).
 ///
@@ -12,7 +13,11 @@ class SubitemsRepository {
   /// de fail-safe que `RubrosRepository.getCatalogoOficial()`. Con
   /// `usuarioId`: oficiales + propios del usuario, mismo patrón `.or()` que
   /// `RubrosRepository.getCatalogoCompleto()`.
-  Future<List<SubitemCatalogo>> getSubitemsDeRubro(String rubroId, {String? usuarioId}) async {
+  Future<List<SubitemCatalogo>> getSubitemsDeRubro(
+    String rubroId, {
+    String? usuarioId,
+    String? obraId,
+  }) async {
     final data = usuarioId == null
         ? await _client
             .from('subitems')
@@ -23,7 +28,7 @@ class SubitemsRepository {
             .from('subitems')
             .select()
             .eq('rubro_id', rubroId)
-            .or('creador_usuario_id.is.null,creador_usuario_id.eq.$usuarioId');
+            .or(RubrosRepository.filtroCarpeta(usuarioId, obraId));
     final subitems = (data as List)
         .map((row) => _fromRow(row as Map<String, dynamic>))
         .toList();
@@ -48,6 +53,7 @@ class SubitemsRepository {
     required String descripcion,
     required String unidad,
     required String creadorUsuarioId,
+    String? obraId,
   }) async {
     final inserted = await _client
         .from('subitems')
@@ -57,6 +63,7 @@ class SubitemsRepository {
           'descripcion': descripcion,
           'unidad': unidad,
           'creador_usuario_id': creadorUsuarioId,
+          if (obraId != null) 'obra_id': obraId,
         })
         .select()
         .single();
@@ -87,13 +94,13 @@ class SubitemsRepository {
   /// propias) mostraba el denominador viejo (10) aunque las 12 partidas
   /// existieran y se pudieran tildar — con las 12 tildadas, el badge llegaba
   /// a mostrar "12/10".
-  Future<Map<String, int>> getConteoOficialPorRubro({String? usuarioId}) async {
+  Future<Map<String, int>> getConteoOficialPorRubro({String? usuarioId, String? obraId}) async {
     final data = usuarioId == null
         ? await _client.from('subitems').select('rubro_id').isFilter('creador_usuario_id', null)
         : await _client
             .from('subitems')
             .select('rubro_id')
-            .or('creador_usuario_id.is.null,creador_usuario_id.eq.$usuarioId');
+            .or(RubrosRepository.filtroCarpeta(usuarioId, obraId));
     final conteo = <String, int>{};
     for (final row in data as List) {
       final rubroId = (row as Map<String, dynamic>)['rubro_id'].toString();
@@ -155,6 +162,7 @@ class SubitemsRepository {
       descripcion: row['descripcion'].toString(),
       unidad: row['unidad'].toString(),
       creadorUsuarioId: row['creador_usuario_id']?.toString(),
+      obraId: row['obra_id']?.toString(),
     );
   }
 }

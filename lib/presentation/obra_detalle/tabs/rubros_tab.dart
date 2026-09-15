@@ -129,11 +129,16 @@ class _RubrosTabState extends State<RubrosTab> {
       // de las 5 -- medido con Stopwatch antes de este cambio: ~1.2-5s en
       // serie según cold start, vs. lo que tarde la más lenta en paralelo.
       final usuarioId = _authService.usuarioActual?.id;
+      // `obraId` desde la 0151: además del catálogo trae la carpeta de ESTA obra, y —lo que
+      // importa— deja afuera las carpetas de las demás. Hoy no hay ninguna fila con `obra_id`, así
+      // que no cambia nada de lo que se ve; la UI que separa las dos carpetas es la tanda 3 de
+      // docs/carpetas_importado_y_catalogo_diseno_datos.md.
       final rubrosFuture = usuarioId != null
-          ? _rubrosRepository.getCatalogoCompleto(usuarioId)
+          ? _rubrosRepository.getCatalogoCompleto(usuarioId, obraId: widget.obraId)
           : _rubrosRepository.getCatalogoOficial();
       final esProFuture = usuarioId != null ? _perfilRepository.esPro(usuarioId) : Future.value(false);
-      final totalesFuture = _subitemsRepository.getConteoOficialPorRubro(usuarioId: usuarioId);
+      final totalesFuture =
+          _subitemsRepository.getConteoOficialPorRubro(usuarioId: usuarioId, obraId: widget.obraId);
       final tildadosFuture = _obraSubitemsRepository.getConteoTildadosPorObra(widget.obraId);
       final overridesFuture = _obraRubrosOrdenRepository.getOverridesDeObra(widget.obraId);
 
@@ -263,7 +268,8 @@ class _RubrosTabState extends State<RubrosTab> {
   Future<void> _cargarConteos() async {
     try {
       final usuarioId = _authService.usuarioActual?.id;
-      final totales = await _subitemsRepository.getConteoOficialPorRubro(usuarioId: usuarioId);
+      final totales =
+          await _subitemsRepository.getConteoOficialPorRubro(usuarioId: usuarioId, obraId: widget.obraId);
       final tildados = await _obraSubitemsRepository.getConteoTildadosPorObra(widget.obraId);
       if (!mounted) return;
       setState(() {

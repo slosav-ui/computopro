@@ -8,6 +8,10 @@ class SubitemCatalogo {
   final String descripcion;
   final String unidad;
   final String? creadorUsuarioId; // null = catálogo oficial
+  /// null = catálogo. No nulo = partida de esa obra. Puede colgar de un rubro
+  /// del catálogo (partida suelta agregada solo para esta obra) pero nunca de
+  /// un rubro de otra obra — ver el trigger de la migración 0151.
+  final String? obraId;
 
   const SubitemCatalogo({
     required this.id,
@@ -16,5 +20,8 @@ class SubitemCatalogo {
     required this.descripcion,
     required this.unidad,
     this.creadorUsuarioId,
+    this.obraId,
   });
+
+  bool get esDeCarpetaDeObra => obraId != null;
 }

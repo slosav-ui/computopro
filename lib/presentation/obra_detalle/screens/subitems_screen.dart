@@ -165,7 +165,13 @@ class _SubitemsScreenState extends State<SubitemsScreen> {
       // se puede adelantar sin cambiar qué recibe getSubitemIdsConComposicion
       // (ver memoria "subitems_conComposicion_por_rubro", pieza aparte).
       final usuarioId = _authService.usuarioActual?.id;
-      final subitemsFuture = _subitemsRepository.getSubitemsDeRubro(widget.rubro.id, usuarioId: usuarioId);
+      // `obraId` (0151): las partidas del catálogo más las que son solo de esta obra, nunca las de
+      // otra. Ver el comentario equivalente en RubrosTab._cargarCatalogo.
+      final subitemsFuture = _subitemsRepository.getSubitemsDeRubro(
+        widget.rubro.id,
+        usuarioId: usuarioId,
+        obraId: widget.obraId,
+      );
       final mapaFuture = _obraSubitemsRepository.getMapaDeRubro(
         obraId: widget.obraId,
         rubroId: widget.rubro.id,

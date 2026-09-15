@@ -10,6 +10,10 @@ class RubroCatalogo {
   final bool usaApu;
   final String? tipoPrecioManual; // 'unitario' | 'global' | null (cuando usaApu == true)
   final String? creadorUsuarioId; // null = catálogo oficial
+  /// null = catálogo (oficial o personal). No nulo = carpeta de esa obra, el
+  /// presupuesto importado tal cual — ver migración 0151 y
+  /// docs/carpetas_importado_y_catalogo_diseno_datos.md.
+  final String? obraId;
   final DateTime createdAt; // desempate de orden default para propios sin override en una obra,
                              // ver docs/rubros_orden_diseno_datos.md §3 (reemplaza a codigo).
 
@@ -22,5 +26,10 @@ class RubroCatalogo {
     required this.createdAt,
     this.tipoPrecioManual,
     this.creadorUsuarioId,
+    this.obraId,
   });
+
+  /// Atajo de lectura para la solapa Cómputo: de qué carpeta es esta fila.
+  /// La UI que las separa llega en la tanda 3.
+  bool get esDeCarpetaDeObra => obraId != null;
 }

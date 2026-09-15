@@ -78,8 +78,8 @@ editable, no inmutable**. Consecuencias en §6.1.
 
 **3.2 — Las dos numeraciones conviven.** La carpeta importada mantiene su numeración original, que
 es el sentido de "tal cual viene". **La unicidad de código va por obra y por carpeta, no global.**
-De paso arregla un bug multi-inquilino existente: hoy dos PRO no pueden tener cada uno su rubro
-"21". Detalle en §4.3.
+De paso saca del medio el índice único global de la `0025`, que hoy no molesta sólo porque nadie
+escribe códigos legibles (ver la corrección en §4.3). Detalle ahí.
 
 **3.3 — Reimportar reemplaza, avisando.** *"Importar dos veces la misma obra es corregir, no
 acumular."* Y el aviso tiene que decir qué va a pasar con lo que ya está tildado y con el avance
@@ -146,7 +146,13 @@ motivo escrito en esa migración es el presupuesto impreso: *"dos ítems con el 
 al cliente"* — un documento que todavía no está construido. Efectos colaterales:
 
 - "que entre tal cual" choca literalmente: si el Excel trae un rubro "1", el insert falla;
-- dos PRO distintos no pueden tener cada uno su rubro "21" (**bug multi-inquilino latente, hoy**).
+- dos PRO distintos no pueden tener cada uno su rubro "21".
+
+**Corrección al primer borrador de este doc (2026-09-15):** el segundo punto es teórico hoy, no un
+bug vigente. La `0027` le puso a `rubros.codigo` el default `gen_random_uuid()::text` y sacó el
+código de la UI — un rubro creado desde la app lleva un UUID, y dos UUID no chocan nunca. **El
+índice global no molesta hoy justamente porque nadie escribe códigos legibles.** Empieza a molestar
+con esta pieza, que es la primera que los escribe: el importador copiando el "1" del Excel.
 
 Se reemplaza por tres índices parciales que dicen la regla real — *único dentro de su carpeta*:
 
@@ -306,18 +312,23 @@ de la obra no se mueve.
 ### 6.2 Reimportar reemplaza (decisión 3.3) — la parte con filo
 
 Reemplazar la carpeta significa borrar sus `rubros`/`subitems`, y ahí aparece lo que ya está en la
-base. Las cuatro FK relevantes, todas **sin `on delete cascade`, a propósito**:
+base. Las cuatro FK relevantes **no se comportan igual**, y la diferencia es la que importa:
 
-| FK | Migración | Qué protege |
-|---|---|---|
-| `obra_subitems.rubro_id → rubros(id)` | 0019 | cantidades cargadas |
-| `obra_subitems.subitem_id → subitems(id)` | 0019 | idem |
-| `certificado_subitems_avance.obra_subitem_id → obra_subitems(id)` | 0052 | avance certificado |
-| `presupuesto_subitems_congelado.obra_subitem_id → obra_subitems(id)` | 0104 | el monto pactado |
+| FK | Migración | `on delete cascade` | Qué pasa al borrar el rubro |
+|---|---|---|---|
+| `obra_subitems.rubro_id → rubros(id)` | 0019, **cambiada por la 0028** | **sí** | se lleva las partidas de la obra, en silencio |
+| `obra_subitems.subitem_id → subitems(id)` | 0019, **cambiada por la 0028** | **sí** | idem |
+| `certificado_subitems_avance.obra_subitem_id` | 0052 | no | **bloquea**: error de FK |
+| `presupuesto_subitems_congelado.obra_subitem_id` | 0104 | no | **bloquea**: error de FK |
 
-**Ya hay una red de seguridad: la base no deja.** Un `delete` sobre un rubro con partidas cargadas
-falla con error de FK. Eso es bueno — pero un error de FK no es un aviso, es un choque. El flujo
-tiene que decidir antes:
+**Corrección al primer borrador de este doc (2026-09-15):** las dos primeras decían "sin cascade".
+La `0028` se las puso, a propósito: la app usaba la FK para *bloquear* el borrado de un rubro propio
+y se cambió por un cascade con confirmación en la UI. O sea que **la base no protege las cantidades
+cargadas** — solo se planta si hay un certificado o un snapshot congelado de por medio.
+
+Eso hace el reemplazo más filoso, no menos: un borrado descuidado destruye cantidades sin avisar, y
+recién choca contra un error de FK si la obra ya certificó. **Un error de FK no es un aviso, es un
+choque.** El flujo tiene que decidir antes:
 
 1. **Si hay algún certificado no-borrador sobre partidas de la carpeta: se rechaza.** Es plata ya
    emitida y congelada. Mismo criterio y misma forma que el guard que `congelar_presupuesto_obra`
@@ -329,10 +340,25 @@ tiene que decidir antes:
    perder, con cuánta cantidad y monto cargados, y cuántos borradores de avance se descartan. El
    aviso dice qué se pierde, no "¿estás seguro?".
 
-**Y la regla que lo hace tolerable: lo que matchea por código y descripción se conserva tildado.**
-Reimportar para corregir tres precios no debería costar volver a tildar 24 partidas. Es la
-diferencia entre "corregir" y "empezar de nuevo", que es lo que la decisión 3.3 pide. Esto merece su
-propia sub-decisión — ver §8.
+**Y la regla que lo hace tolerable, cerrada por Seba el 2026-09-15: lo que coincida por código Y
+descripción se conserva tildado, con su cantidad.**
+
+> *"Si no, corregir tres precios obliga a volver a tildar 24 partidas, y eso es empezar de nuevo en
+> vez de corregir — que es justo lo contrario de lo que pedí."*
+
+Los dos campos, no uno: solo por código, un Excel renumerado pisaría partidas distintas con la misma
+cantidad; solo por descripción, un cambio de redacción perdería el vínculo. Los dos juntos fallan
+hacia el lado seguro — ante la duda la partida se trata como nueva, que cuesta un tilde, en vez de
+heredar una cantidad que no le corresponde, que cuesta un certificado mal emitido.
+
+**Lo que se conserva es el tilde y la cantidad, nunca el precio** — reimportar es justamente traer
+precios nuevos. Y lo que no matchea con nada entra como partida nueva, sin tildar: aparecer tildada
+en cero sería decir que se cotizó en cero.
+
+Implicancia técnica directa: **el reemplazo no puede ser un `delete` + `insert`**, porque el cascade
+de la 0028 se llevaría las cantidades antes de poder rescatarlas. Tiene que ser un `upsert` sobre
+`subitems` y `obra_subitems` que conserve los `id` de lo que matchea, y borrar al final solo lo que
+quedó sin pareja.
 
 ### 6.3 Alta: elegir carpeta
 
@@ -346,8 +372,8 @@ el default mande siempre al catálogo personal, que es el comportamiento de hoy 
 
 | # | Tanda | Estado |
 |---|---|---|
-| 1 | **0149 — redondeo en los agregados.** Independiente de todo esto. | **escrita, lista para aplicar** |
-| 2 | **`obra_id` en `rubros`/`subitems`** + índices de §4.3 + RLS de §4.4 + `obraId` en las consultas del repositorio. Sin UI, sin cambio visible. | por hacer |
+| 1 | **0149 — redondeo en los agregados.** Independiente de todo esto. | **APLICADA 2026-09-15** |
+| 2 | **`obra_id` en `rubros`/`subitems`** + índices de §4.3 + RLS de §4.4 + `obraId` en las consultas del repositorio. Sin UI, sin cambio visible. | **migración `0151` escrita, pendiente de aplicar** |
 | 3 | **Las dos carpetas en Cómputo**: el toggle y elegir carpeta al crear (§6.3). | por hacer |
 | 4 | **El importador escribe en la carpeta importada.** Acá se reescribe el seed de Galpón Mix. | por hacer |
 | 5 | **Los agujeros de miembros**: carga de avance (§5.1) y nombres de rubro en el certificado. | por hacer |
@@ -367,12 +393,10 @@ Nada de esto bloquea la tanda 2.
 
 1. **¿Se puede adoptar un subítem suelto**, dejando su rubro en la carpeta de obra? §4.2 lo permite
    al revés (subítem de obra bajo rubro de catálogo), no en esta dirección.
-2. **Qué matchea al reimportar** (§6.2): ¿código, descripción, o los dos? De eso depende cuánto se
-   conserva tildado, y es la diferencia entre "corregir" y "empezar de nuevo".
-3. **El presupuesto impreso**, cuando exista: con dos carpetas conviviendo, cómo se numeran los
+2. **El presupuesto impreso**, cuando exista: con dos carpetas conviviendo, cómo se numeran los
    ítems en el papel. Es el motivo original del índice único global de la 0025, y sigue sin
    documento que lo obligue.
-4. **Las solapas vacías** (APU y Mat y MO en una obra 100% importada). Pieza chica y aparte: el
+3. **Las solapas vacías** (APU y Mat y MO en una obra 100% importada). Pieza chica y aparte: el
    vacío tiene que explicar por qué está vacío *en esta obra* en vez de dar una instrucción genérica
    imposible de seguir.
 
