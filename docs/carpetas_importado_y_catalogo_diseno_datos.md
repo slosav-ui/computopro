@@ -494,11 +494,11 @@ el default mande siempre al catálogo personal, que es el comportamiento de hoy 
 | 1 | **0149 — redondeo en los agregados.** Independiente de todo esto. | **APLICADA 2026-09-15** |
 | 2 | **`obra_id` en `rubros`/`subitems`** + índices de §4.3 + RLS de §4.4 + `obraId` en las consultas del repositorio. Sin UI, sin cambio visible. | **`0151` APLICADA y verificada 2026-09-15** |
 | 3 | **Las dos carpetas en Cómputo**: el toggle y elegir carpeta al crear (§6.3). | **hecha y verificada en emulador 2026-09-15** |
-| 4 | **Los agujeros de miembros**: carga de avance (§5.1) y nombres de rubro en el certificado. | **hecha 2026-09-15, sin probar en emulador** |
-| 5 | **El importador escribe en la carpeta importada.** Acá se reescribe el seed de Galpón Mix. | **hecha 2026-09-15, sin probar** |
-| 6 | **Copiar obra → catálogo** ("adoptar lo bueno de lo importado"). §6.1, dirección A. | **`0154` escrita, pendiente de aplicar** |
-| 7 | **Copiar catálogo → obra** ("bajarlo para modificarlo"). §6.1, dirección B, con b.1 y b.2 ya cerradas. | **`0155` escrita, pendiente de aplicar** |
-| 8 | **0150 — el precio manual gana sobre la cascada de APU.** | **escrita, marcada para no aplicar** |
+| 4 | **Los agujeros de miembros**: carga de avance (§5.1) y nombres de rubro en el certificado. | **hecha y verificada 2026-09-15** |
+| 5 | **El importador escribe en la carpeta importada.** Acá se reescribe el seed de Galpón Mix. | **hecha y verificada 2026-09-15** (el seed, corrido dos veces; el importador en sí, sin probar) |
+| 6 | **Copiar obra → catálogo** ("adoptar lo bueno de lo importado"). §6.1, dirección A. | **`0154` APLICADA y verificada 2026-09-15** |
+| 7 | **Copiar catálogo → obra** ("bajarlo para modificarlo"). §6.1, dirección B, con b.1 y b.2 ya cerradas. | **`0155` APLICADA y verificada 2026-09-15** |
+| 8 | **0150 — el precio manual gana sobre la cascada de APU.** | **escrita y SIN APLICAR por decisión** — ya no bloquea a nadie |
 
 **La tanda 2 es la única con riesgo real; las demás son consecuencia.** Es también la que decide
 todo: si `obra_id` queda bien puesto, el resto es UI y consultas.
@@ -546,7 +546,13 @@ Nada de esto bloquea la tanda 2.
 2. **¿Se puede copiar un subítem suelto**, sin su rubro? Las dos direcciones de §6.1 copian el rubro
    entero. Copiar una partida sola al catálogo tiene sentido ("esta me sirve siempre") y no está
    resuelto dónde cae si su rubro no existe del otro lado.
-3. **El presupuesto impreso**, cuando exista: con dos carpetas conviviendo, cómo se numeran los
+3. **Reimportar reemplaza avisando (§6.2) está DECIDIDO y SIN CONSTRUIR.** Es lo más grande que
+   queda de la pieza. Hoy el importador escribe en la carpeta (tanda 5), pero nada implementa el
+   reemplazo: ni los tres casos de aviso, ni conservar tildado lo que coincide por código y
+   descripción, ni el rechazo cuando hay certificados emitidos. Y tiene filo, porque
+   `obra_subitems.rubro_id/subitem_id` cascadean desde la `0028`: un borrado descuidado se lleva las
+   cantidades sin avisar.
+4. **El presupuesto impreso**, cuando exista: con dos carpetas conviviendo, cómo se numeran los
    ítems en el papel. Es el motivo original del índice único global de la 0025, y sigue sin
    documento que lo obligue.
 ---
@@ -655,6 +661,8 @@ Dos adaptaciones mínimas, cada una con su motivo:
 desde la app devuelve **cero filas, sin error** — parecería que no hay precios cargados. La `0152`
 agrega `catalogo_insumos_con_precio()`, `security definer`, que devuelve promedio y cantidad de
 precios por insumo, nunca el precio de un corralón puntual.
+
+La `0152` (el catálogo de insumos con precio, para Mat y MO) está **aplicada desde el 2026-09-15**.
 
 **Cuándo desaparece: solo, y sin lógica nueva.** Las dos solapas muestran esto cuando su listado
 real está vacío. En cuanto el usuario tilda en Cómputo una partida del catálogo con receta, esa
